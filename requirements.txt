@@ -1,0 +1,9 @@
+flask==3.1.0
+requests==2.32.3
+python-dotenv==1.1.0
+openpyxl==3.1.5
+pandas==2.3.3
+gspread==6.2.1
+google-auth>=2.23.0
+google-auth-oauthlib>=1.0.0
+
