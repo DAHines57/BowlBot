@@ -7,12 +7,15 @@ BowlBot is a WhatsApp bot that connects to your bowling league Excel file to que
 ## Features
 
 - ✅ Query team standings and statistics
-- ✅ Query individual player scores and averages
+- ✅ Query individual player scores and averages (with standard deviation)
+- ✅ Weekly team records with wins/losses/ties
 - ✅ Add new scores for players
 - ✅ Support for multiple seasons
 - ✅ Natural language command parsing
 - ✅ Handles absent players (excludes from averages)
 - ✅ Handles substitutes (excludes from team averages)
+- ✅ League statistics (top players, best weeks, best games)
+- ✅ Wins/losses calculated per game (up to 4 games per week)
 
 ## Installation
 
@@ -50,31 +53,45 @@ Your Excel file should have:
   - Playoffs?
   - Absent? (Y/N - excludes week from player average)
   - Substitute? (Y/N - excludes from team averages)
+  - Opponent (team name for the week)
 
 ## Usage
 
 ### Commands
 
 **Team Scores:**
-- `team` or `teams` - Show all team standings
-- `team [name]` - Show specific team stats (e.g., `team Rolling Stoned`)
+- `team` or `teams` - Show all team standings (sorted by average)
+- `team [name]` - Show specific team stats with players (e.g., `team Rolling Stoned`)
+- `team [name] record` - Show weekly breakdown for team
 - `team [name] season [N]` - Show team stats for specific season
+- `season [N] team [name]` - Alternative format
 
 **Player Scores:**
-- `player [name]` - Show player stats
-- `score [name]` - Show player scores
-- `[name] stats` - Show player statistics
+- `player [name]` or `[name] stats` - Show player stats (average, std dev, highest/lowest game)
+- `score [name]` or `[name] score` - Show player scores (same as above)
 - `player [name] season [N]` - Show player stats for specific season
 
 **Add Scores:**
 - `add score [score] [player]` - Add a score (e.g., `add score 180 Dylan`)
 - `enter score [score] [player]` - Enter a score
 - `[player] [score]` - Quick add (e.g., `Dylan 180`)
+- `add score [score] [player] season [N]` - Add score to specific season
 
 **Seasons:**
 - `seasons` - List all available seasons
 - Use `season [N]` or `s[N]` to specify a season (e.g., "season 9" or "s9")
 - If not specified, uses current season
+
+**Lists:**
+- `players` - List all players (sorted by average)
+- `teams` - List all teams (sorted by average)
+
+**Statistics:**
+- `stats` or `summary` - Show all league statistics
+- `averages` - Show all player averages
+- `best weeks` - Show top 10 individual player weeks
+- `best team weeks` - Show top 5 team weekly totals
+- `best games` - Show top 10 highest individual games
 
 **Help:**
 - `help` - Show available commands
@@ -83,16 +100,25 @@ Your Excel file should have:
 
 ```
 User: team Rolling Stoned
-Bot: 🏆 Rolling Stoned
-     📊 Record: 13-15
-     📈 Avg per game: 185.2
+Bot: 🏆 Rolling Stoned (Season 9)
+     
+     📊 Record: 13-15-0
+     📈 Team Average: 185.2
      🎳 Total pins: 18500
+     
+     👥 Players:
+       • Player1: 190.5
+       • Player2: 180.3
+       • Player3: 175.0
 
 User: player Dylan season 9
 Bot: 🎳 Dylan (Season 9)
-     Team: Irregular Bowl Movements
+     Team: Rolling Stoned
+     
      📊 Average: 175.5
-     🎯 Scores: 180, 165, 190, 167
+     📏 Std Dev: 25.3
+     🎯 Highest Game: 280
+     📉 Lowest Game: 120
      📈 Games: 28
 
 User: add score 195 Dylan
@@ -129,8 +155,12 @@ BowlBot/
 - The bot reads calculated fields (formulas) from Excel
 - Absent weeks are excluded from player average calculations
 - Substitute entries are excluded from team average calculations
+- Total pins includes absences (weeks where average was taken) but never substitutes
+- Wins/losses are calculated per game (Game 1 vs Game 1, Game 2 vs Game 2, etc.) - up to 4 games per week
+- Team average is the average of individual player averages (excluding absent/substitute weeks)
 - The bot automatically uses the most recent season if no season is specified
 - Player and team name matching is case-insensitive and supports partial matches
+- Lists (players, teams) are sorted by average (highest to lowest)
 
 ## Troubleshooting
 
