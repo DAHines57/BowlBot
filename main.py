@@ -19,26 +19,11 @@ ACCESS_TOKEN = os.environ.get("ACCESS_TOKEN")
 VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN")  # Set a random string
 
 # Initialize sheet handler
-# Default to Excel for testing, can be switched to Google Sheets via environment variable
-SHEET_HANDLER_TYPE = os.environ.get("SHEET_HANDLER_TYPE", "excel").lower()
-EXCEL_FILE_PATH = os.environ.get("EXCEL_FILE_PATH", "Bowling- Friends League v4.xlsx")
-GOOGLE_SHEETS_ID = os.environ.get("GOOGLE_SHEETS_ID")
-GOOGLE_CREDENTIALS_PATH = os.environ.get("GOOGLE_CREDENTIALS_PATH")
+EXCEL_FILE_PATH = os.environ.get("EXCEL_FILE_PATH", "Bowling-Friends League v5.xlsx")
 
 # Initialize sheet handler
 try:
-    if SHEET_HANDLER_TYPE == "excel":
-        sheet_handler = get_sheet_handler("excel", file_path=EXCEL_FILE_PATH)
-    elif SHEET_HANDLER_TYPE in ["googlesheets", "google", "gsheets"]:
-        if not GOOGLE_SHEETS_ID:
-            raise ValueError("GOOGLE_SHEETS_ID environment variable is required for Google Sheets")
-        sheet_handler = get_sheet_handler(
-            "googlesheets",
-            spreadsheet_id=GOOGLE_SHEETS_ID,
-            credentials_path=GOOGLE_CREDENTIALS_PATH
-        )
-    else:
-        raise ValueError(f"Unknown SHEET_HANDLER_TYPE: {SHEET_HANDLER_TYPE}")
+    sheet_handler = get_sheet_handler("excel", file_path=EXCEL_FILE_PATH)
 except Exception as e:
     print(f"Error initializing sheet handler: {e}")
     sheet_handler = None

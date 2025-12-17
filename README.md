@@ -1,36 +1,33 @@
-# WhatsApp Platform Quick Start
+# BowlBot
 
-Welcome to your first step toward building awesome WhatsApp apps!
+A WhatsApp bot for managing bowling league scores and statistics.
 
-This project contains the code for a simple webhook you can use to get started using the WhatsApp Platform.
+## Features
 
-The code here mirrors what is in our [webhook set up guide](https://developers.facebook.com/docs/whatsapp/cloud-api/guides/set-up-webhooks), and may be used as the starting point for doing the ["Get Started With the WhatsApp Business Cloud API guide"](https://developers.facebook.com/docs/whatsapp/getting-started/signing-up/).
+- Query team standings and statistics
+- Query individual player scores and averages  
+- Add new scores via WhatsApp
+- Support for multiple seasons
+- Handles absent players and substitutes correctly
 
-## Additional Resources
+## Quick Start
 
-Interested in learning more about the WhatsApp Platform?
+1. Install dependencies: `pip install -r requirements.txt`
+2. Set up `.env` file with WhatsApp credentials
+3. Run: `python main.py`
 
-Check out these resources:
+See [SETUP.md](SETUP.md) for detailed setup instructions.
 
-- [**Webhook set up guide**](https://developers.facebook.com/docs/whatsapp/getting-started/signing-up/#configure-webhooks): The walkthrough for the code in this project.
+## Excel File Structure
 
-- [**Quick start tutorial**](https://developers.facebook.com/docs/whatsapp/getting-started/signing-up/): Build your first app by remixing this project and following our quick start tutorial.
+The bot reads from Excel files with one row per week per player:
+- Columns: Team, Player, Season, Week, Game 1-5, Average, Playoffs?, Absent?, Substitute?
+- One sheet per season (e.g., "Season 9", "Season 10")
 
-- [**WhatsApp Business Platform Documentation**](https://developers.facebook.com/docs/whatsapp/)
+## Commands
 
-
-## Environment Setup
-
-1. Create an account on Glitch to have access to all features mentioned here.
-2. Remix this project on Glitch.
-3. Click on the file `.env` on the left sidebar, and set these environment variables
-
-- `WEBHOOK_VERIFY_TOKEN`: You can use any string and use the same when setting up the webhook in your app in the following steps.
-- `GRAPH_API_TOKEN`: You can get a **Temporary access token** from the dashboard of your app on **Meta for Developers** when you click **API Setup** under the **WhatsApp** section on the left navigation pane.
-
-4. Get the new Glitch URL to use as your webhook, eg: `https://project-name.glitch.me/webhook`. You can find the base URL by clicking on **Share** on top right in Glitch, copy the **Live Site** URL, then add `/webhook` to it.
-5. Subscribe the webhook URL in the dashboard of your app on **Meta for Developers**. Click the **Configuration** menu under **WhatsApp** in the left navigation pane.
-   In the **Webhook** section, click **Edit** and paste your webhook URL from the previous step. For the **Verify token** field, use the `VERIFY_TOKEN` value in your .env file, then click **Verify and save**.
-   Under the **Webhook fields** section click **Manage** and make sure **messages** field is selected.
-6. Edit `server.js` to change the webhook logic as needed.
-7. Click on the **Logs** tab at the bottom to view server logs. The logs section also has a button to attach a debugger via Chrome devtools.
+- `team [name]` - Get team stats
+- `player [name]` - Get player stats  
+- `add score [score] [player]` - Add a score
+- `seasons` - List all seasons
+- `help` - Show all commands
