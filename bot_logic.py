@@ -191,7 +191,7 @@ class BotLogic:
                 
                 return response.strip()
             else:
-                # All teams
+                # All teams - show summary with record and average
                 if not data:
                     error_msg = "❌ No team data found."
                     if season:
@@ -202,10 +202,10 @@ class BotLogic:
                 if season:
                     response += f" ({season})"
                 response += "\n\n"
-                # Sort by wins (or win percentage)
+                # Sort by average (highest to lowest)
                 sorted_teams = sorted(
                     data.items(),
-                    key=lambda x: (self._safe_int(x[1].get("wins", 0)), -self._safe_int(x[1].get("losses", 0))),
+                    key=lambda x: self._safe_float(x[1].get("avg_per_game", 0)),
                     reverse=True
                 )
                 
@@ -228,9 +228,9 @@ class BotLogic:
             return f"❌ Error retrieving team scores: {str(e)}"
     
     def _handle_team_record(self, team_name: Optional[str], season: Optional[str]) -> str:
-        """Handle team weekly record query."""
+        """Handle team weekly breakdown query."""
         if not team_name:
-            return "❌ Please specify a team name. Example: `team Pin Seekers record`"
+            return "❌ Please specify a team name. Example: `team Pin Seekers weekly`"
         
         try:
             data = self.sheet_handler.get_team_weekly_summary(team_name, season)

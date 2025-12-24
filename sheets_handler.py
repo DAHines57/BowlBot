@@ -143,16 +143,16 @@ class ExcelHandler(SheetHandler):
         # }
         team_data = {}
         
-        # Column mapping: Team=1, Player=2, Season=3, Week=4, Game1=5, Game2=6, Game3=7, Game4=8, Game5=9, Average=10
-        # Absent?=12, Substitute?=13, Opponent=14
+        # Column mapping: Index=1 (ignored), Team=2, Player=3, Season=4, Week=5, Game1=6, Game2=7, Game3=8, Game4=9, Game5=10, Average=11
+        # Absent?=13, Substitute?=14, Opponent=15
         for row in range(2, sheet.max_row + 1):
-            row_team = sheet.cell(row=row, column=1).value
-            row_player = sheet.cell(row=row, column=2).value
-            row_season = sheet.cell(row=row, column=3).value
-            row_week = sheet.cell(row=row, column=4).value
-            absent = sheet.cell(row=row, column=12).value
-            substitute = sheet.cell(row=row, column=13).value
-            opponent = sheet.cell(row=row, column=14).value  # Opponent column
+            row_team = sheet.cell(row=row, column=2).value
+            row_player = sheet.cell(row=row, column=3).value
+            row_season = sheet.cell(row=row, column=4).value
+            row_week = sheet.cell(row=row, column=5).value
+            absent = sheet.cell(row=row, column=13).value
+            substitute = sheet.cell(row=row, column=14).value
+            opponent = sheet.cell(row=row, column=15).value  # Opponent column
             
             if row_season != season_num:
                 continue
@@ -178,7 +178,7 @@ class ExcelHandler(SheetHandler):
             
             # Get games (Game 1-5)
             games = []
-            for col in range(5, 10):  # Columns 5-9 (Game 1-5)
+            for col in range(6, 11):  # Columns 6-10 (Game 1-5)
                 game_score = sheet.cell(row=row, column=col).value
                 if game_score is not None:
                     game_float = self._safe_float(game_score)
@@ -232,10 +232,10 @@ class ExcelHandler(SheetHandler):
             # Collect games by game number (1-4) per week for this team
             team_weekly_game_totals = {}  # week -> {game_num: total_pins}
             for row in range(2, sheet.max_row + 1):
-                row_team = sheet.cell(row=row, column=1).value
-                row_season = sheet.cell(row=row, column=3).value
-                row_week = sheet.cell(row=row, column=4).value
-                substitute = sheet.cell(row=row, column=13).value
+                row_team = sheet.cell(row=row, column=2).value
+                row_season = sheet.cell(row=row, column=4).value
+                row_week = sheet.cell(row=row, column=5).value
+                substitute = sheet.cell(row=row, column=14).value
                 
                 if (row_season != season_num or 
                     not row_team or 
@@ -250,7 +250,7 @@ class ExcelHandler(SheetHandler):
                     
                     # Sum games by game number (Game 1 = col 5, Game 2 = col 6, etc.)
                     for game_num in range(1, 6):  # Game 1-5
-                        col = 4 + game_num  # Column 5-9
+                        col = 5 + game_num  # Column 6-10
                         game_score = sheet.cell(row=row, column=col).value
                         if game_score is not None:
                             game_float = self._safe_float(game_score)
@@ -276,10 +276,10 @@ class ExcelHandler(SheetHandler):
                     if opp_team_found:
                         # Get opponent's games for this week
                         for row in range(2, sheet.max_row + 1):
-                            row_team = sheet.cell(row=row, column=1).value
-                            row_season = sheet.cell(row=row, column=3).value
-                            row_week = sheet.cell(row=row, column=4).value
-                            substitute = sheet.cell(row=row, column=13).value
+                            row_team = sheet.cell(row=row, column=2).value
+                            row_season = sheet.cell(row=row, column=4).value
+                            row_week = sheet.cell(row=row, column=5).value
+                            substitute = sheet.cell(row=row, column=14).value
                             
                             if (row_season != season_num or
                                 not row_team or
@@ -290,15 +290,15 @@ class ExcelHandler(SheetHandler):
                             
                             # Sum games by game number
                             for game_num in range(1, 6):
-                                col = 4 + game_num
+                                col = 5 + game_num
                                 game_score = sheet.cell(row=row, column=col).value
                                 if game_score is not None:
                                     game_float = self._safe_float(game_score)
                                     if game_float > 0:
                                         opp_games[game_num] += game_float
                     
-                    # Compare Game 1 vs Game 1, Game 2 vs Game 2, etc. (typically up to 4 games)
-                    for game_num in range(1, 5):  # Compare Game 1-4 (up to 4 games per week)
+                    # Compare Game 1 vs Game 1, Game 2 vs Game 2, etc. (up to 5 games if Game 5 is played)
+                    for game_num in range(1, 6):  # Compare Game 1-5 (includes Game 5 if played)
                         team_total = team_games.get(game_num, 0)
                         opp_total = opp_games.get(game_num, 0)
                         
@@ -342,11 +342,11 @@ class ExcelHandler(SheetHandler):
                         team_weekly_game_totals = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
                         
                         for row in range(2, sheet.max_row + 1):
-                            r_team = sheet.cell(row=row, column=1).value
-                            r_player = sheet.cell(row=row, column=2).value
-                            r_season = sheet.cell(row=row, column=3).value
-                            r_week = sheet.cell(row=row, column=4).value
-                            r_substitute = sheet.cell(row=row, column=13).value
+                            r_team = sheet.cell(row=row, column=2).value
+                            r_player = sheet.cell(row=row, column=3).value
+                            r_season = sheet.cell(row=row, column=4).value
+                            r_week = sheet.cell(row=row, column=5).value
+                            r_substitute = sheet.cell(row=row, column=14).value
                             
                             if (r_season == season_num and
                                 r_team and r_team.strip() == team and
@@ -355,7 +355,7 @@ class ExcelHandler(SheetHandler):
                                 
                                 player = r_player.strip() if r_player else "Unknown"
                                 games = []
-                                for col in range(5, 10):
+                                for col in range(6, 11):
                                     game_score = sheet.cell(row=row, column=col).value
                                     if game_score is not None:
                                         game_float = self._safe_float(game_score)
@@ -388,10 +388,10 @@ class ExcelHandler(SheetHandler):
                                 # Get opponent's games for this week
                                 opp_games = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
                                 for row in range(2, sheet.max_row + 1):
-                                    row_team = sheet.cell(row=row, column=1).value
-                                    row_season = sheet.cell(row=row, column=3).value
-                                    row_week = sheet.cell(row=row, column=4).value
-                                    substitute = sheet.cell(row=row, column=13).value
+                                    row_team = sheet.cell(row=row, column=2).value
+                                    row_season = sheet.cell(row=row, column=4).value
+                                    row_week = sheet.cell(row=row, column=5).value
+                                    substitute = sheet.cell(row=row, column=14).value
                                     
                                     if (row_season != season_num or
                                         not row_team or
@@ -402,15 +402,15 @@ class ExcelHandler(SheetHandler):
                                     
                                     # Sum games by game number
                                     for game_num in range(1, 6):
-                                        col = 4 + game_num
+                                        col = 5 + game_num
                                         game_score = sheet.cell(row=row, column=col).value
                                         if game_score is not None:
                                             game_float = self._safe_float(game_score)
                                             if game_float > 0:
                                                 opp_games[game_num] += game_float
                                 
-                                # Compare Game 1 vs Game 1, Game 2 vs Game 2, etc.
-                                for game_num in range(1, 5):  # Compare Game 1-4
+                                # Compare Game 1 vs Game 1, Game 2 vs Game 2, etc. (up to 5 games if Game 5 is played)
+                                for game_num in range(1, 6):  # Compare Game 1-5 (includes Game 5 if played)
                                     team_total = team_weekly_game_totals.get(game_num, 0)
                                     opp_total = opp_games.get(game_num, 0)
                                     
@@ -463,7 +463,7 @@ class ExcelHandler(SheetHandler):
         # Find the team
         team_found = None
         for row in range(2, sheet.max_row + 1):
-            row_team = sheet.cell(row=row, column=1).value
+            row_team = sheet.cell(row=row, column=2).value
             if row_team and isinstance(row_team, str):
                 if team_name.lower() in row_team.strip().lower() or row_team.strip().lower() in team_name.lower():
                     team_found = row_team.strip()
@@ -478,10 +478,10 @@ class ExcelHandler(SheetHandler):
         # Get all teams' data for comparison
         all_teams = {}
         for row in range(2, sheet.max_row + 1):
-            row_team = sheet.cell(row=row, column=1).value
-            row_season = sheet.cell(row=row, column=3).value
-            row_week = sheet.cell(row=row, column=4).value
-            substitute = sheet.cell(row=row, column=13).value
+            row_team = sheet.cell(row=row, column=2).value
+            row_season = sheet.cell(row=row, column=4).value
+            row_week = sheet.cell(row=row, column=5).value
+            substitute = sheet.cell(row=row, column=14).value
             
             if (row_season != season_num or 
                 not row_team or
@@ -498,7 +498,7 @@ class ExcelHandler(SheetHandler):
                     all_teams[team][week] = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
                 
                 for game_num in range(1, 6):
-                    col = 4 + game_num
+                    col = 5 + game_num
                     game_score = sheet.cell(row=row, column=col).value
                     if game_score is not None:
                         game_float = self._safe_float(game_score)
@@ -507,11 +507,11 @@ class ExcelHandler(SheetHandler):
         
         # Get team's weekly data
         for row in range(2, sheet.max_row + 1):
-            row_team = sheet.cell(row=row, column=1).value
-            row_season = sheet.cell(row=row, column=3).value
-            row_week = sheet.cell(row=row, column=4).value
-            substitute = sheet.cell(row=row, column=13).value
-            opponent = sheet.cell(row=row, column=14).value
+            row_team = sheet.cell(row=row, column=2).value
+            row_season = sheet.cell(row=row, column=4).value
+            row_week = sheet.cell(row=row, column=5).value
+            substitute = sheet.cell(row=row, column=14).value
+            opponent = sheet.cell(row=row, column=15).value
             
             if (row_season != season_num or 
                 not row_team or 
@@ -533,7 +533,7 @@ class ExcelHandler(SheetHandler):
                 
                 # Sum games by game number
                 for game_num in range(1, 6):
-                    col = 4 + game_num
+                    col = 5 + game_num
                     game_score = sheet.cell(row=row, column=col).value
                     if game_score is not None:
                         game_float = self._safe_float(game_score)
@@ -557,17 +557,19 @@ class ExcelHandler(SheetHandler):
                 opp_games = all_teams[opp_team_found][week]
                 week_info["opp_game_totals"] = opp_games
                 
-                # Compare Game 1-4
-                for game_num in range(1, 5):
+                # Compare Game 1-5 (includes Game 5 if played)
+                for game_num in range(1, 6):
                     team_total = team_games.get(game_num, 0)
                     opp_total = opp_games.get(game_num, 0)
                     
-                    if team_total > opp_total:
-                        week_info["wins"] += 1
-                    elif team_total < opp_total:
-                        week_info["losses"] += 1
-                    else:
-                        week_info["ties"] += 1
+                    # Only compare if at least one team has data for this game
+                    if team_total > 0 or opp_total > 0:
+                        if team_total > opp_total:
+                            week_info["wins"] += 1
+                        elif team_total < opp_total:
+                            week_info["losses"] += 1
+                        else:
+                            week_info["ties"] += 1
         
         # Calculate weekly averages and totals
         for week, week_info in weekly_data.items():
@@ -579,17 +581,17 @@ class ExcelHandler(SheetHandler):
             # Count all non-zero game scores for this week
             total_games = 0
             for row in range(2, sheet.max_row + 1):
-                row_team = sheet.cell(row=row, column=1).value
-                row_season = sheet.cell(row=row, column=3).value
-                row_week = sheet.cell(row=row, column=4).value
-                substitute = sheet.cell(row=row, column=13).value
+                row_team = sheet.cell(row=row, column=2).value
+                row_season = sheet.cell(row=row, column=4).value
+                row_week = sheet.cell(row=row, column=5).value
+                substitute = sheet.cell(row=row, column=14).value
                 
                 if (row_season == season_num and
                     row_team and row_team.strip() == team_found and
                     self._safe_int(row_week, 0) == week and
                     not self._is_substitute(substitute)):
                     # Count games for this player
-                    for col in range(5, 10):  # Game 1-5
+                    for col in range(6, 11):  # Game 1-5
                         game_score = sheet.cell(row=row, column=col).value
                         if game_score is not None:
                             game_float = self._safe_float(game_score)
@@ -630,12 +632,12 @@ class ExcelHandler(SheetHandler):
         individual_games = []  # [(player, team, week, game_score)]
         
         for row in range(2, sheet.max_row + 1):
-            row_team = sheet.cell(row=row, column=1).value
-            row_player = sheet.cell(row=row, column=2).value
-            row_season = sheet.cell(row=row, column=3).value
-            row_week = sheet.cell(row=row, column=4).value
-            absent = sheet.cell(row=row, column=12).value
-            substitute = sheet.cell(row=row, column=13).value
+            row_team = sheet.cell(row=row, column=2).value
+            row_player = sheet.cell(row=row, column=3).value
+            row_season = sheet.cell(row=row, column=4).value
+            row_week = sheet.cell(row=row, column=5).value
+            absent = sheet.cell(row=row, column=13).value
+            substitute = sheet.cell(row=row, column=14).value
             
             if row_season != season_num:
                 continue
@@ -653,7 +655,7 @@ class ExcelHandler(SheetHandler):
             
             # Get games for this row
             week_games = []
-            for col in range(5, 10):  # Columns 5-9 (Game 1-5)
+            for col in range(6, 11):  # Columns 6-10 (Game 1-5)
                 game_score = sheet.cell(row=row, column=col).value
                 if game_score is not None:
                     game_float = self._safe_float(game_score)
@@ -752,13 +754,13 @@ class ExcelHandler(SheetHandler):
         results = {}
         player_data = {}  # player_name -> {team, scores, absent_count}
         
-        # Column mapping: Team=1, Player=2, Season=3, Week=4, Game1=5, Game2=6, Game3=7, Game4=8, Game5=9, Average=10
+        # Column mapping: Index=1 (ignored), Team=2, Player=3, Season=4, Week=5, Game1=6, Game2=7, Game3=8, Game4=9, Game5=10, Average=11
         for row in range(2, sheet.max_row + 1):
-            row_team = sheet.cell(row=row, column=1).value
-            row_player = sheet.cell(row=row, column=2).value
-            row_season = sheet.cell(row=row, column=3).value
-            row_week = sheet.cell(row=row, column=4).value
-            absent = sheet.cell(row=row, column=12).value  # Absent? column
+            row_team = sheet.cell(row=row, column=2).value
+            row_player = sheet.cell(row=row, column=3).value
+            row_season = sheet.cell(row=row, column=4).value
+            row_week = sheet.cell(row=row, column=5).value
+            absent = sheet.cell(row=row, column=13).value  # Absent? column
             
             # Skip if not this season
             if row_season != season_num:
@@ -786,15 +788,15 @@ class ExcelHandler(SheetHandler):
                 
                 # Get games for this week
                 week_games = []
-                for col in range(5, 10):  # Columns 5-9 (Game 1-5)
+                for col in range(6, 11):  # Columns 6-10 (Game 1-5)
                     game_score = sheet.cell(row=row, column=col).value
                     if game_score is not None:
                         game_float = self._safe_float(game_score)
                         if game_float > 0:
                             week_games.append(game_float)
                 
-                # Get average for this week (from column 10)
-                week_avg = sheet.cell(row=row, column=10).value
+                # Get average for this week (from column 11)
+                week_avg = sheet.cell(row=row, column=11).value
                 if week_avg is not None:
                     week_avg = self._safe_float(week_avg)
                 elif week_games:
@@ -913,9 +915,9 @@ class ExcelHandler(SheetHandler):
             # Find the latest week for this player
             max_week = 0
             for row in range(2, sheet.max_row + 1):
-                row_player = sheet.cell(row=row, column=2).value
-                row_season = sheet.cell(row=row, column=3).value
-                row_week = sheet.cell(row=row, column=4).value
+                row_player = sheet.cell(row=row, column=3).value
+                row_season = sheet.cell(row=row, column=4).value
+                row_week = sheet.cell(row=row, column=5).value
                 
                 if (row_player and isinstance(row_player, str) and 
                     player_name.lower() in row_player.lower() and 
@@ -927,7 +929,7 @@ class ExcelHandler(SheetHandler):
             
             if target_row:
                 # Find first empty game column
-                for col in range(5, 10):  # Game 1-5 columns
+                for col in range(6, 11):  # Game 1-5 columns
                     game_value = sheet.cell(row=target_row, column=col).value
                     if game_value is None or game_value == "":
                         sheet.cell(row=target_row, column=col, value=score)
@@ -936,9 +938,9 @@ class ExcelHandler(SheetHandler):
         else:
             # Find specific week for this player
             for row in range(2, sheet.max_row + 1):
-                row_player = sheet.cell(row=row, column=2).value
-                row_season = sheet.cell(row=row, column=3).value
-                row_week = sheet.cell(row=row, column=4).value
+                row_player = sheet.cell(row=row, column=3).value
+                row_season = sheet.cell(row=row, column=4).value
+                row_week = sheet.cell(row=row, column=5).value
                 
                 if (row_player and isinstance(row_player, str) and 
                     player_name.lower() in row_player.lower() and 
@@ -946,7 +948,7 @@ class ExcelHandler(SheetHandler):
                     self._safe_int(row_week, 0) == week):
                     
                     # Find first empty game column
-                    for col in range(5, 10):  # Game 1-5 columns
+                    for col in range(6, 11):  # Game 1-5 columns
                         game_value = sheet.cell(row=row, column=col).value
                         if game_value is None or game_value == "":
                             sheet.cell(row=row, column=col, value=score)

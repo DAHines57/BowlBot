@@ -47,11 +47,13 @@ class CommandParser:
         r'standings?',  # "standings"
     ]
     
-    # Patterns for team record
+    # Patterns for team weekly breakdown
     TEAM_RECORD_PATTERNS = [
-        r'team\s+(.+)\s+record',  # "team Red record"
-        r'team\s+record\s+(.+)',  # "team record Red"
-        r'record\s+(.+)',  # "record Red"
+        r'team\s+(.+)\s+weekly',  # "team Red weekly"
+        r'team\s+weekly\s+(.+)',  # "team weekly Red"
+        r'team\s+(.+)\s+record',  # "team Red record" (backward compatibility)
+        r'team\s+record\s+(.+)',  # "team record Red" (backward compatibility)
+        r'record\s+(.+)',  # "record Red" (backward compatibility)
     ]
     
     # Common patterns for player queries
@@ -205,7 +207,7 @@ class CommandParser:
                 params["season"] = season
             return Command(CommandType.BEST_GAMES, params)
         
-        # Check for team record (before team scores to catch "team X record")
+        # Check for team weekly (before team scores to catch "team X weekly")
         for pattern in self.TEAM_RECORD_PATTERNS:
             match = re.match(pattern, message, re.IGNORECASE)
             if match:
@@ -229,10 +231,12 @@ class CommandParser:
                     params["season"] = season
                 if week:
                     params["week"] = week
-                if team_name and team_name.lower() not in ['scores', 'score']:
+                # Handle "team" or "teams" without a name (show all teams)
+                if team_name and team_name.lower() not in ['scores', 'score', 'weekly']:
                     params["team_name"] = team_name.strip()
                     return Command(CommandType.TEAM_SCORES, params)
                 else:
+                    # No team name specified - show all teams
                     return Command(CommandType.TEAM_SCORES, params)
         
         # Check for player scores
@@ -286,12 +290,10 @@ class CommandParser:
         """Get help message with available commands."""
         return """🏳️ *BowlBot Commands:*
 
-*Team Scores:*
-• `team` or `teams` - Show all team standings (sorted by average)
-• `team [name]` - Show specific team stats with players
-• `team [name] record` - Show weekly breakdown for team
-• `team [name] season [N]` - Show team stats for specific season
-• `season [N] team [name]` - Alternative format
+*Team Commands:*
+• `team` or `teams` - Show all team standings (record and average). Uses most recent season, or `s[N]` if specified
+• `team [name]` - Show overall standing, record, average, total pins, and each player's average. Uses most recent season, or `s[N]` if specified
+• `team [name] weekly` - Weekly breakdown showing opponent, record, total pins, and average for each week. Uses most recent season, or `s[N]` if specified
 
 *Player Scores:*
 • `player [name]` or `[name] stats` - Show player stats (avg, std dev, highest/lowest)
@@ -308,7 +310,7 @@ class CommandParser:
 • `seasons` - List all available seasons
 • Use `season [N]` or `s[N]` to specify a season (e.g., "season 9" or "s9")
 • Use `week [N]` or `w[N]` to specify a week (e.g., "week 5" or "w5")
-• If not specified, uses current season
+• If not specified, uses most recent season automatically
 • When week is specified, shows individual games for that week
 
 *Lists:*
@@ -326,9 +328,10 @@ class CommandParser:
 • `help` - Show this message
 
 *Examples:*
-• `team Rolling Stoned`
-• `team Rolling Stoned record`
-• `team Rolling Stoned season 9`
+• `team` or `teams` - Show all teams
+• `team Rolling Stoned` - Show team stats
+• `team Rolling Stoned weekly` - Show weekly breakdown
+• `team Rolling Stoned s9` - Show team stats for Season 9
 • `player John season 10`
 • `players` - List all players
 • `averages` - Show player averages

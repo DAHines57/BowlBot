@@ -59,12 +59,10 @@ Your Excel file should have:
 
 ### Commands
 
-**Team Scores:**
-- `team` or `teams` - Show all team standings (sorted by average)
-- `team [name]` - Show specific team stats with players (e.g., `team Rolling Stoned`)
-- `team [name] record` - Show weekly breakdown for team
-- `team [name] season [N]` - Show team stats for specific season
-- `season [N] team [name]` - Alternative format
+**Team Commands:**
+- `team` or `teams` - Show all team standings (record and average). Uses most recent season, or `s[N]` if specified (e.g., `teams s9`)
+- `team [name]` - Show overall standing, record, average, total pins, and each player's average. Uses most recent season, or `s[N]` if specified (e.g., `team Rolling Stoned s9`)
+- `team [name] weekly` - Weekly breakdown showing opponent, record, total pins, and average for each week. Uses most recent season, or `s[N]` if specified (e.g., `team Rolling Stoned weekly s9`)
 
 **Player Scores:**
 - `player [name]` or `[name] stats` - Show player stats (average, std dev, highest/lowest game)
@@ -80,7 +78,7 @@ Your Excel file should have:
 **Seasons:**
 - `seasons` - List all available seasons
 - Use `season [N]` or `s[N]` to specify a season (e.g., "season 9" or "s9")
-- If not specified, uses current season
+- If not specified, uses most recent season automatically
 
 **Lists:**
 - `players` - List all players (sorted by average)
@@ -99,6 +97,16 @@ Your Excel file should have:
 ### Examples
 
 ```
+User: team
+Bot: 🏆 Team Standings (Season 9)
+     
+     1. *Rolling Stoned*
+        13-15-0 | Avg: 185.2
+     
+     2. *Pin Seekers*
+        15-13-0 | Avg: 180.5
+     ...
+
 User: team Rolling Stoned
 Bot: 🏆 Rolling Stoned (Season 9)
      
@@ -110,6 +118,18 @@ Bot: 🏆 Rolling Stoned (Season 9)
        • Player1: 190.5
        • Player2: 180.3
        • Player3: 175.0
+
+User: team Rolling Stoned weekly
+Bot: 📊 Rolling Stoned Weekly Record (Season 9)
+     
+     *Total Record: 13-15-0*
+     
+     *Week 1* vs Pin Seekers
+       3-1-0 | 2850 - 2750 | Avg: 178.1
+     
+     *Week 2* vs Team Name
+       2-2-0 | 2800 - 2800 | Avg: 175.0
+     ...
 
 User: player Dylan season 9
 Bot: 🎳 Dylan (Season 9)
