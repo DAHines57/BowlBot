@@ -60,36 +60,26 @@ Your Excel file should have:
 ### Commands
 
 **Team Commands:**
-- `team` or `teams` - Show all team standings (record and average). Uses most recent season, or `s[N]` if specified (e.g., `teams s9`)
-- `team [name]` - Show overall standing, record, average, total pins, and each player's average. Uses most recent season, or `s[N]` if specified (e.g., `team Rolling Stoned s9`)
-- `team [name] weekly` - Weekly breakdown showing opponent, record, total pins, and average for each week. Uses most recent season, or `s[N]` if specified (e.g., `team Rolling Stoned weekly s9`)
+- `teams` - All team standings (record and average). Uses most recent season, or `s[N]` if specified (e.g., `teams s9`)
+- `team [name]` - Season stats for one team: record, average, total pins, and each player's average. Uses most recent season, or `s[N]` if specified (e.g., `team Rolling Stoned s9`)
+- `team [name] weekly` - Week-by-week breakdown: opponent, record, total pins, and average per week. Uses most recent season, or `s[N]` if specified (e.g., `team Rolling Stoned weekly s9`)
 
-**Player Scores:**
-- `player [name]` or `[name] stats` - Show player stats (average, std dev, highest/lowest game)
-- `score [name]` or `[name] score` - Show player scores (same as above)
-- `player [name] season [N]` - Show player stats for specific season
+**Player Commands:**
+- `players` - All players sorted by average. Use `s[N]` for a specific season (e.g., `players s9`)
+- `player [name]` or `[name] stats` - Stats for one player: average, std dev, highest/lowest game. Use `s[N]` or `w[N]` to filter (e.g., `player Dylan s9`, `player Dylan w5`)
 
-**Add Scores:**
-- `add score [score] [player]` - Add a score (e.g., `add score 180 Dylan`)
-- `enter score [score] [player]` - Enter a score
-- `[player] [score]` - Quick add (e.g., `Dylan 180`)
-- `add score [score] [player] season [N]` - Add score to specific season
+**League Leaders:**
+- `leaders` - Top 10 individual games, top 10 player weeks, top 5 team weeks. Use `s[N]` for a specific season (e.g., `leaders s9`)
 
-**Seasons:**
+**Seasons & Weeks:**
 - `seasons` - List all available seasons
-- Use `season [N]` or `s[N]` to specify a season (e.g., "season 9" or "s9")
-- If not specified, uses most recent season automatically
+- Add `s[N]` or `season [N]` to any command for a specific season (e.g., `teams s8`, `player Dylan season 9`)
+- Add `w[N]` or `week [N]` to team/player commands to see individual games for that week (e.g., `team Pin Seekers w5`, `player Dylan w5`)
+- If not specified, the most recent season is used automatically
 
-**Lists:**
-- `players` - List all players (sorted by average)
-- `teams` - List all teams (sorted by average)
-
-**Statistics:**
-- `stats` or `summary` - Show all league statistics
-- `averages` - Show all player averages
-- `best weeks` - Show top 10 individual player weeks
-- `best team weeks` - Show top 5 team weekly totals
-- `best games` - Show top 10 highest individual games
+**Scores:**
+- `add score [score] [player]` - Add a game score (e.g., `add score 180 Dylan`)
+- `add score [score] [player] s[N]` - Add a score to a specific season
 
 **Help:**
 - `help` - Show available commands
@@ -97,49 +87,53 @@ Your Excel file should have:
 ### Examples
 
 ```
-User: team
+User: teams
 Bot: 🏆 Team Standings (Season 9)
-     
-     1. *Rolling Stoned*
-        13-15-0 | Avg: 185.2
-     
-     2. *Pin Seekers*
-        15-13-0 | Avg: 180.5
+     1. *Rolling Stoned* — 13-15 | Avg: 185.2
+     2. *Pin Seekers* — 15-13 | Avg: 180.5
      ...
 
-User: team Rolling Stoned
+User: team Rolling Stoned s9
 Bot: 🏆 Rolling Stoned (Season 9)
-     
-     📊 Record: 13-15-0
+     📊 Record: 13-15
      📈 Team Average: 185.2
      🎳 Total pins: 18500
-     
      👥 Players:
        • Player1: 190.5
        • Player2: 180.3
-       • Player3: 175.0
 
 User: team Rolling Stoned weekly
 Bot: 📊 Rolling Stoned Weekly Record (Season 9)
-     
-     *Total Record: 13-15-0*
-     
+     *Total Record: 13-15*
      *Week 1* vs Pin Seekers
-       3-1-0 | 2850 - 2750 | Avg: 178.1
-     
-     *Week 2* vs Team Name
-       2-2-0 | 2800 - 2800 | Avg: 175.0
+       3-1 | 2850 - 2750 | Avg: 178.1
      ...
 
-User: player Dylan season 9
+User: team Pin Seekers w5
+Bot: 🏆 Pin Seekers - Week 5
+     vs Rolling Stoned
+     📊 Record: 2-3
+     👥 Players: ...
+
+User: players
+Bot: 👥 All Players (Season 9)
+     • Dylan (Rolling Stoned) - Avg: 185.5 (36 games)
+     ...
+
+User: player Dylan s9
 Bot: 🎳 Dylan (Season 9)
      Team: Rolling Stoned
-     
      📊 Average: 175.5
      📏 Std Dev: 25.3
      🎯 Highest Game: 280
      📉 Lowest Game: 120
      📈 Games: 28
+
+User: leaders
+Bot: 🏆 League Leaders (Season 9)
+     🎯 Top 10 Individual Games: ...
+     ⭐ Top 10 Player Weeks: ...
+     🏅 Top 5 Team Weeks: ...
 
 User: add score 195 Dylan
 Bot: ✅ Score of 195 added for Dylan!
@@ -176,7 +170,7 @@ BowlBot/
 - Absent weeks are excluded from player average calculations
 - Substitute entries are excluded from team average calculations
 - Total pins includes absences (weeks where average was taken) but never substitutes
-- Wins/losses are calculated per game (Game 1 vs Game 1, Game 2 vs Game 2, etc.) - up to 4 games per week
+- Wins/losses are calculated per game (Game 1 vs Game 1, Game 2 vs Game 2, etc.) - up to 5 games per week
 - Team average is the average of individual player averages (excluding absent/substitute weeks)
 - The bot automatically uses the most recent season if no season is specified
 - Player and team name matching is case-insensitive and supports partial matches

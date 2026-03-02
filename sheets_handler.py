@@ -5,6 +5,7 @@ Supports local Excel files with one row per week per player structure.
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional
 from openpyxl import load_workbook
+from utils import safe_float, safe_int
 
 
 class SheetHandler(ABC):
@@ -68,31 +69,15 @@ class ExcelHandler(SheetHandler):
             return None
     
     def _safe_float(self, value, default=0.0):
-        """Safely convert to float."""
-        if value is None:
-            return default
-        if isinstance(value, (int, float)):
-            return float(value)
-        if isinstance(value, str):
-            try:
-                return float(value)
-            except (ValueError, TypeError):
-                return default
-        return default
-    
+        return safe_float(value, default)
+
     def _safe_int(self, value, default=0):
-        """Safely convert to int."""
-        if value is None:
-            return default
-        if isinstance(value, (int, float)):
-            return int(value)
-        if isinstance(value, str):
-            try:
-                return int(float(value))
-            except (ValueError, TypeError):
-                return default
-        return default
+        return safe_int(value, default)
     
+    def _normalize(self, text: str) -> str:
+        """Normalize text for comparison — lowercase and flatten curly quotes."""
+        return text.lower().replace('\u2018', "'").replace('\u2019', "'").replace('\u201c', '"').replace('\u201d', '"')
+
     def _is_absent(self, value) -> bool:
         """Check if absent flag is set."""
         if value is None:
@@ -158,8 +143,8 @@ class ExcelHandler(SheetHandler):
                 continue
             
             # If week is specified, skip other weeks
-            if week is not None:
-                if self._safe_int(row_week, 0) != week:
+            if week_param is not None:
+                if self._safe_int(row_week, 0) != week_param:
                     continue
             
             if not row_team or not isinstance(row_team, str):
@@ -332,7 +317,7 @@ class ExcelHandler(SheetHandler):
             
             # If week parameter is specified and team matches, return week data
             if week_param is not None and team_name:
-                if team_name.lower() in team.lower() or team.lower() in team_name.lower():
+                if self._normalize(team_name) in self._normalize(team) or self._normalize(team) in self._normalize(team_name):
                     # Get week data
                     week_info = data["weekly_totals"].get(week_param)
                     if week_info:
@@ -438,7 +423,7 @@ class ExcelHandler(SheetHandler):
             
             if team_name is None:
                 results[team] = team_result
-            elif team_name.lower() in team.lower() or team.lower() in team_name.lower():
+            elif self._normalize(team_name) in self._normalize(team) or self._normalize(team) in self._normalize(team_name):
                 return {"team": team, **team_result}
         
         if team_name:
@@ -465,7 +450,7 @@ class ExcelHandler(SheetHandler):
         for row in range(2, sheet.max_row + 1):
             row_team = sheet.cell(row=row, column=2).value
             if row_team and isinstance(row_team, str):
-                if team_name.lower() in row_team.strip().lower() or row_team.strip().lower() in team_name.lower():
+                if self._normalize(team_name) in self._normalize(row_team.strip()) or self._normalize(row_team.strip()) in self._normalize(team_name):
                     team_found = row_team.strip()
                     break
         
@@ -863,7 +848,7 @@ class ExcelHandler(SheetHandler):
             
             # If week is specified and player matches, return week data
             if week is not None and player_name:
-                if player_name.lower() in player.lower() or player.lower() in player_name.lower():
+                if self._normalize(player_name) in self._normalize(player) or self._normalize(player) in self._normalize(player_name):
                     # Find the week data
                     week_info = None
                     for w in data["weeks"]:
@@ -886,7 +871,7 @@ class ExcelHandler(SheetHandler):
             
             if player_name is None:
                 results[player] = result_data
-            elif player_name.lower() in player.lower() or player.lower() in player_name.lower():
+            elif self._normalize(player_name) in self._normalize(player) or self._normalize(player) in self._normalize(player_name):
                 return {"player": player, **result_data}
         
         if player_name:
@@ -897,7 +882,13 @@ class ExcelHandler(SheetHandler):
         return results
     
     def add_score(self, player_name: str, score: int, week: Optional[int] = None, season: Optional[str] = None) -> bool:
-        """Add a score for a player. Note: This modifies the Excel file."""
+        """Add a score for a player. Note: This modifies the Excel file.
+
+        LIMITATION: The workbook is loaded with data_only=True, which caches formula results
+        as static values. Saving after a write will permanently strip any Excel formulas in the
+        file (e.g. the Average column). Do not use this method if you rely on Excel formulas
+        being preserved. Manual edits in Excel are the recommended way to update scores.
+        """
         season_num = self._get_season_number(season)
         if season_num is None:
             return False
@@ -957,10 +948,6 @@ class ExcelHandler(SheetHandler):
                     break
         
         return False
-    
-    def get_seasons(self) -> List[str]:
-        """Get list of available season sheet names."""
-        return [sheet for sheet in self.workbook.sheetnames if sheet.startswith('Season')]
 
 
 def get_sheet_handler(handler_type: str = "excel", **kwargs) -> SheetHandler:

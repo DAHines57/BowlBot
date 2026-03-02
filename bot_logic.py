@@ -3,7 +3,8 @@ Bot logic for handling commands and generating responses.
 """
 from typing import Dict, Optional
 from sheets_handler import SheetHandler
-from command_parser import Command, CommandType
+from command_parser import Command, CommandParser, CommandType
+from utils import safe_float, safe_int
 
 
 class BotLogic:
@@ -13,30 +14,10 @@ class BotLogic:
         self.sheet_handler = sheet_handler
     
     def _safe_float(self, value, default=0.0):
-        """Safely convert a value to float, handling strings and None."""
-        if value is None:
-            return default
-        if isinstance(value, (int, float)):
-            return float(value)
-        if isinstance(value, str):
-            try:
-                return float(value)
-            except (ValueError, TypeError):
-                return default
-        return default
-    
+        return safe_float(value, default)
+
     def _safe_int(self, value, default=0):
-        """Safely convert a value to int, handling strings and None."""
-        if value is None:
-            return default
-        if isinstance(value, (int, float)):
-            return int(value)
-        if isinstance(value, str):
-            try:
-                return int(float(value))
-            except (ValueError, TypeError):
-                return default
-        return default
+        return safe_int(value, default)
     
     def handle_command(self, command: Command, season: Optional[str] = None) -> str:
         """
@@ -53,7 +34,6 @@ class BotLogic:
         command_season = command.params.get("season", season)
         
         if command.command_type == CommandType.HELP:
-            from command_parser import CommandParser
             parser = CommandParser()
             return parser.get_help_message()
         
@@ -63,23 +43,8 @@ class BotLogic:
         elif command.command_type == CommandType.LIST_PLAYERS:
             return self._handle_list_players(command_season)
         
-        elif command.command_type == CommandType.LIST_TEAMS:
-            return self._handle_list_teams(command_season)
-        
-        elif command.command_type == CommandType.STATS:
-            return self._handle_stats(command_season)
-        
-        elif command.command_type == CommandType.PLAYER_AVERAGES:
-            return self._handle_player_averages(command_season)
-        
-        elif command.command_type == CommandType.BEST_PLAYER_WEEKS:
-            return self._handle_best_player_weeks(command_season)
-        
-        elif command.command_type == CommandType.BEST_TEAM_WEEKS:
-            return self._handle_best_team_weeks(command_season)
-        
-        elif command.command_type == CommandType.BEST_GAMES:
-            return self._handle_best_games(command_season)
+        elif command.command_type == CommandType.LEADERS:
+            return self._handle_leaders(command_season)
         
         elif command.command_type == CommandType.TEAM_SCORES:
             return self._handle_team_scores(
@@ -285,8 +250,8 @@ class BotLogic:
         except Exception as e:
             return f"❌ Error retrieving team record: {str(e)}"
     
-    def _handle_stats(self, season: Optional[str]) -> str:
-        """Handle league statistics query."""
+    def _handle_leaders(self, season: Optional[str]) -> str:
+        """Handle league leaders query — top games, top player weeks, top team weeks."""
         try:
             data = self.sheet_handler.get_league_stats(season)
             
@@ -297,176 +262,41 @@ class BotLogic:
                 return error_msg
             
             season_str = data.get("season", season or "Current Season")
-            player_averages = data.get("player_averages", [])
             top_player_weeks = data.get("top_player_weeks", [])
+            player_averages = data.get("player_averages", [])
             top_team_totals = data.get("top_team_totals", [])
             top_games = data.get("top_games", [])
             
-            response = f"📊 *League Statistics*"
-            if season_str:
-                response += f" ({season_str})"
-            response += "\n\n"
-            
-            # Player averages (all players sorted)
-            response += "🏆 *Player Averages:*\n"
-            for i, player_data in enumerate(player_averages, 1):
-                player = player_data["player"]
-                team = player_data["team"]
-                avg = player_data["average"]
-                games = player_data["games"]
-                response += f"{i}. {player} ({team}): {avg:.1f} ({games} games)\n"
-            
-            response += "\n"
-            
-            # Top 10 player weeks
-            response += "⭐ *Top 10 Individual Player Weeks:*\n"
-            for i, (player, team, week, total) in enumerate(top_player_weeks, 1):
-                response += f"{i}. {player} ({team}) - Week {week}: {int(total)} pins\n"
-            
-            response += "\n"
-            
-            # Top 5 team totals
-            response += "🏅 *Top 5 Team Weekly Totals:*\n"
-            for i, (team, week, total) in enumerate(top_team_totals, 1):
-                response += f"{i}. {team} - Week {week}: {int(total)} pins\n"
-            
-            response += "\n"
-            
-            # Top 10 individual games
-            response += "🎯 *Top 10 Individual Games:*\n"
-            for i, (player, team, week, score) in enumerate(top_games, 1):
-                response += f"{i}. {player} ({team}) - Week {week}: {int(score)}\n"
-            
-            return response.strip()
-        
-        except Exception as e:
-            return f"❌ Error retrieving statistics: {str(e)}"
-    
-    def _handle_player_averages(self, season: Optional[str]) -> str:
-        """Handle player averages query."""
-        try:
-            data = self.sheet_handler.get_league_stats(season)
-            
-            if "error" in data:
-                error_msg = f"❌ {data['error']}"
-                if season:
-                    error_msg += f" (Season: {season})"
-                return error_msg
-            
-            season_str = data.get("season", season or "Current Season")
-            player_averages = data.get("player_averages", [])
-            
-            response = f"🏆 *Player Averages*"
-            if season_str:
-                response += f" ({season_str})"
-            response += "\n\n"
-            
-            for i, player_data in enumerate(player_averages, 1):
-                player = player_data["player"]
-                team = player_data["team"]
-                avg = player_data["average"]
-                games = player_data["games"]
-                response += f"{i}. {player} ({team}): {avg:.1f} ({games} games)\n"
-            
-            return response.strip()
-        
-        except Exception as e:
-            return f"❌ Error retrieving player averages: {str(e)}"
-    
-    def _handle_best_player_weeks(self, season: Optional[str]) -> str:
-        """Handle best player weeks query."""
-        try:
-            data = self.sheet_handler.get_league_stats(season)
-            
-            if "error" in data:
-                error_msg = f"❌ {data['error']}"
-                if season:
-                    error_msg += f" (Season: {season})"
-                return error_msg
-            
-            season_str = data.get("season", season or "Current Season")
-            top_player_weeks = data.get("top_player_weeks", [])
-            player_averages = data.get("player_averages", [])
-            
-            # Create a lookup for player averages
             avg_lookup = {p["player"]: p["average"] for p in player_averages}
             
-            response = f"⭐ *Top 10 Individual Player Weeks*"
+            response = f"🏆 *League Leaders*"
             if season_str:
                 response += f" ({season_str})"
             response += "\n\n"
             
+            response += "🎯 *Top 10 Individual Games:*\n"
+            for i, (player, team, week, score) in enumerate(top_games, 1):
+                response += f"{i}. {player} ({team}) - Wk {week}: {int(score)}\n"
+            
+            response += "\n⭐ *Top 10 Player Weeks:*\n"
             for i, week_data in enumerate(top_player_weeks, 1):
                 if len(week_data) == 5:
                     player, team, week, total, num_games = week_data
                 else:
-                    # Fallback for old format
                     player, team, week, total = week_data
-                    num_games = 4  # Default estimate
-                
-                avg = avg_lookup.get(player, 0)
-                # Calculate average for this week
+                    num_games = 4
                 week_avg = total / num_games if num_games > 0 else 0
-                response += f"{i}. {player} ({team}) - Week {week}: {int(total)} pins (Week Avg: {week_avg:.1f}, Season Avg: {avg:.1f})\n"
+                season_avg = avg_lookup.get(player, 0)
+                response += f"{i}. {player} ({team}) - Wk {week}: {int(total)} ({week_avg:.1f} avg, {season_avg:.1f} season)\n"
             
-            return response.strip()
-        
-        except Exception as e:
-            return f"❌ Error retrieving best player weeks: {str(e)}"
-    
-    def _handle_best_team_weeks(self, season: Optional[str]) -> str:
-        """Handle best team weeks query."""
-        try:
-            data = self.sheet_handler.get_league_stats(season)
-            
-            if "error" in data:
-                error_msg = f"❌ {data['error']}"
-                if season:
-                    error_msg += f" (Season: {season})"
-                return error_msg
-            
-            season_str = data.get("season", season or "Current Season")
-            top_team_totals = data.get("top_team_totals", [])
-            
-            response = f"🏅 *Top 5 Team Weekly Totals*"
-            if season_str:
-                response += f" ({season_str})"
-            response += "\n\n"
-            
+            response += "\n🏅 *Top 5 Team Weeks:*\n"
             for i, (team, week, total) in enumerate(top_team_totals, 1):
-                response += f"{i}. {team} - Week {week}: {int(total)} pins\n"
+                response += f"{i}. {team} - Wk {week}: {int(total)} pins\n"
             
             return response.strip()
         
         except Exception as e:
-            return f"❌ Error retrieving best team weeks: {str(e)}"
-    
-    def _handle_best_games(self, season: Optional[str]) -> str:
-        """Handle best games query."""
-        try:
-            data = self.sheet_handler.get_league_stats(season)
-            
-            if "error" in data:
-                error_msg = f"❌ {data['error']}"
-                if season:
-                    error_msg += f" (Season: {season})"
-                return error_msg
-            
-            season_str = data.get("season", season or "Current Season")
-            top_games = data.get("top_games", [])
-            
-            response = f"🎯 *Top 10 Highest Individual Games*"
-            if season_str:
-                response += f" ({season_str})"
-            response += "\n\n"
-            
-            for i, (player, team, week, score) in enumerate(top_games, 1):
-                response += f"{i}. {player} ({team}) - Week {week}: {int(score)}\n"
-            
-            return response.strip()
-        
-        except Exception as e:
-            return f"❌ Error retrieving best games: {str(e)}"
+            return f"❌ Error retrieving leaders: {str(e)}"
     
     def _handle_player_scores(self, player_name: Optional[str], season: Optional[str], week: Optional[int] = None) -> str:
         """Handle player scores query."""
@@ -627,50 +457,15 @@ class BotLogic:
             for player_name, player_data in sorted_players:
                 team = player_data.get("team", "Unknown")
                 avg = self._safe_float(player_data.get("average", 0))
-                games = len(player_data.get("scores", []))
-                response += f"• {player_name} ({team}) - Avg: {avg:.1f} ({games} games)\n"
+                parts = player_name.strip().split()
+                short_name = f"{parts[0]} {parts[-1][0]}." if len(parts) > 1 else player_name
+                response += f"• {short_name} - {avg:.1f}\n"
             
             return response.strip()
         
         except Exception as e:
             return f"❌ Error retrieving players: {str(e)}"
     
-    def _handle_list_teams(self, season: Optional[str]) -> str:
-        """Handle list teams query."""
-        try:
-            data = self.sheet_handler.get_team_scores(None, season)
-            
-            if not data:
-                error_msg = "❌ No teams found."
-                if season:
-                    error_msg += f" (Season: {season})"
-                return error_msg
-            
-            season_str = season or "Current Season"
-            response = f"🏆 *All Teams*"
-            if season_str:
-                response += f" ({season_str})"
-            response += "\n\n"
-            
-            # Sort teams by average (highest to lowest)
-            sorted_teams = sorted(data.items(), key=lambda x: self._safe_float(x[1].get("avg_per_game", 0)), reverse=True)
-            
-            for team_name, team_data in sorted_teams:
-                wins = self._safe_int(team_data.get("wins", 0))
-                losses = self._safe_int(team_data.get("losses", 0))
-                ties = self._safe_int(team_data.get("ties", 0))
-                avg = self._safe_float(team_data.get("avg_per_game", 0))
-                
-                record = f"{wins}-{losses}"
-                if ties > 0:
-                    record += f"-{ties}"
-                
-                response += f"• {team_name} - {record} | Avg: {avg:.1f}\n"
-            
-            return response.strip()
-        
-        except Exception as e:
-            return f"❌ Error retrieving teams: {str(e)}"
     
     def _handle_add_score(self, player_name: Optional[str], score: Optional[int], 
                          week: Optional[int], season: Optional[str]) -> str:
