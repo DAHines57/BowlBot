@@ -668,11 +668,10 @@ class ExcelHandler(SheetHandler):
                     player_weekly_totals.append((player, team, self._safe_int(row_week, 0), week_total, num_games))
             
             # For team weekly totals: include absent (but not substitutes)
-            # We'll aggregate these by team and week below
             if row_week is not None:
                 week = self._safe_int(row_week, 0)
                 if week > 0 and week_total > 0:
-                    team_weekly_totals.append((team, week, week_total))
+                    team_weekly_totals.append((team, week, week_total, len(week_games)))
         
         # Calculate player averages
         player_avg_list = []
@@ -690,21 +689,25 @@ class ExcelHandler(SheetHandler):
         # Sort player averages (highest first)
         player_avg_list.sort(key=lambda x: x["average"], reverse=True)
         
-        # Sort player weekly totals (highest first)
-        player_weekly_totals.sort(key=lambda x: x[3], reverse=True)
+        # Sort player weekly totals by average (highest first)
+        player_weekly_totals.sort(key=lambda x: x[3] / x[4] if x[4] else 0, reverse=True)
         top_player_weeks = player_weekly_totals[:10]  # (player, team, week, total, num_games)
         
         # Aggregate team weekly totals (sum all players for each team/week)
-        team_week_dict = {}  # (team, week) -> total
-        for team, week, total in team_weekly_totals:
+        team_week_dict = {}  # (team, week) -> [total, games]
+        for team, week, total, games in team_weekly_totals:
             key = (team, week)
             if key not in team_week_dict:
-                team_week_dict[key] = 0
-            team_week_dict[key] += total
-        
-        # Convert to list and sort
-        team_totals_list = [(team, week, total) for (team, week), total in team_week_dict.items()]
-        team_totals_list.sort(key=lambda x: x[2], reverse=True)
+                team_week_dict[key] = [0, 0]
+            team_week_dict[key][0] += total
+            team_week_dict[key][1] += games
+
+        # Convert to list and sort by average
+        team_totals_list = [
+            (team, week, vals[0], vals[1])
+            for (team, week), vals in team_week_dict.items()
+        ]
+        team_totals_list.sort(key=lambda x: x[2] / x[3] if x[3] else 0, reverse=True)
         top_team_totals = team_totals_list[:5]
         
         # Sort individual games (highest first)
@@ -717,6 +720,104 @@ class ExcelHandler(SheetHandler):
             "top_player_weeks": top_player_weeks,
             "top_team_totals": top_team_totals,
             "top_games": top_games
+        }
+
+    def get_all_time_stats(self) -> Dict:
+        """Aggregate league stats across all seasons for all-time leaders."""
+        all_individual_games = []   # (player, team, label, score)
+        all_player_weeks = []       # (player, team, label, total, num_games)
+        all_team_weeks = {}         # (team, label) -> total
+        player_totals = {}          # player -> {team, games: []}
+
+        # Iterate seasons from latest to earliest so player_totals["team"] reflects most recent team
+        sorted_sheets = sorted(
+            [s for s in self.workbook.sheetnames if s.startswith("Season") and s.split()[-1].isdigit()],
+            key=lambda s: int(s.split()[-1]),
+            reverse=True
+        )
+        for sheet_name in sorted_sheets:
+            season_num = int(sheet_name.split()[-1])
+            sheet = self.workbook[sheet_name]
+
+            team_week_pins: Dict[tuple, float] = {}
+
+            for row in range(2, sheet.max_row + 1):
+                row_team   = sheet.cell(row=row, column=2).value
+                row_player = sheet.cell(row=row, column=3).value
+                row_season = sheet.cell(row=row, column=4).value
+                row_week   = sheet.cell(row=row, column=5).value
+                absent     = sheet.cell(row=row, column=13).value
+                substitute = sheet.cell(row=row, column=14).value
+
+                if row_season != season_num:
+                    continue
+                if not row_team or not isinstance(row_team, str):
+                    continue
+
+                team   = row_team.strip()
+                week   = self._safe_int(row_week, 0)
+                label  = f"S{season_num} W{week}"
+                is_sub = self._is_substitute(substitute)
+                is_absent = self._is_absent(absent)
+
+                if is_sub:
+                    continue
+
+                week_games = []
+                for col in range(6, 11):
+                    g = self._safe_float(sheet.cell(row=row, column=col).value)
+                    if g and g > 0:
+                        week_games.append(g)
+                        all_individual_games.append((row_player, team, label, g))
+
+                week_total = sum(week_games)
+
+                if not is_absent and row_player and isinstance(row_player, str):
+                    player = row_player.strip()
+                    if player not in player_totals:
+                        player_totals[player] = {"team": team, "games": []}
+                    player_totals[player]["games"].extend(week_games)
+
+                    if week_total > 0:
+                        all_player_weeks.append((row_player, team, label, week_total, len(week_games)))
+
+                if week > 0 and week_total > 0:
+                    key = (team, label)
+                    if key not in team_week_pins:
+                        team_week_pins[key] = [0, 0]
+                    team_week_pins[key][0] += week_total
+                    team_week_pins[key][1] += len(week_games)
+
+            for (team, label), vals in team_week_pins.items():
+                if label not in all_team_weeks:
+                    all_team_weeks[(team, label)] = [0, 0]
+                all_team_weeks[(team, label)][0] += vals[0]
+                all_team_weeks[(team, label)][1] += vals[1]
+
+        # Sort and trim
+        all_individual_games.sort(key=lambda x: x[3], reverse=True)
+        all_player_weeks.sort(key=lambda x: x[3] / x[4] if x[4] else 0, reverse=True)
+        team_totals = sorted(
+            [(t, lbl, vals[0], vals[1]) for (t, lbl), vals in all_team_weeks.items()],
+            key=lambda x: x[2] / x[3] if x[3] else 0, reverse=True
+        )
+
+        player_avg_list = sorted(
+            [{"player": p, "team": d["team"],
+              "average": round(sum(d["games"]) / len(d["games"]), 2),
+              "highest_game": max(d["games"]),
+              "lowest_game": min(d["games"]),
+              "games": len(d["games"])}
+             for p, d in player_totals.items() if d["games"]],
+            key=lambda x: x["average"], reverse=True
+        )
+
+        return {
+            "season": "All Time",
+            "player_averages": player_avg_list,
+            "top_player_weeks": all_player_weeks[:10],
+            "top_team_totals": team_totals[:5],
+            "top_games": all_individual_games[:10],
         }
     
     def get_player_scores(self, player_name: Optional[str] = None, season: Optional[str] = None, week: Optional[int] = None) -> Dict:
@@ -948,6 +1049,236 @@ class ExcelHandler(SheetHandler):
                     break
         
         return False
+
+    def get_latest_week(self, season: Optional[str] = None) -> int:
+        """Return the highest week number that has any data in the given season."""
+        if season is None:
+            season = self._get_current_season()
+        season_num = self._get_season_number(season)
+        if season_num is None:
+            return 1
+        sheet_name = f"Season {season_num}"
+        if sheet_name not in self.workbook.sheetnames:
+            return 1
+        sheet = self.workbook[sheet_name]
+        max_week = 1
+        for row in range(2, sheet.max_row + 1):
+            if sheet.cell(row=row, column=4).value != season_num:
+                continue
+            w = self._safe_int(sheet.cell(row=row, column=5).value, 0)
+            if w > max_week:
+                max_week = w
+        return max_week
+
+    def get_week_summary(self, week: int, season: Optional[str] = None) -> dict:
+        """Return all player and league stats for a specific week."""
+        if season is None:
+            season = self._get_current_season()
+        season_num = self._get_season_number(season)
+        sheet_name = f"Season {season_num}"
+        if sheet_name not in self.workbook.sheetnames:
+            return {"error": f"Season '{season}' not found"}
+        sheet = self.workbook[sheet_name]
+
+        players = []
+        all_scored_games = []  # (score, player_name, team_name)
+
+        for row in range(2, sheet.max_row + 1):
+            if sheet.cell(row=row, column=4).value != season_num:
+                continue
+            if self._safe_int(sheet.cell(row=row, column=5).value, 0) != week:
+                continue
+
+            player = sheet.cell(row=row, column=3).value
+            team = sheet.cell(row=row, column=2).value
+            if not player or not isinstance(player, str):
+                continue
+
+            is_absent = self._is_absent(sheet.cell(row=row, column=13).value)
+            games = []
+            for col in range(6, 11):
+                g = sheet.cell(row=row, column=col).value
+                if g is not None:
+                    gf = self._safe_float(g)
+                    if gf > 0:
+                        games.append(int(gf))
+
+            entry = {
+                "name": player.strip(),
+                "team": str(team).strip() if team else "Unknown",
+                "games": games,
+                "avg": round(sum(games) / len(games), 1) if games else 0,
+                "high": max(games) if games else 0,
+                "absent": is_absent,
+            }
+            players.append(entry)
+            if not is_absent:
+                for g in games:
+                    all_scored_games.append((g, player.strip(), str(team).strip() if team else "Unknown"))
+
+        players.sort(key=lambda x: x["avg"], reverse=True)
+
+        high_game = low_game = None
+        if all_scored_games:
+            all_scored_games.sort(key=lambda x: x[0])
+            lg = all_scored_games[0]
+            hg = all_scored_games[-1]
+            high_game = {"score": hg[0], "player": hg[1], "team": hg[2]}
+            low_game  = {"score": lg[0], "player": lg[1], "team": lg[2]}
+
+        scores_only = [g for g, _, _ in all_scored_games]
+        return {
+            "season": season,
+            "week": week,
+            "players": players,
+            "high_game": high_game,
+            "low_game": low_game,
+            "league_avg": round(sum(scores_only) / len(scores_only), 1) if scores_only else 0,
+            "total_players": len([p for p in players if not p["absent"]]),
+            "games_200_plus": len([g for g in scores_only if g >= 200]),
+            "total_games": len(scores_only),
+        }
+
+    def get_week_matchups(self, week: int, season: Optional[str] = None) -> dict:
+        """Return team matchup results for a specific week — total pins, avg, and W/L/T."""
+        if season is None:
+            season = self._get_current_season()
+        season_num = self._get_season_number(season)
+        sheet_name = f"Season {season_num}"
+        if sheet_name not in self.workbook.sheetnames:
+            return {"error": f"Season '{season}' not found"}
+        sheet = self.workbook[sheet_name]
+
+        # team_name -> {game_pins: [g1_total, g2_total, ...], player_count, opponent}
+        teams: Dict[str, dict] = {}
+
+        for row in range(2, sheet.max_row + 1):
+            if sheet.cell(row=row, column=4).value != season_num:
+                continue
+            if self._safe_int(sheet.cell(row=row, column=5).value, 0) != week:
+                continue
+
+            team = sheet.cell(row=row, column=2).value
+            player = sheet.cell(row=row, column=3).value
+            if not team or not isinstance(team, str):
+                continue
+            if not player or not isinstance(player, str):
+                continue
+
+            is_absent = self._is_absent(sheet.cell(row=row, column=13).value)
+            is_sub    = self._is_substitute(sheet.cell(row=row, column=14).value)
+            opponent  = sheet.cell(row=row, column=15).value or ""
+
+            team = team.strip()
+            if team not in teams:
+                teams[team] = {
+                    "game_pins": [],  # list of per-game team totals
+                    "player_count": 0,
+                    "opponent": opponent.strip() if opponent else "",
+                }
+
+            # Include absent players (their avg counts as blind score) but exclude substitutes
+            if not is_sub:
+                teams[team]["player_count"] += 1
+                for i, col in enumerate(range(6, 11)):  # Game 1-5
+                    g = self._safe_float(sheet.cell(row=row, column=col).value)
+                    if g and g > 0:
+                        if i >= len(teams[team]["game_pins"]):
+                            teams[team]["game_pins"].append(int(g))
+                        else:
+                            teams[team]["game_pins"][i] += int(g)
+
+        # Build matchups — W/L determined per game, not total pins
+        matched = set()
+        matchups = []
+        for team_name, td in teams.items():
+            if team_name in matched:
+                continue
+            opp_name = td["opponent"]
+            opp = teams.get(opp_name)
+
+            total_h = sum(td["game_pins"])
+            num_games = len(td["game_pins"])
+            avg_h = round(total_h / (td["player_count"] * num_games), 1) if td["player_count"] and num_games else 0
+
+            if not opp_name or not opp:
+                matchups.append({
+                    "home": {"name": team_name, "pins": total_h, "avg": avg_h,
+                             "game_pins": td["game_pins"], "wins": 0, "result": "—"},
+                    "away": None,
+                })
+                matched.add(team_name)
+                continue
+
+            matched.add(team_name)
+            matched.add(opp_name)
+
+            total_a = sum(opp["game_pins"])
+            avg_a = round(total_a / (opp["player_count"] * len(opp["game_pins"])), 1) if opp["player_count"] and opp["game_pins"] else 0
+
+            # Score per game
+            h_wins = a_wins = ties = 0
+            num_games = max(len(td["game_pins"]), len(opp["game_pins"]))
+            game_results = []
+            for i in range(num_games):
+                hp = td["game_pins"][i]  if i < len(td["game_pins"])  else 0
+                ap = opp["game_pins"][i] if i < len(opp["game_pins"]) else 0
+                if hp > ap:
+                    h_wins += 1
+                    game_results.append(("W", "L", hp, ap))
+                elif ap > hp:
+                    a_wins += 1
+                    game_results.append(("L", "W", hp, ap))
+                else:
+                    ties += 1
+                    game_results.append(("T", "T", hp, ap))
+
+            if h_wins > a_wins:
+                h_result, a_result = "W", "L"
+            elif a_wins > h_wins:
+                h_result, a_result = "L", "W"
+            else:
+                h_result = a_result = "T"
+
+            matchups.append({
+                "home": {"name": team_name, "pins": total_h, "avg": avg_h,
+                         "game_pins": td["game_pins"], "wins": h_wins, "result": h_result},
+                "away": {"name": opp_name,  "pins": total_a, "avg": avg_a,
+                         "game_pins": opp["game_pins"], "wins": a_wins, "result": a_result},
+                "game_results": game_results,
+            })
+
+        matchups.sort(key=lambda m: m["home"]["name"])
+        return {"season": season, "week": week, "matchups": matchups}
+
+    def find_player_names(self, search: str, season: Optional[str] = None) -> List[str]:
+        """Return all unique player names that match the search term (case-insensitive substring)."""
+        if season is None:
+            season = self._get_current_season()
+        season_num = self._get_season_number(season)
+        if season_num is None:
+            return []
+        sheet_name = f"Season {season_num}"
+        if sheet_name not in self.workbook.sheetnames:
+            return []
+        sheet = self.workbook[sheet_name]
+        seen = set()
+        matches = []
+        normalized_search = self._normalize(search)
+        for row in range(2, sheet.max_row + 1):
+            row_season = sheet.cell(row=row, column=4).value
+            if row_season != season_num:
+                continue
+            player = sheet.cell(row=row, column=3).value
+            if not player or not isinstance(player, str):
+                continue
+            player = player.strip()
+            if player in seen:
+                continue
+            seen.add(player)
+            if normalized_search in self._normalize(player) or self._normalize(player) in normalized_search:
+                matches.append(player)
+        return matches
 
 
 def get_sheet_handler(handler_type: str = "excel", **kwargs) -> SheetHandler:

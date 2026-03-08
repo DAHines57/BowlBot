@@ -3,6 +3,8 @@ Command parser for WhatsApp messages.
 Parses user messages into structured commands.
 """
 import re
+import os
+import json
 from typing import Dict, Optional, Tuple
 from enum import Enum
 
@@ -16,6 +18,8 @@ class CommandType(Enum):
     LIST_SEASONS = "list_seasons"
     LIST_PLAYERS = "list_players"
     LEADERS = "leaders"
+    WEEKLY_SUMMARY = "weekly_summary"
+    WEEKLY_RESULTS = "weekly_results"
     HELP = "help"
     UNKNOWN = "unknown"
 
@@ -68,6 +72,12 @@ class CommandParser:
         Returns:
             Tuple of (cleaned message without season/week, season string or None, week number or None)
         """
+        # Patterns to match relative season references
+        if re.search(r'\blast\s+season\b', message, re.IGNORECASE):
+            cleaned_message = re.sub(r'\blast\s+season\b', '', message, flags=re.IGNORECASE).strip()
+            cleaned_message = re.sub(r'\s+', ' ', cleaned_message)
+            return cleaned_message, "last", None
+
         # Patterns to match season specifications
         season_patterns = [
             r'\bseason\s+(\d+)\b',  # "season 9" or "season 10"
@@ -146,12 +156,36 @@ class CommandParser:
                 params["season"] = season
             return Command(CommandType.LIST_PLAYERS, params)
         
+        # Weekly matchup results image
+        if message in ['results', 'matchups', 'weekly results', 'week results', 'matchup recap']:
+            params = {}
+            if season:
+                params["season"] = season
+            if week:
+                params["week"] = week
+            return Command(CommandType.WEEKLY_RESULTS, params)
+
+        # Weekly summary image
+        if message in ['summary', 'recap', 'weekly summary', 'weekly recap', 'week summary', 'week recap']:
+            params = {}
+            if season:
+                params["season"] = season
+            if week:
+                params["week"] = week
+            return Command(CommandType.WEEKLY_SUMMARY, params)
+
         # Leaders / top stats command
         if message in ['leaders', 'top', 'best']:
             params = {}
             if season:
                 params["season"] = season
             return Command(CommandType.LEADERS, params)
+
+        if re.search(r'\ball\s*time\b', message, re.IGNORECASE) and re.search(r'\b(leaders?|top|best|games?|stats?)\b', message, re.IGNORECASE):
+            return Command(CommandType.LEADERS, {"season": "all"})
+
+        if message in ['leaders all', 'all time leaders', 'all time', 'all-time leaders']:
+            return Command(CommandType.LEADERS, {"season": "all"})
         
         # Check for team weekly (before team scores to catch "team X weekly")
         for pattern in self.TEAM_RECORD_PATTERNS:
@@ -229,7 +263,114 @@ class CommandParser:
                             params["season"] = season
                         return Command(CommandType.ADD_SCORE, params)
         
-        # Unknown command
+        # Unknown command — try LLM fallback before giving up
+        return self._llm_fallback(original_message, season, week)
+
+    def _llm_fallback(self, message: str, season: Optional[str], week: Optional[int]) -> Command:
+        """
+        Use Claude as a fallback intent parser for freeform messages that didn't
+        match any regex pattern. Returns a Command based on structured JSON from the API.
+        Only called when direct pattern matching fails.
+        """
+        api_key = os.environ.get("CLAUDE_API_KEY")
+        if not api_key:
+            return Command(CommandType.UNKNOWN)
+
+        try:
+            import anthropic
+            print(f"[LLM] No regex match for {message!r} — calling Claude fallback")
+            client = anthropic.Anthropic(api_key=api_key)
+
+            prompt = (
+                "You are a bowling league stats bot intent parser.\n"
+                "Extract the intent from the user's message and return ONLY valid JSON, no explanation or markdown.\n\n"
+                "Fields:\n"
+                '- intent: one of "player_stats", "team_stats", "team_record", "leaders", "list_players", "list_seasons", "weekly_summary", "weekly_results", "help", "unknown"\n'
+                '  weekly_summary = player leaderboard/scores for a specific week (e.g. "how did everyone do this week", "weekly recap")\n'
+                '  weekly_results = team matchup results for a specific week (e.g. "who won this week", "show me the matchups", "weekly results")\n'
+                '- subject: the player or team name mentioned, or null if asking about all\n'
+                '- subject_type: "player", "team", or "all"\n'
+                '- time_range: "current_season" (default), "all_time", or "season_N" where N is the number.\n'
+                '  Use "all_time" for any of these signals: "all time", "ever", "career", "historically",\n'
+                '  "across all seasons", "of all time", "best ever", "greatest", "highest ever",\n'
+                '  "in history", "since the beginning", "going back", "across seasons", or any phrasing\n'
+                '  that implies spanning more than one season rather than the current one.\n'
+                '  Only use season_N if the user says an explicit number like "season 8" or "s8".\n\n'
+                f'Message: "{message}"\n'
+            )
+
+            response = client.messages.create(
+                model="claude-haiku-4-5",
+                max_tokens=200,
+                messages=[{"role": "user", "content": prompt}]
+            )
+
+            raw = response.content[0].text.strip()
+            print(f"[LLM] Response: {raw}")
+            # Strip markdown code fences if present (e.g. ```json ... ```)
+            if raw.startswith("```"):
+                raw = re.sub(r'^```[a-z]*\n?', '', raw)
+                raw = re.sub(r'\n?```$', '', raw).strip()
+            data = json.loads(raw)
+
+            intent = data.get("intent", "unknown")
+            subject = data.get("subject")
+            subject_type = data.get("subject_type", "all")
+            time_range = data.get("time_range", "current_season")
+
+            # Resolve season from LLM time_range (only if not already extracted by regex)
+            if season is None:
+                if time_range == "all_time":
+                    season = "all"
+                elif time_range and time_range.startswith("season_"):
+                    try:
+                        season = f"Season {time_range.split('_')[1]}"
+                    except IndexError:
+                        pass
+                # "current_season" → leave as None (default behaviour)
+
+            params = {}
+            if season:
+                params["season"] = season
+            if week:
+                params["week"] = week
+
+            if intent == "player_stats":
+                if subject:
+                    params["player_name"] = subject
+                return Command(CommandType.PLAYER_SCORES, params)
+
+            elif intent == "team_stats":
+                if subject:
+                    params["team_name"] = subject
+                return Command(CommandType.TEAM_SCORES, params)
+
+            elif intent == "team_record":
+                if subject:
+                    params["team_name"] = subject
+                return Command(CommandType.TEAM_RECORD, params)
+
+            elif intent == "leaders":
+                return Command(CommandType.LEADERS, params)
+
+            elif intent == "weekly_summary":
+                return Command(CommandType.WEEKLY_SUMMARY, params)
+
+            elif intent == "weekly_results":
+                return Command(CommandType.WEEKLY_RESULTS, params)
+
+            elif intent == "list_players":
+                return Command(CommandType.LIST_PLAYERS, params)
+
+            elif intent == "list_seasons":
+                return Command(CommandType.LIST_SEASONS, params)
+
+            elif intent == "help":
+                return Command(CommandType.HELP)
+
+        except Exception:
+            pass
+
         return Command(CommandType.UNKNOWN)
     
     def get_help_message(self) -> str:

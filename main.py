@@ -69,7 +69,11 @@ def receive_message():
                             season = None  # Could extract from message if needed
                             
                             # Execute command
-                            response_text = bot_logic.handle_command(command, season)
+                            response_text = bot_logic.handle_command(
+                                command, season,
+                                user_phone=sender_number,
+                                raw_message=message_text
+                            )
                         else:
                             response_text = "❌ Bot is not properly configured. Please check sheet handler setup."
                     except Exception as e:
@@ -78,9 +82,12 @@ def receive_message():
                         traceback.print_exc()
                         response_text = f"❌ Error processing command: {str(e)}"
 
-                    # Send response
+                    # Send response — bytes means image, str means text
                     try:
-                        send_whatsapp_message(sender_number_id, sender_number, response_text, message.get("id"))
+                        if isinstance(response_text, bytes):
+                            send_whatsapp_image(sender_number_id, sender_number, response_text, message.get("id"))
+                        else:
+                            send_whatsapp_message(sender_number_id, sender_number, response_text, message.get("id"))
                     except Exception as e:
                         print(f"Error sending message: {e}")
                         import traceback
@@ -116,5 +123,51 @@ def send_whatsapp_message(recipient_id, recipient_number, message_text, message_
         print(f"Error sending WhatsApp message: {e}")
         print(f"Response: {response.text if 'response' in locals() else 'No response'}")
 
+def send_whatsapp_image(recipient_id, recipient_number, image_bytes: bytes, message_id=None):
+    """Upload a PNG to Meta and send it as a WhatsApp image message."""
+    if not ACCESS_TOKEN or not recipient_id:
+        print("ERROR: ACCESS_TOKEN or recipient_id not set!")
+        return
+
+    # Step 1: upload the image to get a media_id
+    upload_url = f"https://graph.facebook.com/v18.0/{recipient_id}/media"
+    try:
+        upload_resp = requests.post(
+            upload_url,
+            headers={"Authorization": f"Bearer {ACCESS_TOKEN}"},
+            data={"messaging_product": "whatsapp", "type": "image/png"},
+            files={"file": ("summary.png", image_bytes, "image/png")},
+        )
+        upload_resp.raise_for_status()
+        media_id = upload_resp.json().get("id")
+        print(f"[Image] Uploaded, media_id={media_id}")
+    except requests.exceptions.RequestException as e:
+        print(f"Error uploading image: {e}")
+        return
+
+    # Step 2: send the image message
+    url = f"https://graph.facebook.com/v18.0/{recipient_id}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": recipient_number,
+        "type": "image",
+        "image": {"id": media_id},
+    }
+    if message_id:
+        payload["context"] = {"message_id": message_id}
+
+    try:
+        resp = requests.post(url, json=payload, headers={
+            "Authorization": f"Bearer {ACCESS_TOKEN}",
+            "Content-Type": "application/json",
+        })
+        resp.raise_for_status()
+        print(f"[Image] Sent to {recipient_number}")
+    except requests.exceptions.RequestException as e:
+        print(f"Error sending image message: {e}")
+        print(f"Response: {resp.text if 'resp' in locals() else 'No response'}")
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=3000,debug=True)
+    port = int(os.environ.get("PORT", 3000))
+    app.run(host="0.0.0.0", port=port, debug=True)

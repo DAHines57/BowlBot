@@ -1,10 +1,13 @@
 """
 Bot logic for handling commands and generating responses.
 """
+import time
 from typing import Dict, Optional
 from sheets_handler import SheetHandler
 from command_parser import Command, CommandParser, CommandType
 from utils import safe_float, safe_int
+
+PENDING_TTL = 60  # seconds before a pending clarification expires
 
 
 class BotLogic:
@@ -12,6 +15,7 @@ class BotLogic:
     
     def __init__(self, sheet_handler: SheetHandler):
         self.sheet_handler = sheet_handler
+        self._pending: Dict[str, dict] = {}  # phone -> {command_type, params, options, expires_at}
     
     def _safe_float(self, value, default=0.0):
         return safe_float(value, default)
@@ -19,19 +23,48 @@ class BotLogic:
     def _safe_int(self, value, default=0):
         return safe_int(value, default)
     
-    def handle_command(self, command: Command, season: Optional[str] = None) -> str:
+    def _normalize(self, text: str) -> str:
+        return text.lower().replace('\u2018', "'").replace('\u2019', "'")
+
+    def handle_command(self, command: Command, season: Optional[str] = None,
+                       user_phone: Optional[str] = None, raw_message: Optional[str] = None) -> str:
         """
         Execute a command and return a formatted response.
         
         Args:
             command: The parsed command
             season: Optional season to query (defaults to current, overridden by command params)
+            user_phone: Sender's phone number, used for pending clarification state
+            raw_message: Original raw message text, used to resolve pending clarifications
             
         Returns:
             Formatted response string
         """
+        # Check if this user has a pending clarification to resolve
+        if user_phone and raw_message:
+            resolved = self._resolve_pending(user_phone, raw_message)
+            if resolved is not None:
+                return resolved
+
         # Get season from command params if specified, otherwise use passed season
         command_season = command.params.get("season", season)
+
+        # Resolve relative season references
+        if command_season == "last":
+            seasons = sorted(
+                [s for s in self.sheet_handler.get_seasons() if s.startswith("Season")],
+                key=lambda x: int(x.split()[-1]) if x.split()[-1].isdigit() else 0
+            )
+            if len(seasons) >= 2:
+                command_season = seasons[-2]
+            elif seasons:
+                command_season = seasons[-1]
+            else:
+                command_season = None
+
+        # Always resolve to an explicit season name so it shows in every response
+        if command_season is None:
+            command_season = self.sheet_handler._get_current_season()
         
         if command.command_type == CommandType.HELP:
             parser = CommandParser()
@@ -45,6 +78,12 @@ class BotLogic:
         
         elif command.command_type == CommandType.LEADERS:
             return self._handle_leaders(command_season)
+
+        elif command.command_type == CommandType.WEEKLY_SUMMARY:
+            return self._handle_weekly_summary(command_season, command.params.get("week"))
+
+        elif command.command_type == CommandType.WEEKLY_RESULTS:
+            return self._handle_weekly_results(command_season, command.params.get("week"))
         
         elif command.command_type == CommandType.TEAM_SCORES:
             return self._handle_team_scores(
@@ -58,9 +97,10 @@ class BotLogic:
         
         elif command.command_type == CommandType.PLAYER_SCORES:
             return self._handle_player_scores(
-                command.params.get("player_name"), 
+                command.params.get("player_name"),
                 command_season,
-                command.params.get("week")
+                command.params.get("week"),
+                user_phone=user_phone
             )
         
         elif command.command_type == CommandType.ADD_SCORE:
@@ -74,6 +114,95 @@ class BotLogic:
         else:
             return "❓ I didn't understand that command. Type `help` for available commands."
     
+    def _store_pending(self, user_phone: str, command_type: CommandType,
+                       params: dict, options: list) -> str:
+        """Store a pending clarification and return the prompt message."""
+        self._pending[user_phone] = {
+            "command_type": command_type,
+            "params": params,
+            "options": options,
+            "expires_at": time.time() + PENDING_TTL,
+        }
+        lines = ["❓ Multiple matches found. Reply with a number to choose:"]
+        for i, name in enumerate(options, 1):
+            lines.append(f"  {i}. {name}")
+        return "\n".join(lines)
+
+    def _resolve_pending(self, user_phone: str, raw_message: str) -> Optional[str]:
+        """
+        Try to resolve a pending clarification for this user.
+        Returns a response string if resolved, None if no pending state or not resolvable.
+        """
+        pending = self._pending.get(user_phone)
+        if not pending:
+            return None
+        if time.time() > pending["expires_at"]:
+            del self._pending[user_phone]
+            return None
+
+        options = pending["options"]
+        text = raw_message.strip()
+
+        # Match by number (e.g. "1", "2")
+        chosen = None
+        if text.isdigit():
+            idx = int(text) - 1
+            if 0 <= idx < len(options):
+                chosen = options[idx]
+        else:
+            # Match by partial name
+            normalized = self._normalize(text)
+            hits = [o for o in options if normalized in self._normalize(o)]
+            if len(hits) == 1:
+                chosen = hits[0]
+
+        if chosen is None:
+            return None  # Not a valid selection — let normal parsing handle it
+
+        del self._pending[user_phone]
+        params = {**pending["params"], "player_name": chosen}
+        command = Command(pending["command_type"], params)
+        print(f"[Pending] Resolved to: {chosen}")
+        return self.handle_command(command, user_phone=user_phone)
+
+    def _handle_weekly_summary(self, season: Optional[str], week: Optional[int] = None):
+        """Generate and return a weekly summary PNG as raw bytes."""
+        try:
+            from image_generator import build_html, generate_image
+            if week is None:
+                week = self.sheet_handler.get_latest_week(season)
+            data = self.sheet_handler.get_week_summary(week, season)
+            if "error" in data:
+                return f"❌ {data['error']}"
+            if not data.get("players"):
+                return f"❌ No data found for Week {week} of {season}."
+            html = build_html(data)
+            print(f"[Summary] Generating image for {season} Week {week}")
+            return generate_image(html)  # returns bytes — main.py sends as image
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return f"❌ Error generating summary: {str(e)}"
+
+    def _handle_weekly_results(self, season: Optional[str], week: Optional[int] = None):
+        """Generate and return a weekly matchup results PNG as raw bytes."""
+        try:
+            from image_generator import build_matchups_html, generate_image
+            if week is None:
+                week = self.sheet_handler.get_latest_week(season)
+            data = self.sheet_handler.get_week_matchups(week, season)
+            if "error" in data:
+                return f"❌ {data['error']}"
+            if not data.get("matchups"):
+                return f"❌ No matchup data found for Week {week} of {season}."
+            html = build_matchups_html(data)
+            print(f"[Results] Generating matchup image for {season} Week {week}")
+            return generate_image(html)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return f"❌ Error generating results: {str(e)}"
+
     def _handle_team_scores(self, team_name: Optional[str], season: Optional[str], week: Optional[int] = None) -> str:
         """Handle team scores query."""
         try:
@@ -156,151 +285,65 @@ class BotLogic:
                 
                 return response.strip()
             else:
-                # All teams - show summary with record and average
+                # All teams — image
                 if not data:
-                    error_msg = "❌ No team data found."
-                    if season:
-                        error_msg += f" (Season: {season})"
-                    return error_msg
-                
-                response = "🏆 *Team Standings*"
-                if season:
-                    response += f" ({season})"
-                response += "\n\n"
-                # Sort by average (highest to lowest)
-                sorted_teams = sorted(
-                    data.items(),
-                    key=lambda x: self._safe_float(x[1].get("avg_per_game", 0)),
-                    reverse=True
-                )
-                
-                for i, (team, stats) in enumerate(sorted_teams, 1):
-                    wins = self._safe_int(stats.get("wins", 0))
-                    losses = self._safe_int(stats.get("losses", 0))
-                    ties = self._safe_int(stats.get("ties", 0))
-                    avg = self._safe_float(stats.get("avg_per_game", 0))
-                    
-                    record = f"{wins}-{losses}"
-                    if ties > 0:
-                        record += f"-{ties}"
-                    
-                    response += f"{i}. *{team}*\n"
-                    response += f"   {record} | Avg: {avg:.1f}\n\n"
-                
-                return response.strip()
+                    return "❌ No team data found." + (f" ({season})" if season else "")
+                from image_generator import build_teams_html, generate_image
+                print(f"[Teams] Generating standings image for {season}")
+                return generate_image(build_teams_html(data, season or "Current Season"))
         
         except Exception as e:
             return f"❌ Error retrieving team scores: {str(e)}"
     
-    def _handle_team_record(self, team_name: Optional[str], season: Optional[str]) -> str:
-        """Handle team weekly breakdown query."""
+    def _handle_team_record(self, team_name: Optional[str], season: Optional[str]):
+        """Handle team weekly breakdown query — returns image."""
         if not team_name:
             return "❌ Please specify a team name. Example: `team Pin Seekers weekly`"
-        
         try:
+            from image_generator import build_team_weekly_html, generate_image
             data = self.sheet_handler.get_team_weekly_summary(team_name, season)
-            
             if "error" in data:
-                error_msg = f"❌ {data['error']}"
-                if season:
-                    error_msg += f" (Season: {season})"
-                return error_msg
-            
+                return f"❌ {data['error']}" + (f" ({season})" if season else "")
             team = data.get("team", team_name)
-            season_str = data.get("season", season or "Current Season")
             weekly_summary = data.get("weekly_summary", {})
-            
             if not weekly_summary:
                 return f"❌ No weekly data found for {team}"
-            
-            # Calculate total W-L-T
-            total_wins = sum(week_info.get("wins", 0) for week_info in weekly_summary.values())
-            total_losses = sum(week_info.get("losses", 0) for week_info in weekly_summary.values())
-            total_ties = sum(week_info.get("ties", 0) for week_info in weekly_summary.values())
-            
-            response = f"📊 *{team} Weekly Record*"
-            if season_str:
-                response += f" ({season_str})"
-            response += "\n\n"
-            response += f"*Total Record: {total_wins}-{total_losses}"
-            if total_ties > 0:
-                response += f"-{total_ties}"
-            response += "*\n\n"
-            
-            # Sort by week
-            for week in sorted(weekly_summary.keys()):
-                week_info = weekly_summary[week]
-                opponent = week_info.get("opponent", "Unknown")
-                wins = week_info.get("wins", 0)
-                losses = week_info.get("losses", 0)
-                ties = week_info.get("ties", 0)
-                pins_for = week_info.get("pins_for", 0)
-                pins_against = week_info.get("pins_against", 0)
-                avg = week_info.get("avg", 0)
-                
-                record = f"{wins}-{losses}"
-                if ties > 0:
-                    record += f"-{ties}"
-                
-                response += f"*Week {week}* vs {opponent}\n"
-                response += f"  {record} | {pins_for} - {pins_against} | Avg: {avg:.1f}\n\n"
-            
-            return response.strip()
-        
+            season_str = data.get("season", season or "Current Season")
+            print(f"[Team Weekly] Generating image for {team} {season_str}")
+            return generate_image(build_team_weekly_html(team, season_str, weekly_summary))
         except Exception as e:
+            import traceback; traceback.print_exc()
             return f"❌ Error retrieving team record: {str(e)}"
     
-    def _handle_leaders(self, season: Optional[str]) -> str:
-        """Handle league leaders query — top games, top player weeks, top team weeks."""
+    def _handle_leaders(self, season: Optional[str]):
+        """Handle league leaders query — returns image."""
         try:
-            data = self.sheet_handler.get_league_stats(season)
-            
+            from image_generator import build_leaders_html, generate_image
+            if season == "all":
+                data = self.sheet_handler.get_all_time_stats()
+            else:
+                data = self.sheet_handler.get_league_stats(season)
             if "error" in data:
-                error_msg = f"❌ {data['error']}"
-                if season:
-                    error_msg += f" (Season: {season})"
-                return error_msg
-            
-            season_str = data.get("season", season or "Current Season")
-            top_player_weeks = data.get("top_player_weeks", [])
-            player_averages = data.get("player_averages", [])
-            top_team_totals = data.get("top_team_totals", [])
-            top_games = data.get("top_games", [])
-            
-            avg_lookup = {p["player"]: p["average"] for p in player_averages}
-            
-            response = f"🏆 *League Leaders*"
-            if season_str:
-                response += f" ({season_str})"
-            response += "\n\n"
-            
-            response += "🎯 *Top 10 Individual Games:*\n"
-            for i, (player, team, week, score) in enumerate(top_games, 1):
-                response += f"{i}. {player} ({team}) - Wk {week}: {int(score)}\n"
-            
-            response += "\n⭐ *Top 10 Player Weeks:*\n"
-            for i, week_data in enumerate(top_player_weeks, 1):
-                if len(week_data) == 5:
-                    player, team, week, total, num_games = week_data
-                else:
-                    player, team, week, total = week_data
-                    num_games = 4
-                week_avg = total / num_games if num_games > 0 else 0
-                season_avg = avg_lookup.get(player, 0)
-                response += f"{i}. {player} ({team}) - Wk {week}: {int(total)} ({week_avg:.1f} avg, {season_avg:.1f} season)\n"
-            
-            response += "\n🏅 *Top 5 Team Weeks:*\n"
-            for i, (team, week, total) in enumerate(top_team_totals, 1):
-                response += f"{i}. {team} - Wk {week}: {int(total)} pins\n"
-            
-            return response.strip()
-        
+                return f"❌ {data['error']}" + (f" ({season})" if season else "")
+            print(f"[Leaders] Generating leaders image for {data.get('season')}")
+            return generate_image(build_leaders_html(data))
         except Exception as e:
+            import traceback; traceback.print_exc()
             return f"❌ Error retrieving leaders: {str(e)}"
     
-    def _handle_player_scores(self, player_name: Optional[str], season: Optional[str], week: Optional[int] = None) -> str:
+    def _handle_player_scores(self, player_name: Optional[str], season: Optional[str],
+                              week: Optional[int] = None, user_phone: Optional[str] = None) -> str:
         """Handle player scores query."""
         try:
+            # Check for ambiguous player name before fetching full stats
+            if player_name:
+                matches = self.sheet_handler.find_player_names(player_name, season)
+                if len(matches) > 1 and user_phone:
+                    params = {"season": season, "week": week}
+                    return self._store_pending(user_phone, CommandType.PLAYER_SCORES, params, matches)
+                if len(matches) == 1:
+                    player_name = matches[0]  # Use the exact name
+
             data = self.sheet_handler.get_player_scores(player_name, season, week)
             
             if "error" in data:
@@ -434,36 +477,33 @@ class BotLogic:
         except Exception as e:
             return f"❌ Error retrieving seasons: {str(e)}"
     
-    def _handle_list_players(self, season: Optional[str]) -> str:
-        """Handle list players query."""
+    def _handle_list_players(self, season: Optional[str]):
+        """Handle list players query — returns image."""
         try:
-            data = self.sheet_handler.get_player_scores(None, season)
-            
+            from image_generator import build_players_html, generate_image
+            if season == "all":
+                stats = self.sheet_handler.get_all_time_stats()
+                # Convert list of player dicts to the {name: stats} shape build_players_html expects
+                data = {
+                    p["player"]: {
+                        "team": p.get("team", ""),
+                        "average": p.get("average", 0),
+                        "highest_game": p.get("highest_game", 0),
+                        "lowest_game": p.get("lowest_game", 0),
+                        "weeks_played": p.get("games", 0),
+                    }
+                    for p in stats.get("player_averages", [])
+                }
+                subtitle = "All Time"
+            else:
+                data = self.sheet_handler.get_player_scores(None, season)
+                subtitle = season or "Current Season"
             if not data:
-                error_msg = "❌ No players found."
-                if season:
-                    error_msg += f" (Season: {season})"
-                return error_msg
-            
-            season_str = season or "Current Season"
-            response = f"👥 *All Players*"
-            if season_str:
-                response += f" ({season_str})"
-            response += "\n\n"
-            
-            # Sort players by average (highest to lowest)
-            sorted_players = sorted(data.items(), key=lambda x: self._safe_float(x[1].get("average", 0)), reverse=True)
-            
-            for player_name, player_data in sorted_players:
-                team = player_data.get("team", "Unknown")
-                avg = self._safe_float(player_data.get("average", 0))
-                parts = player_name.strip().split()
-                short_name = f"{parts[0]} {parts[-1][0]}." if len(parts) > 1 else player_name
-                response += f"• {short_name} - {avg:.1f}\n"
-            
-            return response.strip()
-        
+                return f"❌ No players found." + (f" ({season})" if season else "")
+            print(f"[Players] Generating leaderboard image for {season}")
+            return generate_image(build_players_html(data, subtitle))
         except Exception as e:
+            import traceback; traceback.print_exc()
             return f"❌ Error retrieving players: {str(e)}"
     
     
