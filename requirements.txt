@@ -6,4 +6,5 @@ anthropic
 playwright
 gspread
 google-auth
+gunicorn
 
