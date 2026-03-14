@@ -768,7 +768,9 @@ def generate_image(html: str) -> bytes:
     browserless_url = os.environ.get("BROWSERLESS_URL")
     with sync_playwright() as p:
         if browserless_url:
-            browser = p.chromium.connect(browserless_url)
+            # connect_over_cdp needs http(s), not ws(s)
+            cdp_url = browserless_url.replace("wss://", "https://").replace("ws://", "http://")
+            browser = p.chromium.connect_over_cdp(cdp_url)
         else:
             browser = p.chromium.launch()
         page = browser.new_page(viewport={"width": 600, "height": 800})
