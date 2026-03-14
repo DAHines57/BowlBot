@@ -761,10 +761,16 @@ def build_top_games_html(games: list, season: str, n: int) -> str:
 
 
 def generate_image(html: str) -> bytes:
-    """Render the HTML to a PNG using Playwright and return raw bytes."""
+    """Render the HTML to a PNG using Playwright and return raw bytes.
+    Connects to a remote Browserless instance if BROWSERLESS_URL is set,
+    otherwise launches a local Chromium (for local dev)."""
     from playwright.sync_api import sync_playwright
+    browserless_url = os.environ.get("BROWSERLESS_URL")
     with sync_playwright() as p:
-        browser = p.chromium.launch()
+        if browserless_url:
+            browser = p.chromium.connect_over_cdp(browserless_url)
+        else:
+            browser = p.chromium.launch()
         page = browser.new_page(viewport={"width": 600, "height": 800})
         page.set_content(html, wait_until="networkidle")
         # Resize viewport to actual content height so there's no empty space

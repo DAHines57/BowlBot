@@ -1,11 +1,7 @@
 [phases.build]
 cmds = [
-    "pip install -r requirements.txt",
-    "PLAYWRIGHT_BROWSERS_PATH=/app/pw-browsers python -m playwright install --with-deps chromium"
+    "pip install -r requirements.txt"
 ]
-
-[variables]
-PLAYWRIGHT_BROWSERS_PATH = "/app/pw-browsers"
 
 [start]
 cmd = "gunicorn main:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120"
