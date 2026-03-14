@@ -20,6 +20,9 @@ class CommandType(Enum):
     LEADERS = "leaders"
     WEEKLY_SUMMARY = "weekly_summary"
     WEEKLY_RESULTS = "weekly_results"
+    BEST_PLAYER = "best_player"
+    TOP_N = "top_n"
+    RELOAD = "reload"
     HELP = "help"
     UNKNOWN = "unknown"
 
@@ -136,114 +139,30 @@ class CommandParser:
         cleaned_message, season, week = self._extract_season_and_week(message)
         message = cleaned_message.lower()
         
-        # Help command
-        if message in ['help', '?', 'commands']:
-            return Command(CommandType.HELP)
-        
-        # List seasons command
-        if message in ['seasons', 'list seasons', 'show seasons']:
-            params = {}
-            if season:
-                params["season"] = season
-            if week:
-                params["week"] = week
-            return Command(CommandType.LIST_SEASONS, params)
-        
-        # List players command
-        if message in ['players', 'list players']:
-            params = {}
-            if season:
-                params["season"] = season
-            return Command(CommandType.LIST_PLAYERS, params)
-        
-        # Weekly matchup results image
-        if message in ['results', 'matchups', 'weekly results', 'week results', 'matchup recap']:
-            params = {}
-            if season:
-                params["season"] = season
-            if week:
-                params["week"] = week
-            return Command(CommandType.WEEKLY_RESULTS, params)
+        # ── Regex intent matching (kept for reference, bypassed in favour of LLM) ──────
+        # # Help command
+        # if message in ['help', '?', 'commands']:
+        #     return Command(CommandType.HELP)
+        # # List seasons
+        # if message in ['seasons', 'list seasons', 'show seasons']:
+        #     ...
+        # # List players
+        # if message in ['players', 'list players']:
+        #     ...
+        # # Weekly results / summary / leaders / top-n / best-player / team / player patterns
+        # # (all commented out — LLM handles intent classification)
+        # ────────────────────────────────────────────────────────────────────────────
 
-        # Weekly summary image
-        if message in ['summary', 'recap', 'weekly summary', 'weekly recap', 'week summary', 'week recap']:
-            params = {}
-            if season:
-                params["season"] = season
-            if week:
-                params["week"] = week
-            return Command(CommandType.WEEKLY_SUMMARY, params)
+        # Reload command — direct match, never sent to LLM
+        if re.match(r'^reload(\s+data)?$', message.strip()):
+            return Command(CommandType.RELOAD)
 
-        # Leaders / top stats command
-        if message in ['leaders', 'top', 'best']:
-            params = {}
-            if season:
-                params["season"] = season
-            return Command(CommandType.LEADERS, params)
-
-        if re.search(r'\ball\s*time\b', message, re.IGNORECASE) and re.search(r'\b(leaders?|top|best|games?|stats?)\b', message, re.IGNORECASE):
-            return Command(CommandType.LEADERS, {"season": "all"})
-
-        if message in ['leaders all', 'all time leaders', 'all time', 'all-time leaders']:
-            return Command(CommandType.LEADERS, {"season": "all"})
-        
-        # Check for team weekly (before team scores to catch "team X weekly")
-        for pattern in self.TEAM_RECORD_PATTERNS:
-            match = re.match(pattern, message, re.IGNORECASE)
-            if match:
-                team_name = match.group(1).strip() if match.groups() else None
-                params = {}
-                if season:
-                    params["season"] = season
-                if week:
-                    params["week"] = week
-                if team_name:
-                    params["team_name"] = team_name
-                return Command(CommandType.TEAM_RECORD, params)
-        
-        # Check for team scores
-        for pattern in self.TEAM_PATTERNS:
-            match = re.match(pattern, message, re.IGNORECASE)
-            if match:
-                team_name = match.group(1) if match.groups() and match.group(1) else None
-                params = {}
-                if season:
-                    params["season"] = season
-                if week:
-                    params["week"] = week
-                # Handle "team" or "teams" without a name (show all teams)
-                if team_name and team_name.lower() not in ['scores', 'score', 'weekly']:
-                    params["team_name"] = team_name.strip()
-                    return Command(CommandType.TEAM_SCORES, params)
-                else:
-                    # No team name specified - show all teams
-                    return Command(CommandType.TEAM_SCORES, params)
-        
-        # Check for player scores
-        for pattern in self.PLAYER_PATTERNS:
-            match = re.match(pattern, message, re.IGNORECASE)
-            if match:
-                params = {}
-                if season:
-                    params["season"] = season
-                if week:
-                    params["week"] = week
-                if match.groups():
-                    player_name = match.group(1).strip()
-                    if player_name.lower() not in ['my', 'score', 'scores']:
-                        params["player_name"] = player_name
-                        return Command(CommandType.PLAYER_SCORES, params)
-                else:
-                    # "my score" - would need phone number mapping, for now return generic
-                    return Command(CommandType.PLAYER_SCORES, params)
-        
-        # Check for adding scores
+        # Add score is structural enough to keep as regex (score + player name)
         for pattern in self.ADD_SCORE_PATTERNS:
             match = re.match(pattern, message, re.IGNORECASE)
             if match:
                 groups = match.groups()
                 if len(groups) == 2:
-                    # Try to determine which is score and which is name
                     try:
                         score = int(groups[0])
                         player_name = groups[1].strip()
@@ -253,7 +172,6 @@ class CommandParser:
                             player_name = groups[0].strip()
                         except ValueError:
                             continue
-                    
                     if 0 <= score <= 300:  # Valid bowling score range
                         params = {
                             "player_name": player_name,
@@ -263,39 +181,53 @@ class CommandParser:
                             params["season"] = season
                         return Command(CommandType.ADD_SCORE, params)
         
-        # Unknown command — try LLM fallback before giving up
+        # Skip LLM for messages that are clearly too long to be a valid command
+        if len(original_message) > 150:
+            return Command(CommandType.UNKNOWN)
+
+        # Route everything through LLM for intent classification
         return self._llm_fallback(original_message, season, week)
 
     def _llm_fallback(self, message: str, season: Optional[str], week: Optional[int]) -> Command:
-        """
-        Use Claude as a fallback intent parser for freeform messages that didn't
-        match any regex pattern. Returns a Command based on structured JSON from the API.
-        Only called when direct pattern matching fails.
-        """
+        """Use Claude to classify intent from any message."""
         api_key = os.environ.get("CLAUDE_API_KEY")
         if not api_key:
             return Command(CommandType.UNKNOWN)
 
         try:
             import anthropic
-            print(f"[LLM] No regex match for {message!r} — calling Claude fallback")
+            print(f"[LLM] Classifying intent for: {message!r}")
             client = anthropic.Anthropic(api_key=api_key)
 
             prompt = (
                 "You are a bowling league stats bot intent parser.\n"
-                "Extract the intent from the user's message and return ONLY valid JSON, no explanation or markdown.\n\n"
+                "Return ONLY valid JSON — no explanation, no markdown.\n\n"
                 "Fields:\n"
-                '- intent: one of "player_stats", "team_stats", "team_record", "leaders", "list_players", "list_seasons", "weekly_summary", "weekly_results", "help", "unknown"\n'
-                '  weekly_summary = player leaderboard/scores for a specific week (e.g. "how did everyone do this week", "weekly recap")\n'
-                '  weekly_results = team matchup results for a specific week (e.g. "who won this week", "show me the matchups", "weekly results")\n'
-                '- subject: the player or team name mentioned, or null if asking about all\n'
+                '- intent: one of:\n'
+                '    "player_stats"    — stats for a specific player\n'
+                '    "team_stats"      — standings/stats for a team or all teams\n'
+                '    "team_record"     — week-by-week breakdown for a team\n'
+                '    "leaders"         — league-wide top stats (games, weeks, team weeks)\n'
+                '    "best_player"     — who is/was the single best bowler (by average)\n'
+                '    "worst_player"    — who is/was the single worst bowler (by average)\n'
+                '    "top_n"           — ranked list of top or bottom N players or individual scores\n'
+                '    "list_players"    — full list of all players and their averages\n'
+                '    "list_seasons"    — list available seasons\n'
+                '    "weekly_summary"  — player scores/leaderboard for a specific week\n'
+                '    "weekly_results"  — team matchup W/L results for a specific week\n'
+                '    "help"            — asking what the bot can do\n'
+                '    "unknown"         — cannot determine intent\n\n'
+                '- subject: player or team name if mentioned, else null\n'
                 '- subject_type: "player", "team", or "all"\n'
-                '- time_range: "current_season" (default), "all_time", or "season_N" where N is the number.\n'
-                '  Use "all_time" for any of these signals: "all time", "ever", "career", "historically",\n'
-                '  "across all seasons", "of all time", "best ever", "greatest", "highest ever",\n'
-                '  "in history", "since the beginning", "going back", "across seasons", or any phrasing\n'
-                '  that implies spanning more than one season rather than the current one.\n'
-                '  Only use season_N if the user says an explicit number like "season 8" or "s8".\n\n'
+                '- time_range: "current_season" (default), "all_time", or "season_N" (N = number).\n'
+                '  Use "all_time" for: "ever", "all time", "career", "historically", "of all time",\n'
+                '  "best ever", "in history", "across all seasons", "greatest", or similar.\n'
+                '  Use "season_N" only for explicit numbers like "season 8" or "s8".\n'
+                '  "last season" is handled externally — treat it as "current_season".\n\n'
+                '- For top_n only, also include:\n'
+                '    "n": number of players/scores requested (integer, default 5)\n'
+                '    "direction": "best" (top) or "worst" (bottom)\n'
+                '    "metric": "average" (player averages) or "game" (individual game scores)\n\n'
                 f'Message: "{message}"\n'
             )
 
@@ -349,6 +281,25 @@ class CommandParser:
                 if subject:
                     params["team_name"] = subject
                 return Command(CommandType.TEAM_RECORD, params)
+
+            elif intent == "best_player":
+                return Command(CommandType.BEST_PLAYER, params)
+
+            elif intent == "worst_player":
+                params["direction"] = "worst"
+                return Command(CommandType.BEST_PLAYER, params)
+
+            elif intent == "top_n":
+                raw_n = data.get("n") or 5
+                _word_nums = {"one":1,"two":2,"three":3,"four":4,"five":5,"six":6,"seven":7,"eight":8,"nine":9,"ten":10}
+                try:
+                    n = int(raw_n)
+                except (ValueError, TypeError):
+                    n = _word_nums.get(str(raw_n).lower(), 5)
+                params["n"] = n
+                params["direction"] = data.get("direction", "best")
+                params["metric"] = data.get("metric", "average")
+                return Command(CommandType.TOP_N, params)
 
             elif intent == "leaders":
                 return Command(CommandType.LEADERS, params)

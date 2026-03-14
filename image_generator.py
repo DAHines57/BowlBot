@@ -51,7 +51,7 @@ _CSS = """
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
     font-family: 'Arial', sans-serif;
-    background: #1a1a2e;
+    background: #12101a;
     color: #e0e0e0;
     width: 600px;
     padding: 0;
@@ -66,7 +66,7 @@ body {
 .header .title {
     font-size: 26px;
     font-weight: bold;
-    color: #ffd700;
+    color: #ffb86c;
     letter-spacing: 2px;
 }
 .header .subtitle {
@@ -87,8 +87,8 @@ body {
     padding: 16px;
     text-align: center;
 }
-.highlight-card.high { background: #1e3a1e; border: 1px solid #4caf50; }
-.highlight-card.low  { background: #3a1e1e; border: 1px solid #e94560; }
+.highlight-card.high { background: #1a2e1a; border: 1px solid #50fa7b; }
+.highlight-card.low  { background: #2e1a1a; border: 1px solid #ff6b81; }
 .highlight-card .label {
     font-size: 11px;
     font-weight: bold;
@@ -96,15 +96,15 @@ body {
     margin-bottom: 8px;
     text-transform: uppercase;
 }
-.highlight-card.high .label { color: #4caf50; }
-.highlight-card.low  .label { color: #e94560; }
+.highlight-card.high .label { color: #50fa7b; }
+.highlight-card.low  .label { color: #ff6b81; }
 .highlight-card .score {
     font-size: 42px;
     font-weight: bold;
     line-height: 1;
 }
-.highlight-card.high .score { color: #4caf50; }
-.highlight-card.low  .score { color: #e94560; }
+.highlight-card.high .score { color: #50fa7b; }
+.highlight-card.low  .score { color: #ff6b81; }
 .highlight-card .player-name {
     font-size: 15px;
     font-weight: bold;
@@ -126,7 +126,7 @@ body {
     color: #888;
     text-transform: uppercase;
     margin-bottom: 10px;
-    border-bottom: 1px solid #2a2a4a;
+    border-bottom: 1px solid #2a2050;
     padding-bottom: 6px;
 }
 
@@ -136,7 +136,7 @@ table {
     border-collapse: collapse;
     font-size: 13px;
 }
-thead tr { background: #0f3460; }
+thead tr { background: #2d1b69; }
 thead th {
     padding: 8px 10px;
     text-align: left;
@@ -146,21 +146,21 @@ thead th {
     text-transform: uppercase;
 }
 thead th.right { text-align: right; }
-tbody tr { border-bottom: 1px solid #2a2a4a; }
-tbody tr:nth-child(even) { background: #16213e; }
+tbody tr { border-bottom: 1px solid #2a2050; }
+tbody tr:nth-child(even) { background: #1a1730; }
 tbody tr.absent { opacity: 0.45; }
 tbody td {
     padding: 7px 10px;
     color: #ddd;
 }
 tbody td.right { text-align: right; }
-.rank { color: #666; width: 24px; }
+.rank { color: #555; width: 24px; }
 .player-col { font-weight: bold; color: #fff; }
 .team-col { color: #888; font-size: 12px; }
 .absent-badge {
     display: inline-block;
-    background: #3a1e1e;
-    color: #e94560;
+    background: #2e1a1a;
+    color: #ff6b81;
     font-size: 9px;
     padding: 1px 5px;
     border-radius: 3px;
@@ -176,8 +176,8 @@ tbody td.right { text-align: right; }
 }
 .stat {
     flex: 1;
-    background: #16213e;
-    border: 1px solid #2a2a4a;
+    background: #1a1730;
+    border: 1px solid #2a2050;
     border-radius: 8px;
     padding: 12px;
     text-align: center;
@@ -185,7 +185,7 @@ tbody td.right { text-align: right; }
 .stat .stat-value {
     font-size: 26px;
     font-weight: bold;
-    color: #ffd700;
+    color: #ffb86c;
 }
 .stat .stat-label {
     font-size: 11px;
@@ -233,7 +233,7 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
           <th class="right">#</th>
           <th>Player</th>
           <th>Team</th>
-          <th class="right">Avg</th>
+          <th class="right">Wk Avg</th>
           <th class="right">High</th>
         </tr>
       </thead>
@@ -298,11 +298,12 @@ def build_html(data: dict) -> str:
         avg_str  = f"{p['avg']:.1f}" if p["avg"] else "—"
         high_str = str(p["high"]) if p["high"] else "—"
 
+        team_style = _team_color_style(p['team'])
         rows.append(f"""
         <tr {row_class}>
           <td class="right rank">{rank_str}</td>
           <td class="player-col">{_short_name(p['name'])}{absent_badge}</td>
-          <td class="team-col">{p['team']}</td>
+          <td class="team-col" style="{team_style}">{p['team']}</td>
           <td class="right">{avg_str}</td>
           <td class="right">{high_str}</td>
         </tr>""")
@@ -313,10 +314,10 @@ def build_html(data: dict) -> str:
         week=data.get("week", ""),
         high_score=high.get("score", "—"),
         high_player=_short_name(high.get("player", "—")) if high.get("player") else "—",
-        high_team=high.get("team", ""),
+        high_team=f'<span style="{_team_color_style(high.get("team",""))}">{high.get("team","")}</span>',
         low_score=low.get("score", "—"),
         low_player=_short_name(low.get("player", "—")) if low.get("player") else "—",
-        low_team=low.get("team", ""),
+        low_team=f'<span style="{_team_color_style(low.get("team",""))}">{low.get("team","")}</span>',
         player_rows="".join(rows),
         league_avg=data.get("league_avg", "—"),
         total_players=data.get("total_players", 0),
@@ -329,22 +330,22 @@ _MATCHUPS_CSS = """
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
     font-family: 'Arial', sans-serif;
-    background: #1a1a2e;
+    background: #12101a;
     color: #e0e0e0;
     width: 600px;
 }
 .container { padding: 24px; }
 .header { text-align: center; margin-bottom: 20px; }
-.header .title { font-size: 26px; font-weight: bold; color: #ffd700; letter-spacing: 2px; }
+.header .title { font-size: 26px; font-weight: bold; color: #ffb86c; letter-spacing: 2px; }
 .header .subtitle { font-size: 14px; color: #888; margin-top: 4px; }
 .section-title {
     font-size: 11px; font-weight: bold; letter-spacing: 2px; color: #888;
     text-transform: uppercase; margin-bottom: 12px;
-    border-bottom: 1px solid #2a2a4a; padding-bottom: 6px;
+    border-bottom: 1px solid #2a2050; padding-bottom: 6px;
 }
 .matchup-card {
-    background: #16213e;
-    border: 1px solid #2a2a4a;
+    background: #1a1730;
+    border: 1px solid #2a2050;
     border-radius: 10px;
     padding: 14px 16px;
     margin-bottom: 10px;
@@ -367,21 +368,21 @@ body {
     width: 28px; height: 28px; border-radius: 6px;
     font-size: 13px; font-weight: bold; line-height: 28px; text-align: center;
 }
-.badge.W { background: #1e3a1e; color: #4caf50; border: 1px solid #4caf50; }
-.badge.L { background: #3a1e1e; color: #e94560; border: 1px solid #e94560; }
-.badge.T { background: #2a2a1e; color: #ffd700; border: 1px solid #ffd700; }
-.badge.none { background: #2a2a2a; color: #555; border: 1px solid #333; }
+.badge.W { background: #1a2e1a; color: #50fa7b; border: 1px solid #50fa7b; }
+.badge.L { background: #2e1a1a; color: #ff6b81; border: 1px solid #ff6b81; }
+.badge.T { background: #2a2010; color: #ffb86c; border: 1px solid #ffb86c; }
+.badge.none { background: #1e1a2e; color: #555; border: 1px solid #2a2050; }
 /* Per-game breakdown */
 .games-row {
     display: flex;
     gap: 6px;
-    border-top: 1px solid #2a2a4a;
+    border-top: 1px solid #2a2050;
     padding-top: 8px;
 }
 .game-cell {
     flex: 1;
     text-align: center;
-    background: #0f1a2e;
+    background: #1e1a2e;
     border-radius: 6px;
     padding: 5px 4px;
 }
@@ -389,9 +390,9 @@ body {
 .game-score { font-size: 12px; color: #aaa; margin: 2px 0; }
 .game-score.winner { color: #fff; font-weight: bold; }
 .game-result { font-size: 9px; font-weight: bold; }
-.game-result.W { color: #4caf50; }
-.game-result.L { color: #e94560; }
-.game-result.T { color: #ffd700; }
+.game-result.W { color: #50fa7b; }
+.game-result.L { color: #ff6b81; }
+.game-result.T { color: #ffb86c; }
 """
 
 _MATCHUPS_TEMPLATE = """<!DOCTYPE html>
@@ -421,12 +422,14 @@ def build_matchups_html(data: dict) -> str:
         h_res = home["result"]
         h_badge = f'<div class="badge {h_res}">{h_res}</div>'
 
+        h_color = _team_color_style(home['name'])
         if away:
             a_res = away["result"]
             a_badge = f'<div class="badge {a_res}">{a_res}</div>'
+            a_color = _team_color_style(away['name'])
             away_html = f"""
               <div class="team-side away">
-                <div class="team-name">{away['name']}</div>
+                <div class="team-name" style="{a_color}">{away['name']}</div>
                 <div class="team-stats">
                   <span class="pins">{away['pins']:,} pins</span> &nbsp;·&nbsp; {away['avg']} avg
                   &nbsp;·&nbsp; {away['wins']}W
@@ -456,7 +459,7 @@ def build_matchups_html(data: dict) -> str:
     <div class="matchup-card">
       <div class="matchup-top">
         <div class="team-side">
-          <div class="team-name">{home['name']}</div>
+          <div class="team-name" style="{h_color}">{home['name']}</div>
           <div class="team-stats">
             <span class="pins">{home['pins']:,} pins</span> &nbsp;·&nbsp; {home['avg']} avg
             &nbsp;·&nbsp; {home['wins']}W
@@ -481,30 +484,30 @@ def build_matchups_html(data: dict) -> str:
 
 _LIST_CSS = """
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: Arial, sans-serif; background: #1a1a2e; color: #e0e0e0; width: 600px; }
+body { font-family: Arial, sans-serif; background: #12101a; color: #e0e0e0; width: 600px; }
 .container { padding: 24px; }
 .header { text-align: center; margin-bottom: 20px; }
-.header .title { font-size: 26px; font-weight: bold; color: #ffd700; letter-spacing: 2px; }
+.header .title { font-size: 26px; font-weight: bold; color: #ffb86c; letter-spacing: 2px; }
 .header .subtitle { font-size: 14px; color: #888; margin-top: 4px; }
 .section { margin-bottom: 20px; }
 .section-title {
     font-size: 11px; font-weight: bold; letter-spacing: 2px; color: #888;
     text-transform: uppercase; margin-bottom: 10px;
-    border-bottom: 1px solid #2a2a4a; padding-bottom: 6px;
+    border-bottom: 1px solid #2a2050; padding-bottom: 6px;
 }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
-thead tr { background: #0f3460; }
+thead tr { background: #2d1b69; }
 thead th { padding: 8px 10px; text-align: left; color: #aaa; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }
 thead th.right { text-align: right; }
-tbody tr { border-bottom: 1px solid #2a2a4a; }
-tbody tr:nth-child(even) { background: #16213e; }
+tbody tr { border-bottom: 1px solid #2a2050; }
+tbody tr:nth-child(even) { background: #1a1730; }
 tbody td { padding: 7px 10px; color: #ddd; }
 tbody td.right { text-align: right; }
-.rank { color: #666; }
+.rank { color: #555; }
 .name-col { font-weight: bold; color: #fff; }
 .sub-col { color: #888; font-size: 12px; }
-.gold { color: #ffd700; font-weight: bold; }
-.green { color: #4caf50; }
+.gold { color: #ffb86c; font-weight: bold; }
+.green { color: #50fa7b; }
 .record { font-weight: bold; color: #fff; }
 """
 
@@ -543,8 +546,8 @@ def _list_section(title, headers, rows):
 # Players season leaderboard
 # ---------------------------------------------------------------------------
 
-def build_players_html(data: dict, season: str) -> str:
-    count_label = "Games" if season == "All Time" else "Weeks"
+def build_players_html(data: dict, season: str, ascending: bool = False) -> str:
+    count_label = "Games" if season in ("All Time",) or "All Time" in season else "Weeks"
     headers = [
         {"label": "#", "right": True},
         {"label": "Player"},
@@ -555,7 +558,7 @@ def build_players_html(data: dict, season: str) -> str:
         {"label": count_label, "right": True},
     ]
     rows = []
-    sorted_players = sorted(data.items(), key=lambda x: x[1].get("average", 0), reverse=True)
+    sorted_players = sorted(data.items(), key=lambda x: x[1].get("average", 0), reverse=not ascending)
     for i, (name, stats) in enumerate(sorted_players, 1):
         avg = stats.get("average", 0)
         high = stats.get("highest_game", 0)
@@ -732,6 +735,31 @@ def build_team_weekly_html(team: str, season: str, weekly_summary: dict) -> str:
     )
 
 
+def build_top_games_html(games: list, season: str, n: int) -> str:
+    """Build image for top N individual game scores.
+    games: list of (player, team, week, score) tuples, pre-sorted."""
+    headers = [
+        {"label": "#", "right": True},
+        {"label": "Player"},
+        {"label": "Team"},
+        {"label": "Wk", "right": True},
+        {"label": "Score", "right": True},
+    ]
+    rows = []
+    for i, (player, team, week, score) in enumerate(games[:n], 1):
+        rows.append([
+            {"val": i,                   "cls": "right rank"},
+            {"val": _short_name(player), "cls": "name-col"},
+            {"val": team,                "cls": "sub-col", "style": _team_color_style(team)},
+            {"val": week,                "cls": "right sub-col"},
+            {"val": int(score),          "cls": "right gold"},
+        ])
+    section = _list_section(f"Top {n} Individual Games", headers, rows)
+    return _LIST_TEMPLATE.format(
+        css=_LIST_CSS, title="🎳 TOP SCORES", subtitle=season, sections=section
+    )
+
+
 def generate_image(html: str) -> bytes:
     """Render the HTML to a PNG using Playwright and return raw bytes."""
     from playwright.sync_api import sync_playwright
@@ -739,6 +767,9 @@ def generate_image(html: str) -> bytes:
         browser = p.chromium.launch()
         page = browser.new_page(viewport={"width": 600, "height": 800})
         page.set_content(html, wait_until="networkidle")
-        buf = page.screenshot(full_page=True)
+        # Resize viewport to actual content height so there's no empty space
+        content_height = page.evaluate("document.body.scrollHeight")
+        page.set_viewport_size({"width": 600, "height": content_height})
+        buf = page.screenshot()
         browser.close()
     return buf

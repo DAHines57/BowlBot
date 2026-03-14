@@ -6,6 +6,7 @@ __pycache__/
 # C extensions
 *.so
 
+
 # Distribution / packaging
 .Python
 env/
@@ -77,6 +78,9 @@ celerybeat-schedule
 
 # dotenv
 .env
+
+# Google service account credentials
+keys/
 
 # virtualenv
 venv/

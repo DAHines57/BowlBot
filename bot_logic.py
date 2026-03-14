@@ -1,6 +1,7 @@
 """
 Bot logic for handling commands and generating responses.
 """
+import os
 import time
 from typing import Dict, Optional
 from sheets_handler import SheetHandler
@@ -8,6 +9,13 @@ from command_parser import Command, CommandParser, CommandType
 from utils import safe_float, safe_int
 
 PENDING_TTL = 60  # seconds before a pending clarification expires
+
+# Phone numbers allowed to run admin commands (comma-separated in env)
+_ADMIN_PHONES = {
+    p.strip()
+    for p in os.environ.get("ADMIN_PHONES", "").split(",")
+    if p.strip()
+}
 
 
 class BotLogic:
@@ -66,6 +74,9 @@ class BotLogic:
         if command_season is None:
             command_season = self.sheet_handler._get_current_season()
         
+        if command.command_type == CommandType.RELOAD:
+            return self._handle_reload(user_phone)
+
         if command.command_type == CommandType.HELP:
             parser = CommandParser()
             return parser.get_help_message()
@@ -76,6 +87,12 @@ class BotLogic:
         elif command.command_type == CommandType.LIST_PLAYERS:
             return self._handle_list_players(command_season)
         
+        elif command.command_type == CommandType.BEST_PLAYER:
+            return self._handle_best_player(command_season, command.params.get("week"), command.params.get("direction", "best"))
+
+        elif command.command_type == CommandType.TOP_N:
+            return self._handle_top_n(command_season, command.params.get("week"), command.params.get("n", 5), command.params.get("direction", "best"), command.params.get("metric", "average"))
+
         elif command.command_type == CommandType.LEADERS:
             return self._handle_leaders(command_season)
 
@@ -315,6 +332,126 @@ class BotLogic:
             import traceback; traceback.print_exc()
             return f"❌ Error retrieving team record: {str(e)}"
     
+    def _handle_best_player(self, season: Optional[str], week: Optional[int], direction: str = "best"):
+        """Find the top or bottom player for a season or week and return their full stats."""
+        is_worst = direction == "worst"
+        trophy = "🥴" if is_worst else "🏆"
+        label_word = "Bottom" if is_worst else "Top"
+        try:
+            if week is not None:
+                data = self.sheet_handler.get_week_summary(week, season)
+                if "error" in data:
+                    return f"❌ {data['error']}"
+                active = [p for p in data.get("players", []) if not p.get("absent")]
+                if not active:
+                    return f"❌ No scores found for Week {week}."
+                # sorted desc by avg; worst = last
+                target = active[-1] if is_worst else active[0]
+                name = target["name"]
+                label = f"Week {week}" + (f" ({season})" if season else "")
+                intro = f"{trophy} {label_word} bowler for {label}: *{name}* ({target['avg']} avg, high {target['high']})\n\n"
+                return intro + self._handle_player_scores(name, season)
+            else:
+                if season == "all":
+                    stats = self.sheet_handler.get_all_time_stats()
+                else:
+                    stats = self.sheet_handler.get_league_stats(season)
+                avgs = stats.get("player_averages", [])
+                if not avgs:
+                    return f"❌ No player data found." + (f" ({season})" if season else "")
+                target = avgs[-1] if is_worst else avgs[0]
+                name = target["player"]
+                label = season or self.sheet_handler._get_current_season()
+                intro = f"{trophy} {label_word} bowler for {label}: *{name}* ({target['average']} avg)\n\n"
+                if season == "all":
+                    # Build response directly from all-time data — get_player_scores
+                    # doesn't understand season="all"
+                    team    = target.get("team", "Unknown")
+                    avg     = target.get("average", 0)
+                    std_dev = self._safe_float(target.get("std_dev", 0))
+                    high    = self._safe_int(target.get("highest_game", 0))
+                    low     = self._safe_int(target.get("lowest_game", 0))
+                    games   = self._safe_int(target.get("games", 0))
+                    detail = (
+                        f"🎳 *{name}* (All Time)\n"
+                        f"Current Team: {team}\n\n"
+                        f"📊 Average: {avg:.1f}\n"
+                        f"📏 Std Dev: {std_dev:.1f}\n"
+                        f"🎯 Highest Game: {high}\n"
+                        f"📉 Lowest Game: {low}\n"
+                        f"📈 Games: {games}"
+                    )
+                    return intro + detail
+                return intro + self._handle_player_scores(name, season)
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            return f"❌ Error finding {direction} player: {str(e)}"
+
+    def _handle_top_n(self, season: Optional[str], week: Optional[int], n: int, direction: str = "best", metric: str = "average"):
+        """Return an image of the top or bottom N players or game scores."""
+        is_worst = direction == "worst"
+        label_word = "Bottom" if is_worst else "Top"
+        try:
+            from image_generator import build_players_html, build_top_games_html, generate_image
+
+            # Top/bottom N individual game scores
+            if metric == "game":
+                if season == "all" or season is None and week is None:
+                    stats = self.sheet_handler.get_all_time_stats()
+                else:
+                    stats = self.sheet_handler.get_league_stats(season)
+                games = stats.get("top_games", [])  # already sorted high→low
+                if is_worst:
+                    games = list(reversed(games))
+                subtitle = season or self.sheet_handler._get_current_season()
+                return generate_image(build_top_games_html(games, subtitle, n))
+            if week is not None:
+                data = self.sheet_handler.get_week_summary(week, season)
+                if "error" in data:
+                    return f"❌ {data['error']}"
+                active = [p for p in data.get("players", []) if not p.get("absent")]
+                active = (active[-n:] if is_worst else active[:n])
+                # Convert to the dict shape build_players_html expects
+                player_data = {
+                    p["name"]: {
+                        "team": p.get("team", ""),
+                        "average": p.get("avg", 0),
+                        "highest_game": p.get("high", 0),
+                        "lowest_game": min(p.get("games", [0])),
+                        "weeks_played": 1,
+                    }
+                    for p in active
+                }
+                label = f"{label_word} {n} — Week {week}" + (f" ({season})" if season else "")
+            else:
+                if season == "all":
+                    stats = self.sheet_handler.get_all_time_stats()
+                    avgs = stats.get("player_averages", [])
+                    avgs = avgs[-n:] if is_worst else avgs[:n]
+                    player_data = {
+                        p["player"]: {
+                            "team": p.get("team", ""),
+                            "average": p.get("average", 0),
+                            "highest_game": p.get("highest_game", 0),
+                            "lowest_game": p.get("lowest_game", 0),
+                            "weeks_played": p.get("games", 0),
+                        }
+                        for p in avgs
+                    }
+                    label = f"{label_word} {n} — All Time"
+                else:
+                    raw = self.sheet_handler.get_player_scores(None, season)
+                    sorted_players = sorted(raw.items(), key=lambda x: x[1].get("average", 0), reverse=True)
+                    sliced = sorted_players[-n:] if is_worst else sorted_players[:n]
+                    player_data = dict(sliced)
+                    label = f"{label_word} {n} — {season or self.sheet_handler._get_current_season()}"
+            if not player_data:
+                return f"❌ No player data found."
+            return generate_image(build_players_html(player_data, label, ascending=is_worst))
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            return f"❌ Error retrieving top {n}: {str(e)}"
+
     def _handle_leaders(self, season: Optional[str]):
         """Handle league leaders query — returns image."""
         try:
@@ -335,6 +472,36 @@ class BotLogic:
                               week: Optional[int] = None, user_phone: Optional[str] = None) -> str:
         """Handle player scores query."""
         try:
+            # All-time single player: get_player_scores doesn't understand season="all"
+            # so we pull from get_all_time_stats() and build the response directly
+            if season == "all" and player_name:
+                stats = self.sheet_handler.get_all_time_stats()
+                normalized = self._normalize(player_name)
+                match = next(
+                    (p for p in stats.get("player_averages", [])
+                     if normalized in self._normalize(p["player"]) or
+                        self._normalize(p["player"]) in normalized),
+                    None
+                )
+                if not match:
+                    return f"❌ Player '{player_name}' not found in all-time stats."
+                name = match["player"]
+                team    = match.get("team", "Unknown")
+                avg     = match.get("average", 0)
+                std_dev = self._safe_float(match.get("std_dev", 0))
+                high    = self._safe_int(match.get("highest_game", 0))
+                low     = self._safe_int(match.get("lowest_game", 0))
+                games   = self._safe_int(match.get("games", 0))
+                return (
+                    f"🎳 *{name}* (All Time)\n"
+                    f"Current Team: {team}\n\n"
+                    f"📊 Average: {avg:.1f}\n"
+                    f"📏 Std Dev: {std_dev:.1f}\n"
+                    f"🎯 Highest Game: {high}\n"
+                    f"📉 Lowest Game: {low}\n"
+                    f"📈 Games: {games}"
+                )
+
             # Check for ambiguous player name before fetching full stats
             if player_name:
                 matches = self.sheet_handler.find_player_names(player_name, season)
@@ -450,6 +617,21 @@ class BotLogic:
         except Exception as e:
             return f"❌ Error retrieving player scores: {str(e)}"
     
+    def _handle_reload(self, user_phone: Optional[str]) -> str:
+        """Reload sheet data from the source. Admin-only."""
+        if not _ADMIN_PHONES:
+            return "Reload is not configured (no ADMIN_PHONES set)."
+        if not user_phone or user_phone not in _ADMIN_PHONES:
+            return "You don't have permission to do that."
+        try:
+            print(f"[Reload] Triggered by {user_phone}")
+            self.sheet_handler._load_workbook()
+            seasons = self.sheet_handler.get_seasons()
+            return f"Data reloaded. {len(seasons)} seasons available ({', '.join(sorted(seasons)[-3:])}, ...)."
+        except Exception as e:
+            print(f"[Reload] Error: {e}")
+            return f"Reload failed: {e}"
+
     def _handle_list_seasons(self) -> str:
         """Handle listing available seasons."""
         try:

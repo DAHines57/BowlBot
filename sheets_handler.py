@@ -802,9 +802,16 @@ class ExcelHandler(SheetHandler):
             key=lambda x: x[2] / x[3] if x[3] else 0, reverse=True
         )
 
+        def _std_dev(games):
+            if len(games) < 2:
+                return 0.0
+            avg = sum(games) / len(games)
+            return (sum((g - avg) ** 2 for g in games) / len(games)) ** 0.5
+
         player_avg_list = sorted(
             [{"player": p, "team": d["team"],
               "average": round(sum(d["games"]) / len(d["games"]), 2),
+              "std_dev": round(_std_dev(d["games"]), 2),
               "highest_game": max(d["games"]),
               "lowest_game": min(d["games"]),
               "games": len(d["games"])}
@@ -1281,21 +1288,127 @@ class ExcelHandler(SheetHandler):
         return matches
 
 
+# ---------------------------------------------------------------------------
+# Google Sheets proxy — mimics the openpyxl cell/worksheet/workbook API so
+# GSheetHandler can inherit all of ExcelHandler's logic unchanged.
+# ---------------------------------------------------------------------------
+
+class _CellProxy:
+    """Wraps a raw string value from gspread with type coercion."""
+    def __init__(self, raw):
+        if raw is None or raw == "":
+            self.value = None
+            return
+        # Try int first, then float, fall back to the raw string
+        try:
+            self.value = int(raw)
+            return
+        except (ValueError, TypeError):
+            pass
+        try:
+            self.value = float(raw)
+            return
+        except (ValueError, TypeError):
+            pass
+        self.value = raw
+
+
+class _WorksheetProxy:
+    """Wraps a list-of-lists (gspread get_all_values) as an openpyxl worksheet."""
+    def __init__(self, rows: list):
+        self._rows = rows  # 0-indexed list of lists of strings
+
+    @property
+    def max_row(self) -> int:
+        return len(self._rows)
+
+    def cell(self, row: int, column: int) -> _CellProxy:
+        """row and column are 1-indexed, matching openpyxl convention."""
+        try:
+            return _CellProxy(self._rows[row - 1][column - 1])
+        except IndexError:
+            return _CellProxy(None)
+
+
+class _WorkbookProxy:
+    """Wraps a dict of sheet-name -> _WorksheetProxy as an openpyxl workbook."""
+    def __init__(self):
+        self._sheets: dict = {}
+
+    @property
+    def sheetnames(self) -> list:
+        return list(self._sheets.keys())
+
+    def __getitem__(self, name: str) -> _WorksheetProxy:
+        return self._sheets[name]
+
+    def __contains__(self, name: str) -> bool:
+        return name in self._sheets
+
+
+# ---------------------------------------------------------------------------
+# Google Sheets handler
+# ---------------------------------------------------------------------------
+
+class GSheetHandler(ExcelHandler):
+    """Reads data from a Google Sheet using gspread.
+    Inherits all query logic from ExcelHandler via the proxy layer.
+    Data is loaded once at startup; restart the bot to pick up new scores."""
+
+    def __init__(self, sheet_id: str, credentials_json: str):
+        self.sheet_id = sheet_id
+        self.credentials_json = credentials_json
+        self.file_path = None  # not used
+        self.workbook = None
+        self._load_workbook()
+
+    def _load_workbook(self):
+        import gspread
+        import json
+        from google.oauth2.service_account import Credentials
+
+        creds_dict = json.loads(self.credentials_json)
+        creds = Credentials.from_service_account_info(
+            creds_dict,
+            scopes=[
+                "https://www.googleapis.com/auth/spreadsheets.readonly",
+                "https://www.googleapis.com/auth/drive.readonly",
+            ],
+        )
+        client = gspread.authorize(creds)
+        spreadsheet = client.open_by_key(self.sheet_id)
+
+        wb = _WorkbookProxy()
+        for ws in spreadsheet.worksheets():
+            wb._sheets[ws.title] = _WorksheetProxy(ws.get_all_values())
+            print(f"[GSheets] Loaded sheet: {ws.title} ({len(wb._sheets[ws.title]._rows)} rows)")
+        self.workbook = wb
+        print(f"[GSheets] Connected — {len(wb.sheetnames)} sheets loaded")
+
+    def add_score(self, player_name: str, score: int, week=None, season=None) -> bool:
+        """Write-back is not supported for Google Sheets."""
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Factory
+# ---------------------------------------------------------------------------
+
 def get_sheet_handler(handler_type: str = "excel", **kwargs) -> SheetHandler:
     """
     Factory function to get the appropriate sheet handler.
-    
-    Args:
-        handler_type: "excel"
-        **kwargs: Arguments for the handler
-            - For Excel: file_path (required)
-    
-    Returns:
-        SheetHandler instance
+
+    handler_type:
+        "excel"   — local Excel file (kwargs: file_path)
+        "gsheets" — Google Sheets via service account (kwargs: sheet_id, credentials_json)
     """
     if handler_type.lower() == "excel":
         if "file_path" not in kwargs:
             raise ValueError("file_path is required for Excel handler")
         return ExcelHandler(kwargs["file_path"])
+    elif handler_type.lower() == "gsheets":
+        if "sheet_id" not in kwargs or "credentials_json" not in kwargs:
+            raise ValueError("sheet_id and credentials_json are required for GSheetHandler")
+        return GSheetHandler(kwargs["sheet_id"], kwargs["credentials_json"])
     else:
         raise ValueError(f"Unknown handler type: {handler_type}")

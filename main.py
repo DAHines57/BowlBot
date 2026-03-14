@@ -14,16 +14,23 @@ app = Flask(__name__)
 dotenv_path = join(dirname(__file__), '.env')
 load_dotenv(dotenv_path)
 
-# Replace with your actual Meta API credentials
 ACCESS_TOKEN = os.environ.get("ACCESS_TOKEN")
-VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN")  # Set a random string
+VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN")
 
-# Initialize sheet handler
-EXCEL_FILE_PATH = os.environ.get("EXCEL_FILE_PATH", "Bowling-Friends League v5.xlsx")
+SHEET_HANDLER_TYPE  = os.environ.get("SHEET_HANDLER_TYPE", "excel")
+EXCEL_FILE_PATH     = os.environ.get("EXCEL_FILE_PATH", "Bowling-Friends League v5.xlsx")
+GOOGLE_SHEET_ID     = os.environ.get("GOOGLE_SHEET_ID")
+GOOGLE_CREDENTIALS  = os.environ.get("GOOGLE_CREDENTIALS")
 
-# Initialize sheet handler
 try:
-    sheet_handler = get_sheet_handler("excel", file_path=EXCEL_FILE_PATH)
+    if SHEET_HANDLER_TYPE == "gsheets":
+        sheet_handler = get_sheet_handler(
+            "gsheets",
+            sheet_id=GOOGLE_SHEET_ID,
+            credentials_json=GOOGLE_CREDENTIALS,
+        )
+    else:
+        sheet_handler = get_sheet_handler("excel", file_path=EXCEL_FILE_PATH)
 except Exception as e:
     print(f"Error initializing sheet handler: {e}")
     sheet_handler = None
@@ -170,4 +177,5 @@ def send_whatsapp_image(recipient_id, recipient_number, image_bytes: bytes, mess
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 3000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    debug = os.environ.get("DEBUG", "false").lower() == "true"
+    app.run(host="0.0.0.0", port=port, debug=debug)
