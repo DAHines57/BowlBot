@@ -77,9 +77,14 @@ def current_season_label(facts: List[dict]) -> Optional[str]:
 
 
 def _find_opponent_team(
-    opponent_name: str, team_names: List[str]
+    opponent_name: str,
+    team_names: List[str],
+    *,
+    season_num: Optional[int] = None,
 ) -> Optional[str]:
-    return resolve_opponent_on_roster(opponent_name, team_names)
+    return resolve_opponent_on_roster(
+        opponent_name, team_names, season_num=season_num
+    )
 
 
 def _team_game_totals_by_week(
@@ -194,7 +199,9 @@ def get_team_scores(
                 week_num, {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
             )
             if opponent_name and team_games:
-                opp_team_found = _find_opponent_team(opponent_name, team_names)
+                opp_team_found = _find_opponent_team(
+                    opponent_name, team_names, season_num=season_num
+                )
                 if opp_team_found:
                     opp_games = game_index.get(opp_team_found, {}).get(
                         week_num, {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
@@ -251,7 +258,7 @@ def get_team_scores(
                     week_wins = week_losses = week_ties = 0
                     if opponent_name and opponent_name != "Unknown":
                         opp_team_found = _find_opponent_team(
-                            opponent_name, team_names
+                            opponent_name, team_names, season_num=season_num
                         )
                         if opp_team_found:
                             opp_games = game_index.get(opp_team_found, {}).get(
@@ -364,7 +371,7 @@ def get_team_weekly_summary(
         opponent_name = week_info["opponent"]
         team_games = week_info["game_totals"]
         opp_team_found = _find_opponent_team(
-            opponent_name, list(all_teams.keys())
+            opponent_name, list(all_teams.keys()), season_num=season_num
         )
         if opp_team_found and week in all_teams.get(opp_team_found, {}):
             opp_games = all_teams[opp_team_found][week]
@@ -956,7 +963,13 @@ def get_week_matchups(
         if team_name in matched:
             continue
         opp_name = (td.get("opponent") or "").strip()
-        resolved = resolve_opponent_on_roster(opp_name, list(teams.keys())) if opp_name else None
+        resolved = (
+            resolve_opponent_on_roster(
+                opp_name, list(teams.keys()), season_num=season_num
+            )
+            if opp_name
+            else None
+        )
         if resolved:
             opp_name = resolved
         opp = teams.get(opp_name)
@@ -1026,12 +1039,26 @@ def get_week_matchups(
         series_split_2_2 = (
             h_wins_first4 == 2 and a_wins_first4 == 2 and num_games_cmp >= 4
         )
+        pins_decisive_g5 = fifth_game_pins_decisive(td, opp)
         winner_side = None
-        if g5_series and series_split_2_2:
-            if name_matches_team(team_name, g5_series):
-                winner_side = "home"
-            elif name_matches_team(opp_name, g5_series):
-                winner_side = "away"
+        if g5_series and not pins_decisive_g5:
+            g5_home = name_matches_team(team_name, g5_series)
+            g5_away = name_matches_team(opp_name, g5_series)
+            g5_side: Optional[str] = None
+            if g5_home:
+                g5_side = "home"
+            elif g5_away:
+                g5_side = "away"
+            if g5_side:
+                if series_split_2_2:
+                    winner_side = g5_side
+                else:
+                    pin_leader_home = h_wins_first4 > a_wins_first4
+                    pin_leader_away = a_wins_first4 > h_wins_first4
+                    if pin_leader_home and g5_side != "home":
+                        winner_side = g5_side
+                    elif pin_leader_away and g5_side != "away":
+                        winner_side = g5_side
         if winner_side:
             if winner_side == "home":
                 h_result, a_result = "W", "L"
@@ -1039,15 +1066,20 @@ def get_week_matchups(
             else:
                 h_result, a_result = "L", "W"
                 h_wins, a_wins = 2, 3
-            if fifth_game_pins_decisive(td, opp):
+            if pins_decisive_g5:
                 game5_series_note = (
                     f"Game 5 / series: {g5_series} (sheet series winner; "
                     "2–2 after four games)."
                 )
-            else:
+            elif series_split_2_2:
                 game5_series_note = (
                     f"Game 5 / series: {g5_series} (sheet column — "
-                    "no decisive Game 5 pin totals)."
+                    "2–2 after four games; no decisive Game 5 pin totals)."
+                )
+            else:
+                game5_series_note = (
+                    f"Game 5 / series: {g5_series} (sheet column overrides "
+                    "games 1–4 pin totals; no decisive Game 5 pin totals)."
                 )
         elif h_wins > a_wins:
             h_result, a_result = "W", "L"

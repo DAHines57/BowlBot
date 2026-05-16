@@ -254,7 +254,8 @@
       box-shadow: none !important;
     }
 
-    .field--week.is-disabled {
+    .field--week.is-disabled,
+    .field--team-lookup.is-disabled {
       opacity: 0.45;
       pointer-events: none;
     }
@@ -998,17 +999,19 @@
               <summary class="panel-summary">Lookups</summary>
               <div class="panel-details-body">
             <span class="field-label field-label--desktop-only">Lookups</span>
-            <p class="card-hint" style="margin-top:0;">Uses the season selector above (including <strong>All seasons</strong>).</p>
+            <p class="card-hint" style="margin-top:0;">Pick a name — preview opens automatically. Players work with <strong>All seasons</strong>; teams need a specific season.</p>
             <div class="stack-v">
-              <div>
-                <label class="field-hint" for="playerq">Player</label>
-                <input type="text" id="playerq" placeholder="First name or full name">
-                <a class="btn btn--spark" href="#" style="margin-top:0.5rem;" onclick="findPlayer(); return false;">View player</a>
+              <div class="field">
+                <label class="field-hint" for="player_sel">Player</label>
+                <select id="player_sel" aria-label="Choose player">
+                  <option value="">Choose player…</option>
+                </select>
               </div>
-              <div>
-                <label class="field-hint" for="teamq">Team (weekly breakdown)</label>
-                <input type="text" id="teamq" placeholder="Team name">
-                <a class="btn btn--spark" href="#" style="margin-top:0.5rem;" onclick="teamWeekly(); return false;">Team season weeks</a>
+              <div class="field field--team-lookup" id="team_lookup_field">
+                <label class="field-hint" for="team_sel">Team (weekly breakdown)</label>
+                <select id="team_sel" aria-label="Choose team">
+                  <option value="">Choose team…</option>
+                </select>
               </div>
             </div>
               </div>
@@ -1045,6 +1048,7 @@
   </div>
 
   <script type="application/json" id="weeks-data">{{ weeks_by_season | tojson }}</script>
+  <script type="application/json" id="lookup-catalog-data">{{ lookup_catalog | tojson }}</script>
   <script type="application/json" id="initial-latest-data">{{ latest_week | tojson }}</script>
   <script>
     (function () {
@@ -1126,6 +1130,7 @@
       bindMobileNav();
 
       var WEEKS = JSON.parse(document.getElementById("weeks-data").textContent);
+      var LOOKUP = JSON.parse(document.getElementById("lookup-catalog-data").textContent);
       var INITIAL_LATEST = JSON.parse(document.getElementById("initial-latest-data").textContent);
 
       function getSeason() {
@@ -1172,6 +1177,36 @@
         syncContextSummary();
       }
 
+      function fillLookupSelect(sel, names, placeholder) {
+        var prev = sel.value;
+        sel.innerHTML = "";
+        var empty = document.createElement("option");
+        empty.value = "";
+        empty.textContent = placeholder;
+        sel.appendChild(empty);
+        (names || []).forEach(function (name) {
+          var o = document.createElement("option");
+          o.value = name;
+          o.textContent = name;
+          sel.appendChild(o);
+        });
+        if (prev && [].some.call(sel.options, function (op) { return op.value === prev; })) {
+          sel.value = prev;
+        }
+      }
+
+      function rebuildLookupSelects() {
+        var season = getSeason();
+        var all = season === "all";
+        var players = all
+          ? (LOOKUP.all_players || [])
+          : ((LOOKUP.players_by_season || {})[season] || []);
+        var teams = all ? [] : ((LOOKUP.teams_by_season || {})[season] || []);
+        fillLookupSelect(document.getElementById("player_sel"), players, "Choose player…");
+        fillLookupSelect(document.getElementById("team_sel"), teams, all ? "Pick a season first" : "Choose team…");
+        document.getElementById("team_lookup_field").classList.toggle("is-disabled", all);
+      }
+
       function qsThisSeason() {
         return "season=" + encodeURIComponent(getSeason()) + "&week=" + encodeURIComponent(getWeek());
       }
@@ -1192,6 +1227,11 @@
         var u = new URL(href, window.location.origin);
         u.searchParams.set("embed", "1");
         return u.pathname + u.search;
+      }
+
+      function goEmbedHome() {
+        closeNav();
+        showPanel("/week/summary?" + qsThisSeason(), "Weekly summary", { skipScroll: true, scope: "this_week" });
       }
 
       var PLACEHOLDER_DEFAULT = {
@@ -1323,6 +1363,11 @@
           showPanel("/player?q=" + encodeURIComponent(q) + "&season=" + encodeURIComponent(season), title, { skipScroll: true, noStore: true, scope: "season_totals" });
           return;
         }
+        if (/^\/player\/.+/i.test(path)) {
+          var seasonPlayer = getSeason();
+          showPanel(path + "?season=" + encodeURIComponent(seasonPlayer), title, { skipScroll: true, noStore: true, scope: "season_totals" });
+          return;
+        }
         if (path === "/bracket") {
           var sBr = getSeason();
           showPanel("/bracket?season=" + encodeURIComponent(sBr), title, { skipScroll: true, noStore: true, scope: "season_totals" });
@@ -1361,7 +1406,23 @@
       }
 
       document.getElementById("embed-frame").addEventListener("load", function () {
-        document.getElementById("embed-panel").classList.remove("loading");
+        var panel = document.getElementById("embed-panel");
+        panel.classList.remove("loading");
+        try {
+          var frame = document.getElementById("embed-frame");
+          var loc = frame.contentWindow.location;
+          if (loc.pathname === "/" || loc.pathname === "") {
+            goEmbedHome();
+          }
+        } catch (err) { /* ignore */ }
+      });
+
+      window.addEventListener("message", function (e) {
+        var frame = document.getElementById("embed-frame");
+        if (!frame || !frame.contentWindow || e.source !== frame.contentWindow) return;
+        if (e.origin !== window.location.origin) return;
+        if (!e.data || e.data.type !== "bowlbot-embed-home") return;
+        goEmbedHome();
       });
 
       document.getElementById("embed-close").addEventListener("click", function () {
@@ -1385,6 +1446,7 @@
 
       document.getElementById("season_sel").addEventListener("change", function () {
         rebuildWeekSelect(null);
+        rebuildLookupSelects();
         updateContextUI();
         syncContextSummary();
         scheduleReplay();
@@ -1451,28 +1513,39 @@
         showPanel(path + "?" + qsSeasonTotals(), title || "Scores", { scope: "season_totals" });
       }
 
-      function findPlayer() {
-        var q = document.getElementById("playerq").value.trim();
-        if (!q) { window.alert("Enter a name"); return; }
+      document.getElementById("player_sel").addEventListener("change", function () {
+        var name = this.value;
+        if (!name) return;
         var season = getSeason();
-        showPanel("/player?q=" + encodeURIComponent(q) + "&season=" + encodeURIComponent(season), "Player lookup", { scope: "season_totals" });
-      }
+        showPanel(
+          "/player/" + encodeURIComponent(name) + "?season=" + encodeURIComponent(season),
+          "Player lookup",
+          { scope: "season_totals" }
+        );
+        this.value = "";
+        if (narrowMq.matches) closeNav();
+      });
 
-      function teamWeekly() {
-        var t = document.getElementById("teamq").value.trim();
-        if (!t) { window.alert("Enter team name"); return; }
+      document.getElementById("team_sel").addEventListener("change", function () {
+        var team = this.value;
+        if (!team || getSeason() === "all") return;
         var season = getSeason();
-        showPanel("/team/" + encodeURIComponent(t) + "/weekly?season=" + encodeURIComponent(season), "Team season weeks", { scope: "season_totals" });
-      }
+        showPanel(
+          "/team/" + encodeURIComponent(team) + "/weekly?season=" + encodeURIComponent(season),
+          "Team season weeks",
+          { scope: "season_totals" }
+        );
+        this.value = "";
+        if (narrowMq.matches) closeNav();
+      });
 
       window.go = go;
       window.goSeasonTotals = goSeasonTotals;
-      window.findPlayer = findPlayer;
-      window.teamWeekly = teamWeekly;
 
       function initWeeksAndAutoOpen() {
         syncPanelDetails();
         rebuildWeekSelect(String(INITIAL_LATEST));
+        rebuildLookupSelects();
         syncContextSummary();
         updateContextUI();
         showPanel("/week/summary?" + qsThisSeason(), "Weekly summary", { skipScroll: true, scope: "this_week" });

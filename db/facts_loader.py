@@ -41,7 +41,7 @@ def load_all_facts(session: Optional[Session] = None) -> List[dict]:
                     "sheet_key": season.sheet_key,
                     "season_number": season.number,
                     "season_label": season.label,
-                    "team": canonical_team_name(team.name),
+                    "team": canonical_team_name(team.name, season_num=season.number),
                     "player_display_name": pw.player_display_name,
                     "week": pw.week,
                     "game1": float(pw.game1) if pw.game1 is not None else None,
@@ -55,7 +55,9 @@ def load_all_facts(session: Optional[Session] = None) -> List[dict]:
                     "absent": bool(pw.absent),
                     "substitute": bool(pw.substitute),
                     "playoffs": bool(pw.playoffs),
-                    "opponent": canonical_team_name(pw.opponent)
+                    "opponent": canonical_team_name(
+                        pw.opponent, season_num=season.number
+                    )
                     if pw.opponent
                     else None,
                     "game5_winner": pw.game5_winner,

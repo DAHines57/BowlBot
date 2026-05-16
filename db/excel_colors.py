@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from openpyxl import load_workbook
 
+from stats.compute import parse_season_number
 from stats.facts import canonical_team_name
 
 TEAM_COL = 2
@@ -34,7 +35,8 @@ def extract_team_colors_for_sheet(file_path: str, sheet_key: str) -> dict[str, s
             raw = team_cell.value
             if not raw or not isinstance(raw, str):
                 continue
-            name = canonical_team_name(raw.strip())
+            sn = parse_season_number(sheet_key)
+            name = canonical_team_name(raw.strip(), season_num=sn)
             if name in colors:
                 continue
             hex_c = cell_fill_hex(team_cell)
@@ -63,7 +65,8 @@ def build_season_color_maps(
                 raw = team_cell.value
                 if not raw or not isinstance(raw, str):
                     continue
-                name = canonical_team_name(raw.strip())
+                sn = parse_season_number(sheet_key)
+                name = canonical_team_name(raw.strip(), season_num=sn)
                 if name in colors:
                     continue
                 hex_c = cell_fill_hex(team_cell)
@@ -96,7 +99,8 @@ def extract_all_team_colors(file_path: str) -> dict[str, str]:
                 raw = team_cell.value
                 if not raw or not isinstance(raw, str):
                     continue
-                name = canonical_team_name(raw.strip())
+                sn = parse_season_number(sheet_name)
+                name = canonical_team_name(raw.strip(), season_num=sn)
                 if name in colors:
                     continue
                 hex_c = cell_fill_hex(team_cell)

@@ -62,15 +62,20 @@ def _replace_season_rows(
 ) -> int:
     session.execute(delete(Team).where(Team.season_id == season.id))
 
+    season_num = season.number
     for row in rows:
         if row.get("team"):
-            row["team"] = canonical_team_name(str(row["team"]).strip())
+            row["team"] = canonical_team_name(
+                str(row["team"]).strip(), season_num=season_num
+            )
 
     roster = sorted({str(r["team"]).strip() for r in rows if r.get("team")})
     for row in rows:
         opp = row.get("opponent")
         if opp:
-            hit = resolve_opponent_on_roster(str(opp).strip(), roster)
+            hit = resolve_opponent_on_roster(
+                str(opp).strip(), roster, season_num=season_num
+            )
             if hit:
                 row["opponent"] = hit
 

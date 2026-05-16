@@ -39,6 +39,7 @@ def home():
         current_season=cur,
         latest_week=latest_wk,
         weeks_by_season=weeks_by_season,
+        lookup_catalog=svc.lookup_catalog(),
     )
 
 
@@ -212,6 +213,7 @@ def player_query():
                 query=q,
                 season=request.args.get("season") or "",
                 matches=matches,
+                embed=_embed_flag(),
             )
     html, err = svc.player_detail_page(q, season, embed=_embed_flag())
     if err:

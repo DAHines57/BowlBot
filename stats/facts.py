@@ -52,16 +52,23 @@ def name_matches_team(a: str, b: str) -> bool:
     return na == nb or na in nb or nb in na
 
 
-# Same franchise spelled differently on roster vs opponent column (e.g. after a rename).
-# Dict keys are the canonical roster/display name.
+# Season 11 only: roster vs opponent column used different names for one franchise.
+# Dict keys are the canonical roster/display name for that season.
+TEAM_ALIASES_SEASON = 11
 TEAM_ALIASES: Dict[str, List[str]] = {
     "Strike It Deep": ["Bowls Deep"],
 }
 
 
-def _alias_names(name: str) -> List[str]:
+def team_aliases_for_season(season_num: Optional[int]) -> Dict[str, List[str]]:
+    if season_num == TEAM_ALIASES_SEASON:
+        return TEAM_ALIASES
+    return {}
+
+
+def _alias_names(name: str, *, season_num: Optional[int] = None) -> List[str]:
     out = [name]
-    for canonical, alts in TEAM_ALIASES.items():
+    for canonical, alts in team_aliases_for_season(season_num).items():
         if name_matches_team(name, canonical):
             out.extend(alts)
         elif any(name_matches_team(name, a) for a in alts):
@@ -70,12 +77,12 @@ def _alias_names(name: str) -> List[str]:
     return list(dict.fromkeys(out))
 
 
-def canonical_team_name(name: str) -> str:
-    """Preferred display/roster name for a franchise (alias dict keys are canonical)."""
+def canonical_team_name(name: str, *, season_num: Optional[int] = None) -> str:
+    """Preferred display/roster name when a season has known alias spellings."""
     if not name:
         return name
     n = str(name).strip()
-    for canonical, alts in TEAM_ALIASES.items():
+    for canonical, alts in team_aliases_for_season(season_num).items():
         if name_matches_team(n, canonical):
             return canonical
         for alt in alts:
@@ -84,18 +91,23 @@ def canonical_team_name(name: str) -> str:
     return n
 
 
-def resolve_opponent_on_roster(opponent_name: str, roster: Iterable[str]) -> Optional[str]:
+def resolve_opponent_on_roster(
+    opponent_name: str,
+    roster: Iterable[str],
+    *,
+    season_num: Optional[int] = None,
+) -> Optional[str]:
     """Map opponent text from the sheet onto a team name present this week."""
     if not opponent_name:
         return None
     names = list(roster)
     for candidate in names:
         if name_matches_team(opponent_name, candidate):
-            return canonical_team_name(candidate)
-    for alias in _alias_names(opponent_name):
+            return canonical_team_name(candidate, season_num=season_num)
+    for alias in _alias_names(opponent_name, season_num=season_num):
         for candidate in names:
             if name_matches_team(alias, candidate):
-                return canonical_team_name(candidate)
+                return canonical_team_name(candidate, season_num=season_num)
     return None
 
 
@@ -114,6 +126,9 @@ def fifth_game_pins_decisive(td: Dict, opp: Dict) -> bool:
     a_active = int(opp.get("active_player_count") or opp.get("player_count") or 0)
     h_g5 = int(td.get("game5_bowler_count") or 0)
     a_g5 = int(opp.get("game5_bowler_count") or 0)
+    # Uneven active rosters (e.g. absent bowler) — do not award a fifth game on pins.
+    if h_active and a_active and h_active != a_active:
+        return False
     if h_active and h_g5 < h_active:
         return False
     if a_active and a_g5 < a_active:

@@ -3728,11 +3728,20 @@ def _seed_display_map(sorted_teams: List[Tuple[str, Dict[str, Any]]]) -> Dict[st
     return {name: i + 1 for i, (name, _) in enumerate(sorted_teams)}
 
 
-def _classic_team_row_cl(name: str, res: str, seed: Optional[int]) -> str:
+def _matchup_series_games_won(side: Optional[dict], matchup: dict) -> Optional[int]:
+    """Games won in this week's head-to-head (e.g. 3 in a 3–2 series)."""
+    if not side:
+        return None
+    if not matchup.get("game_results") and side.get("result") in ("—", "", None):
+        return None
+    return int(side.get("wins", 0) or 0)
+
+
+def _classic_team_row_cl(name: str, res: str, games_won: Optional[int]) -> str:
     seed_el = (
-        f'<span class="bracket-cl-seed">{seed}</span>'
-        if seed is not None
-        else '<span class="bracket-cl-seed bracket-cl-seed--empty">—</span>'
+        f'<span class="bracket-cl-seed" title="Games won in this matchup">{games_won}</span>'
+        if games_won is not None
+        else '<span class="bracket-cl-seed bracket-cl-seed--empty" title="Games won in this matchup">—</span>'
     )
     return (
         f'<div class="bracket-cl-row">'
@@ -3747,14 +3756,14 @@ def _classic_team_row_cl(name: str, res: str, seed: Optional[int]) -> str:
 def _classic_match_block_html(
     m: dict,
     *,
-    seed_map: Dict[str, int],
     extra_meta: Optional[str] = None,
 ) -> str:
     away = m.get("away")
     if not away:
         nm = m["home"]["name"]
-        sid = seed_map.get(nm)
-        row = _classic_team_row_cl(nm, m["home"].get("result", ""), sid)
+        row = _classic_team_row_cl(
+            nm, m["home"].get("result", ""), _matchup_series_games_won(m["home"], m)
+        )
         pop = f'<aside class="bracket-pop">{_matchup_hover_inner_html(m, extra_meta=extra_meta)}</aside>'
         return (
             f'<div class="bracket-cl-outer" tabindex="0">'
@@ -3763,8 +3772,8 @@ def _classic_match_block_html(
     home = m["home"]
     hn, an = home["name"], away["name"]
     hr, ar = home.get("result", ""), away.get("result", "")
-    rowh = _classic_team_row_cl(hn, hr, seed_map.get(hn))
-    rowa = _classic_team_row_cl(an, ar, seed_map.get(an))
+    rowh = _classic_team_row_cl(hn, hr, _matchup_series_games_won(home, m))
+    rowa = _classic_team_row_cl(an, ar, _matchup_series_games_won(away, m))
     pop = f'<aside class="bracket-pop">{_matchup_hover_inner_html(m, extra_meta=extra_meta)}</aside>'
     return (
         f'<div class="bracket-cl-outer" tabindex="0">'
@@ -3779,8 +3788,6 @@ def _classic_pending_line(label: str) -> str:
 def _eight_team_week0_classic_column(
     snap: dict,
     rounds: List[List[Tuple[BracketSlot, BracketSlot]]],
-    sorted_teams: List[Tuple[str, Dict[str, Any]]],
-    seed_map: Dict[str, int],
 ) -> str:
     slots = qf_matchups_in_bracket_slot_order(list(snap["matchups"]), rounds[0])
     parts: List[str] = []
@@ -3798,7 +3805,6 @@ def _eight_team_week0_classic_column(
         parts.append(
             _classic_match_block_html(
                 m,
-                seed_map=seed_map,
                 extra_meta=meta,
             )
         )
@@ -3809,7 +3815,6 @@ def _eight_team_week2_cross_layout_html(
     cross_ord: List[Optional[dict]],
     cross_sets: List[Optional[FrozenSet[str]]],
     rest: List[dict],
-    seed_map: Dict[str, int],
 ) -> str:
     sec: List[str] = []
     sec.append(
@@ -3828,7 +3833,6 @@ def _eight_team_week2_cross_layout_html(
             sec.append(
                 _classic_match_block_html(
                     mm,
-                    seed_map=seed_map,
                     extra_meta=meta,
                 )
             )
@@ -3855,7 +3859,6 @@ def _eight_team_week2_cross_layout_html(
             sec.append(
                 _classic_match_block_html(
                     mm,
-                    seed_map=seed_map,
                     extra_meta=meta,
                 )
             )
@@ -3870,7 +3873,6 @@ def _eight_team_week2_cross_layout_html(
         sec.append(
             _classic_match_block_html(
                 m,
-                seed_map=seed_map,
                 extra_meta="Playoff game (could not match to winners/losers semifinal slots).",
             )
         )
@@ -3880,18 +3882,16 @@ def _eight_team_week2_cross_layout_html(
 def _eight_team_week2_cross_column(
     ms: List[dict],
     qf_res: List[Optional[Tuple[str, str]]],
-    seed_map: Dict[str, int],
 ) -> str:
     cross_sets = expected_week2_cross_sets(qf_res)
     cross_ord, rest = matchups_by_cross_ordered_groups(ms, cross_sets)
-    return _eight_team_week2_cross_layout_html(cross_ord, cross_sets, rest, seed_map)
+    return _eight_team_week2_cross_layout_html(cross_ord, cross_sets, rest)
 
 
 def _eight_team_week2_parallel_layout_html(
     wb_ord: List[Optional[dict]],
     lb_ord: List[Optional[dict]],
     rest: List[dict],
-    seed_map: Dict[str, int],
 ) -> str:
     sec: List[str] = []
     sec.append(
@@ -3901,7 +3901,7 @@ def _eight_team_week2_parallel_layout_html(
     for idx, mm in enumerate(wb_ord):
         meta = "Winners bracket semifinal — quarterfinal winners from the same half of the draw"
         if mm:
-            sec.append(_classic_match_block_html(mm, seed_map=seed_map, extra_meta=meta))
+            sec.append(_classic_match_block_html(mm, extra_meta=meta))
         elif idx < 2:
             sec.append(
                 _classic_pending_line(
@@ -3919,7 +3919,7 @@ def _eight_team_week2_parallel_layout_html(
             "(same pattern as the winners semifinal in that half)."
         )
         if mm:
-            sec.append(_classic_match_block_html(mm, seed_map=seed_map, extra_meta=meta))
+            sec.append(_classic_match_block_html(mm, extra_meta=meta))
         elif idx < 2:
             sec.append(
                 _classic_pending_line(
@@ -3931,7 +3931,6 @@ def _eight_team_week2_parallel_layout_html(
         sec.append(
             _classic_match_block_html(
                 m,
-                seed_map=seed_map,
                 extra_meta="Playoff game (could not match to semifinal slots).",
             )
         )
@@ -3941,7 +3940,6 @@ def _eight_team_week2_parallel_layout_html(
 def _eight_team_week2_loss_bucket_column(
     snap: dict,
     snapshots: List[Optional[dict]],
-    seed_map: Dict[str, int],
 ) -> str:
     """When QF pairings are non-standard, split week-2 games by playoff-loss count before this week."""
     losses_before = _playoff_losses_through_prior_rounds(snapshots, 1)
@@ -3987,12 +3985,11 @@ def _eight_team_week2_loss_bucket_column(
         "(or custom draw: mixed winner/loser games are listed here when the sheet does not follow standard seeds)."
     )
     for mm in upper:
-        sec.append(_classic_match_block_html(mm, seed_map=seed_map, extra_meta=meta_u))
+        sec.append(_classic_match_block_html(mm, extra_meta=meta_u))
     for mm in upper_solos:
         sec.append(
             _classic_match_block_html(
                 mm,
-                seed_map=seed_map,
                 extra_meta="Bye week — advances without a head-to-head semifinal matchup on the sheet.",
             )
         )
@@ -4012,12 +4009,11 @@ def _eight_team_week2_loss_bucket_column(
         "Both teams lost in the quarterfinals — this week sorts placement in the bottom half of the playoffs."
     )
     for mm in lower:
-        sec.append(_classic_match_block_html(mm, seed_map=seed_map, extra_meta=meta_l))
+        sec.append(_classic_match_block_html(mm, extra_meta=meta_l))
     for mm in lower_solos:
         sec.append(
             _classic_match_block_html(
                 mm,
-                seed_map=seed_map,
                 extra_meta="Bye week — advances without a head-to-head semifinal matchup on the sheet.",
             )
         )
@@ -4035,7 +4031,6 @@ def _eight_team_week2_placement_column(
     snap: dict,
     rounds: List[List[Tuple[BracketSlot, BracketSlot]]],
     snapshots: List[Optional[dict]],
-    seed_map: Dict[str, int],
 ) -> Optional[str]:
     snap0 = snapshots[0] if snapshots else None
     if not snap0 or not snap0.get("matchups"):
@@ -4049,26 +4044,25 @@ def _eight_team_week2_placement_column(
         qf_ms, ms1, ms2, rounds[0], snapshots=snapshots
     )
     if model is None:
-        return _eight_team_week2_loss_bucket_column(snap, snapshots, seed_map)
+        return _eight_team_week2_loss_bucket_column(snap, snapshots)
     if model["kind"] == "cross":
         n_filled = sum(1 for x in model["cross_ord"] if x is not None)
     else:
         n_filled = sum(1 for x in model["wb_ord"] + model["lb_ord"] if x is not None)
     if n_filled < 4:
-        return _eight_team_week2_loss_bucket_column(snap, snapshots, seed_map)
+        return _eight_team_week2_loss_bucket_column(snap, snapshots)
     if model["kind"] == "cross":
         return _eight_team_week2_cross_layout_html(
-            model["cross_ord"], model["cross_sets"], model["rest"], seed_map
+            model["cross_ord"], model["cross_sets"], model["rest"]
         )
     return _eight_team_week2_parallel_layout_html(
-        model["wb_ord"], model["lb_ord"], model["rest"], seed_map
+        model["wb_ord"], model["lb_ord"], model["rest"]
     )
 
 
 def _eight_team_path_band_column(
     snap: dict,
     snapshots: List[Optional[dict]],
-    seed_map: Dict[str, int],
     *,
     losses_before_col: int,
 ) -> str:
@@ -4122,7 +4116,6 @@ def _eight_team_path_band_column(
                 sec.append(
                     _classic_match_block_html(
                         mm,
-                        seed_map=seed_map,
                         extra_meta=label,
                     )
                 )
@@ -4139,21 +4132,19 @@ def _eight_team_path_band_column(
 def _eight_team_week3_path_band_column(
     snap: dict,
     snapshots: List[Optional[dict]],
-    seed_map: Dict[str, int],
 ) -> str:
     return _eight_team_path_band_column(
-        snap, snapshots, seed_map, losses_before_col=2
+        snap, snapshots, losses_before_col=2
     )
 
 
 def _eight_team_two_week_finals_column(
     snap: dict,
     snapshots: List[Optional[dict]],
-    seed_map: Dict[str, int],
 ) -> str:
     """Week 2 of a two-week playoff: placement games after quarterfinals only."""
     return _eight_team_path_band_column(
-        snap, snapshots, seed_map, losses_before_col=1
+        snap, snapshots, losses_before_col=1
     )
 
 
@@ -4169,7 +4160,6 @@ def _is_two_week_eight_team_playoffs(
 
 def _labeled_placement_column_html(
     snap: dict,
-    seed_map: Dict[str, int],
     w3_groups: List[Tuple[FrozenSet[str], str]],
     *,
     pending_msg: str,
@@ -4197,7 +4187,6 @@ def _labeled_placement_column_html(
             sec.append(
                 _classic_match_block_html(
                     mm,
-                    seed_map=seed_map,
                     extra_meta=label,
                 )
             )
@@ -4212,7 +4201,7 @@ def _labeled_placement_column_html(
         for m in rest_ms:
             sec.append(
                 _classic_match_block_html(
-                    m, seed_map=seed_map, extra_meta="Playoff matchup"
+                    m, extra_meta="Playoff matchup"
                 )
             )
         sec.append("</div>")
@@ -4275,12 +4264,10 @@ def _resolve_two_week_parallel_playoffs(
 
 def _eight_team_two_week_labeled_finals_column(
     snap: dict,
-    seed_map: Dict[str, int],
     w3_groups: List[Tuple[FrozenSet[str], str]],
 ) -> str:
     return _labeled_placement_column_html(
         snap,
-        seed_map,
         w3_groups,
         pending_msg=(
             "Placement game not on the sheet yet, or teams still TBD from semifinals."
@@ -4291,7 +4278,6 @@ def _eight_team_two_week_labeled_finals_column(
 def _eight_team_week3_placement_column(
     snap: dict,
     snapshots: List[Optional[dict]],
-    seed_map: Dict[str, int],
     rounds: List[List[Tuple[BracketSlot, BracketSlot]]],
 ) -> Optional[str]:
     snap0 = snapshots[0] if snapshots else None
@@ -4302,10 +4288,10 @@ def _eight_team_week3_placement_column(
     ms1 = list(snap1["matchups"])
     ms2 = _playoff_matchups_with_opponent(list(snap["matchups"]))
     if not ms2:
-        return _eight_team_week3_path_band_column(snap, snapshots, seed_map)
+        return _eight_team_week3_path_band_column(snap, snapshots)
     w3 = _best_w3_groups(qf_ms, ms1, ms2, rounds[0], snapshots=snapshots)
     if not w3 or _week3_match_count(ms2, w3) < 2:
-        return _eight_team_week3_path_band_column(snap, snapshots, seed_map)
+        return _eight_team_week3_path_band_column(snap, snapshots)
     ordered, rest = order_matchups_by_labeled_groups(ms2, w3)
     ordered = _backfill_ordered_matchups(ordered, rest)
     used_ids = {_matchup_identity(mm) for _lb, mm in ordered if mm is not None}
@@ -4326,7 +4312,6 @@ def _eight_team_week3_placement_column(
             sec.append(
                 _classic_match_block_html(
                     mm,
-                    seed_map=seed_map,
                     extra_meta=label,
                 )
             )
@@ -4340,7 +4325,7 @@ def _eight_team_week3_placement_column(
     for m in rest:
         sec.append(
             _classic_match_block_html(
-                m, seed_map=seed_map, extra_meta="Playoff matchup (extra)"
+                m, extra_meta="Playoff matchup (extra)"
             )
         )
     return f'<div class="bracket-tcell-inner">{"".join(sec)}</div>'
@@ -4457,8 +4442,6 @@ def _playoff_snapshot_column_html(
 ) -> str:
     seed_rank = _seed_rank_map(sorted_teams)
     nr = len(rounds)
-    seed_map = _seed_display_map(sorted_teams)
-
     if (
         eight_placement_layout
         and nr == 3
@@ -4472,23 +4455,22 @@ def _playoff_snapshot_column_html(
                     two_week_parallel["wb_ord"],
                     two_week_parallel["lb_ord"],
                     two_week_parallel.get("rest", []),
-                    seed_map,
                 )
-            return _eight_team_week0_classic_column(snap, rounds, sorted_teams, seed_map)
+            return _eight_team_week0_classic_column(snap, rounds)
         if ri == 1 and two_week_playoffs:
             if two_week_parallel and two_week_parallel.get("w3_groups"):
                 return _eight_team_two_week_labeled_finals_column(
-                    snap, seed_map, two_week_parallel["w3_groups"]
+                    snap, two_week_parallel["w3_groups"]
                 )
-            return _eight_team_two_week_finals_column(snap, snapshots, seed_map)
+            return _eight_team_two_week_finals_column(snap, snapshots)
         if ri == 1:
             w2 = _eight_team_week2_placement_column(
-                snap, rounds, snapshots, seed_map
+                snap, rounds, snapshots
             )
             if w2 is not None:
                 return w2
         if ri == 2:
-            w3 = _eight_team_week3_placement_column(snap, snapshots, seed_map, rounds)
+            w3 = _eight_team_week3_placement_column(snap, snapshots, rounds)
             if w3 is not None:
                 return w3
 
@@ -4992,6 +4974,25 @@ _SITE_NAV = """
 </div></div>
 """
 
+# When loaded inside home.html's preview iframe, Home must reset the parent — not load / in-frame.
+_IFRAME_HOME_SCRIPT = """
+<script>
+(function () {
+  if (window.self === window.top) return;
+  function goHome(e) {
+    if (e) e.preventDefault();
+    parent.postMessage({ type: "bowlbot-embed-home" }, window.location.origin);
+  }
+  document.querySelectorAll('.site-chrome a[href="/"]').forEach(function (a) {
+    a.addEventListener("click", goHome);
+  });
+  document.querySelectorAll('a.embed-home-link').forEach(function (a) {
+    a.addEventListener("click", goHome);
+  });
+})();
+</script>
+"""
+
 # Injected when ?embed=1 (home iframe preview): no site nav, tighter body for nested view.
 _EMBED_HEAD_PATCH = """
 <style>
@@ -5047,4 +5048,5 @@ def inject_web_chrome(full_html: str, *, embed: bool = False) -> str:
     else:
         h = re.sub(r"</head>", f"<style>{_WEB_CHROME_CSS}</style></head>", h, count=1, flags=re.IGNORECASE)
         h = re.sub(r"<body([^>]*)>", r"<body\1>" + _SITE_NAV, h, count=1, flags=re.IGNORECASE)
+    h = re.sub(r"</body>", _IFRAME_HOME_SCRIPT + "</body>", h, count=1, flags=re.IGNORECASE)
     return h

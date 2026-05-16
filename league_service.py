@@ -70,6 +70,32 @@ class LeagueService:
             reverse=True,
         )
 
+    def lookup_catalog(self) -> dict:
+        """Player/team names per season for home-page lookup dropdowns."""
+        players_by_season: dict = {}
+        teams_by_season: dict = {}
+        for season in self.seasons_sorted():
+            pdata = self.data.get_player_scores(None, season)
+            if isinstance(pdata, dict) and "error" not in pdata:
+                players_by_season[season] = sorted(pdata.keys(), key=str.lower)
+            tdata = self.data.get_team_scores(None, season)
+            if isinstance(tdata, dict) and "error" not in tdata:
+                teams_by_season[season] = sorted(tdata.keys(), key=str.lower)
+        stats = self.data.get_all_time_stats()
+        all_players = sorted(
+            (
+                p["player"]
+                for p in stats.get("player_averages", [])
+                if p.get("player")
+            ),
+            key=str.lower,
+        )
+        return {
+            "players_by_season": players_by_season,
+            "teams_by_season": teams_by_season,
+            "all_players": all_players,
+        }
+
     def reload_data(self) -> Tuple[bool, str]:
         try:
             from db.sync import sync_database

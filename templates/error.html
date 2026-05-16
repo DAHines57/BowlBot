@@ -50,7 +50,19 @@
   <div class="shell">
     <h1>Something went wrong</h1>
     <p>{{ message }}</p>
-    <p><a href="/">← Home</a></p>
+    <p><a href="/" class="embed-home-link">← Home</a></p>
   </div>
+  <script>
+  (function () {
+    if (window.self === window.top) return;
+    function goHome(e) {
+      if (e) e.preventDefault();
+      parent.postMessage({ type: "bowlbot-embed-home" }, window.location.origin);
+    }
+    document.querySelectorAll('a[href="/"], a.embed-home-link').forEach(function (a) {
+      a.addEventListener("click", goHome);
+    });
+  })();
+  </script>
 </body>
 </html>
