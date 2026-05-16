@@ -3,13 +3,13 @@ Generates HTML templates that match the historical PNG card style (purple + ambe
 Used by the Flask web app; no browser/screenshot step required.
 """
 import itertools
-import json
 import os
 import re
 import html as html_module
-from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple, Union, cast
 
 from placement_bracket import (
+    BYE_LOSER,
     SlotWL,
     expected_week2_cross_sets,
     expected_week2_groups,
@@ -26,18 +26,16 @@ from placement_bracket import (
 
 
 # ---------------------------------------------------------------------------
-# Team colors — loaded from team_colors.json (run extract_colors.py to refresh)
+# Team colors — loaded from PostgreSQL teams.color_hex (db/team_colors.py)
 # ---------------------------------------------------------------------------
 
-def _load_team_colors() -> dict:
-    path = os.path.join(os.path.dirname(__file__), "team_colors.json")
-    try:
-        with open(path) as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+_REGISTERED_TEAM_COLORS: dict = {}
 
-_TEAM_COLORS: dict = _load_team_colors()
+
+def register_team_colors(colors: dict) -> None:
+    """Called at app startup / after sync to load colors from the database."""
+    global _REGISTERED_TEAM_COLORS
+    _REGISTERED_TEAM_COLORS = dict(colors)
 
 
 def _team_color_style(team_name: str) -> str:
@@ -45,7 +43,11 @@ def _team_color_style(team_name: str) -> str:
     Lightens dark colors so they remain readable on the dark background."""
     if not team_name:
         return ""
-    color = _TEAM_COLORS.get(team_name.strip())
+    from stats.facts import canonical_team_name
+
+    lookup = canonical_team_name(team_name.strip())
+    raw = team_name.strip()
+    color = _REGISTERED_TEAM_COLORS.get(lookup) or _REGISTERED_TEAM_COLORS.get(raw)
     if not color:
         return ""
     hex_c = color.lstrip("#")
@@ -164,6 +166,12 @@ thead th {
     text-transform: uppercase;
 }
 thead th.right { text-align: right; }
+thead th.sortable-th { cursor: pointer; user-select: none; white-space: nowrap; }
+thead th.sortable-th:hover { color: #ffb86c; }
+thead th.sortable-th .sort-ind {
+  display: inline-block; font-size: 9px; margin-left: 4px; min-width: 0.65em; opacity: 0.78;
+  vertical-align: middle;
+}
 tbody tr { border-bottom: 1px solid #2a2050; }
 tbody tr:nth-child(even) { background: #1a1730; }
 tbody tr.absent { opacity: 0.45; }
@@ -211,6 +219,74 @@ tbody td.right { text-align: right; }
     margin-top: 4px;
     text-transform: uppercase;
     letter-spacing: 1px;
+}
+.stat { min-width: 0; }
+html {
+    overflow-x: hidden;
+    scrollbar-gutter: stable both-edges;
+}
+.container {
+    width: 100%;
+    max-width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+    padding-block: 24px;
+    padding-inline: 22px;
+}
+.highlights,
+.stats-grid {
+    width: 100%;
+}
+.table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+    max-width: 100%;
+    padding-bottom: 2px;
+}
+.table-scroll table {
+    width: max-content;
+    min-width: 100%;
+}
+@media (max-width: 700px) {
+    .highlights {
+        flex-direction: column;
+    }
+}
+@media (max-width: 520px) {
+    .container {
+        padding-block: 16px;
+        padding-inline: 20px;
+    }
+    .highlights {
+        flex-direction: column;
+    }
+    .highlight-card .score {
+        font-size: 36px;
+    }
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+    .stat {
+        flex: none;
+        padding: 10px 8px;
+    }
+    .stat .stat-value {
+        font-size: 22px;
+    }
+    .stat .stat-label {
+        font-size: 10px;
+        letter-spacing: 0.04em;
+    }
+    thead th,
+    tbody td {
+        padding: 6px 8px;
+    }
+    table {
+        font-size: 12px;
+    }
 }
 .week-block {
     margin-bottom: 28px;
@@ -301,20 +377,22 @@ _SUMMARY_INNER_FR = """  <div class="header">
 
   <div class="section">
     <div class="section-title">Leaderboard</div>
-    <table>
+    <div class="table-scroll">
+    <table class="sortable-table" data-has-rank-col="1">
       <thead>
         <tr>
-          <th class="right">#</th>
-          <th>Player</th>
-          <th>Team</th>
-          <th class="right">Wk Avg</th>
-          <th class="right">High</th>
+          <th class="right sortable-th" data-sort-col="0" data-sort-type="number">#<span class="sort-ind" aria-hidden="true"></span></th>
+          <th class="sortable-th" data-sort-col="1" data-sort-type="string">Player<span class="sort-ind" aria-hidden="true"></span></th>
+          <th class="sortable-th" data-sort-col="2" data-sort-type="string">Team<span class="sort-ind" aria-hidden="true"></span></th>
+          <th class="right sortable-th" data-sort-col="3" data-sort-type="number">Wk Avg<span class="sort-ind" aria-hidden="true"></span></th>
+          <th class="right sortable-th" data-sort-col="4" data-sort-type="number">High<span class="sort-ind" aria-hidden="true"></span></th>
         </tr>
       </thead>
       <tbody>
         {player_rows}
       </tbody>
     </table>
+    </div>
   </div>
 """
 
@@ -343,13 +421,21 @@ def _week_summary_player_rows(data: dict) -> str:
         high_str = str(p["high"]) if p["high"] else "—"
 
         team_style = _team_color_style(p["team"])
+        rank_sort = rank if not absent else 99999
+        avg_sort = p["avg"] if p.get("avg") else -1
+        high_sort = p["high"] if p.get("high") else -1
+        orig_rank = (
+            f' data-orig-rank="{html_module.escape(rank_str, quote=True)}"'
+            if not absent
+            else ""
+        )
         rows.append(f"""
         <tr {row_class}>
-          <td class="right rank">{rank_str}</td>
-          <td class="player-col">{_short_name(p['name'])}{absent_badge}</td>
-          <td class="team-col" style="{team_style}">{p['team']}</td>
-          <td class="right">{avg_str}</td>
-          <td class="right">{high_str}</td>
+          <td class="right rank" data-sort="{rank_sort}"{orig_rank}>{rank_str}</td>
+          <td class="player-col" data-sort="{html_module.escape(p["name"].lower(), quote=True)}">{_short_name(p['name'])}{absent_badge}</td>
+          <td class="team-col" data-sort="{html_module.escape(p["team"].lower(), quote=True)}" style="{team_style}">{p['team']}</td>
+          <td class="right" data-sort="{avg_sort}">{avg_str}</td>
+          <td class="right" data-sort="{high_sort}">{high_str}</td>
         </tr>""")
     return "".join(rows)
 
@@ -374,9 +460,15 @@ def _build_week_summary_inner(data: dict) -> str:
     )
 
 
+def _week_summary_page_html(inner: str) -> str:
+    """Weekly recap document with client-side table sorting."""
+    doc = _WEEK_SUMMARY_DOC.format(css=_CSS, inner=inner)
+    return doc.replace("</body>", _LIST_SORT_SCRIPT + "\n</body>", 1)
+
+
 def build_html(data: dict) -> str:
     """Build the weekly summary HTML string from week summary data."""
-    return _WEEK_SUMMARY_DOC.format(css=_CSS, inner=_build_week_summary_inner(data))
+    return _week_summary_page_html(_build_week_summary_inner(data))
 
 
 def build_all_weeks_summary_html(season_display: str, week_data: list[dict]) -> str:
@@ -393,7 +485,7 @@ def build_all_weeks_summary_html(season_display: str, week_data: list[dict]) -> 
         f'<div class="mw-sub">{html_module.escape(season_display)}</div>'
         f"</div>"
     )
-    return _WEEK_SUMMARY_DOC.format(css=_CSS, inner=banner + "\n" + "\n".join(blocks))
+    return _week_summary_page_html(banner + "\n" + "\n".join(blocks))
 
 
 _MATCHUPS_CSS = """
@@ -508,6 +600,113 @@ body {
     color: #c9a86a;
     margin-bottom: 10px;
 }
+.matchup-player-details {
+    margin-top: 8px;
+    border-top: 1px solid #2a2050;
+    padding-top: 6px;
+}
+.matchup-player-details summary {
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #9cbcff;
+    list-style: none;
+    user-select: none;
+}
+.matchup-player-details summary::-webkit-details-marker { display: none; }
+.matchup-player-details[open] summary { margin-bottom: 10px; color: #c4d4ff; }
+.player-scores-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+    max-width: 100%;
+    padding-bottom: 4px;
+    margin: 0 -2px;
+}
+.player-scores-grid {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    width: max-content;
+    min-width: 100%;
+}
+.player-side { flex: 0 0 auto; }
+.player-team-label {
+    font-size: 10px;
+    font-weight: bold;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #666;
+    margin-bottom: 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.player-side--away .player-team-label { text-align: right; }
+.player-score-table {
+    width: max-content;
+    border-collapse: collapse;
+    table-layout: auto;
+    font-size: 11px;
+}
+.player-score-table th,
+.player-score-table td {
+    padding: 3px 2px;
+    vertical-align: middle;
+}
+.player-score-table th.pst-g,
+.player-score-table td.pst-g {
+    width: 2.15rem;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+.player-score-table thead th.pst-g {
+    font-size: 8px;
+    font-weight: bold;
+    letter-spacing: 0.06em;
+    color: #555;
+    text-transform: uppercase;
+    padding-bottom: 5px;
+}
+.player-score-table td.pst-name {
+    color: #ccc;
+    white-space: nowrap;
+    padding-right: 6px;
+    padding-left: 6px;
+}
+.player-score-table--home td.pst-name,
+.player-score-table--home th.pst-name { padding-left: 0; }
+.player-score-table--away td.pst-name,
+.player-score-table--away th.pst-name { padding-right: 0; }
+.player-score-table--home td.pst-name,
+.player-score-table--home th.pst-name { text-align: left; }
+.player-score-table--away td.pst-name,
+.player-score-table--away th.pst-name { text-align: right; }
+.player-score-table--home th.pst-name,
+.player-score-table--home td.pst-name { width: auto; }
+.player-score-table--away th.pst-name,
+.player-score-table--away td.pst-name { width: auto; }
+.pst-score {
+    display: inline-block;
+    min-width: 2rem;
+    text-align: center;
+    background: #1e1a2e;
+    border-radius: 4px;
+    padding: 2px 4px;
+    color: #bbb;
+}
+.pst-score--empty { color: #444; background: transparent; }
+.player-tag {
+    font-size: 8px;
+    font-weight: bold;
+    letter-spacing: 0.05em;
+    color: #ff6b81;
+    margin-right: 4px;
+    vertical-align: middle;
+}
+.player-side-empty { font-size: 12px; color: #444; padding: 8px 0; }
 """
 
 _MATCHUPS_DOC = """<!DOCTYPE html>
@@ -553,6 +752,93 @@ def _matchup_winner_summary_html(m: dict) -> str:
             f"</div>"
         )
     return f'<div class="bracket-outcome">{main} {sub}</div>'
+
+
+def _matchup_player_name_html(p: dict, *, away: bool) -> str:
+    """Short display name; away-side absent tag sits left of the name."""
+    name = html_module.escape(_short_name(str(p.get("name", ""))))
+    tag = '<span class="player-tag">ABS</span>' if p.get("absent") else ""
+    if away:
+        return f"{tag}{' ' if tag else ''}{name}"
+    return f"{name}{' ' if tag else ''}{tag}"
+
+
+def _matchup_game_cells_html(games: list, num_games: int) -> str:
+    cells = []
+    for i in range(num_games):
+        val = games[i] if i < len(games) else None
+        if val is None:
+            cells.append('<td class="pst-g"><span class="pst-score pst-score--empty">—</span></td>')
+        else:
+            cells.append(
+                f'<td class="pst-g"><span class="pst-score">{int(val):,}</span></td>'
+            )
+    return "".join(cells)
+
+
+def _matchup_player_table_html(players: list, num_games: int, *, away: bool) -> str:
+    if not players:
+        return ""
+    g_hdrs = "".join(f'<th class="pst-g">G{i + 1}</th>' for i in range(num_games))
+    if away:
+        thead = f"<thead><tr>{g_hdrs}<th class=\"pst-name\"></th></tr></thead>"
+    else:
+        thead = f"<thead><tr><th class=\"pst-name\"></th>{g_hdrs}</tr></thead>"
+    body_rows = []
+    for p in players:
+        games = p.get("games") or []
+        name_td = f'<td class="pst-name">{_matchup_player_name_html(p, away=away)}</td>'
+        game_tds = _matchup_game_cells_html(games, num_games)
+        if away:
+            body_rows.append(f"<tr>{game_tds}{name_td}</tr>")
+        else:
+            body_rows.append(f"<tr>{name_td}{game_tds}</tr>")
+    cls = "player-score-table--away" if away else "player-score-table--home"
+    return (
+        f'<table class="player-score-table {cls}">'
+        f"{thead}<tbody>{''.join(body_rows)}</tbody></table>"
+    )
+
+
+def _matchup_player_details_html(
+    home: dict, away: Optional[dict], num_games: int
+) -> str:
+    """Expandable per-bowler G1–Gn for weekly results (not bracket embed)."""
+    home_players = home.get("players") or []
+    away_players = (away or {}).get("players") or []
+    if not home_players and not away_players:
+        return ""
+
+    num_games = max(1, min(int(num_games or 4), 5))
+
+    def _side_block(side: dict, *, away: bool) -> str:
+        label = html_module.escape(str(side.get("name", "")))
+        table = _matchup_player_table_html(side.get("players") or [], num_games, away=away)
+        if not table:
+            table = '<div class="player-side-empty">No roster</div>'
+        side_cls = "player-side player-side--away" if away else "player-side"
+        return (
+            f'<div class="{side_cls}">'
+            f'<div class="player-team-label">{label}</div>'
+            f"{table}"
+            f"</div>"
+        )
+
+    away_side = away if away else {"name": "—", "players": away_players}
+    inner = (
+        f'<div class="player-scores-scroll">'
+        f'<div class="player-scores-grid">'
+        f"{_side_block(home, away=False)}"
+        f"{_side_block(away_side, away=True)}"
+        f"</div></div>"
+    )
+    return (
+        '<details class="matchup-player-details">'
+        '<summary>Player scores</summary>'
+        f"{inner}"
+        "</details>"
+    )
+
 
 
 def _build_matchup_card_list(data: dict, *, for_bracket: bool = False) -> str:
@@ -605,6 +891,15 @@ def _build_matchup_card_list(data: dict, *, for_bracket: bool = False) -> str:
             else ""
         )
 
+        player_details = ""
+        if not for_bracket:
+            n_games = len(game_results) if game_results else max(
+                len(home.get("game_pins") or []),
+                len((away or {}).get("game_pins") or []),
+                4,
+            )
+            player_details = _matchup_player_details_html(home, away, n_games)
+
         headline = _matchup_winner_summary_html(m) if for_bracket else ""
         if for_bracket and games_row:
             games_row = (
@@ -633,6 +928,7 @@ def _build_matchup_card_list(data: dict, *, for_bracket: bool = False) -> str:
         {away_html}
       </div>
       {games_row}
+      {player_details}
       {g5_note_html}
     </div>""")
 
@@ -722,6 +1018,53 @@ tbody td.right { text-align: right; }
 .gold { color: #ffb86c; font-weight: bold; }
 .green { color: #50fa7b; }
 .record { font-weight: bold; color: #fff; }
+.standings-champion {
+    margin-right: 0.2em;
+    filter: drop-shadow(0 0 4px rgba(255, 184, 108, 0.45));
+}
+html {
+    overflow-x: hidden;
+    scrollbar-gutter: stable both-edges;
+}
+.container {
+    width: 100%;
+    max-width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+    padding-block: 24px;
+    padding-inline: 22px;
+}
+.table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+    max-width: 100%;
+    padding-bottom: 2px;
+}
+.table-scroll table {
+    width: max-content;
+    min-width: 100%;
+}
+@media (max-width: 520px) {
+    .container {
+        padding-block: 16px;
+        padding-inline: 20px;
+    }
+    thead th,
+    tbody td {
+        padding: 6px 8px;
+    }
+    table {
+        font-size: 12px;
+    }
+    thead th {
+        font-size: 10px;
+        letter-spacing: 0.04em;
+    }
+    .sub-col {
+        font-size: 11px;
+    }
+}
 """
 
 _PLAYER_DETAIL_CSS_EXTRA = """
@@ -858,10 +1201,453 @@ _LIST_SORT_SCRIPT = r"""<script>
 })();
 </script>"""
 
+def _bracket_zoom_viewport_html(inner: str) -> str:
+    """Wrap bracket markup in a zoom/pan viewport (toolbar + stage)."""
+    return (
+        '<div class="bracket-zoom-controls" role="toolbar" aria-label="Bracket zoom">'
+        '<button type="button" class="bracket-zoom-btn" data-zoom-action="out" '
+        'title="Zoom out" aria-label="Zoom out">−</button>'
+        '<button type="button" class="bracket-zoom-btn" data-zoom-action="fit" '
+        'title="Zoom to fit" aria-label="Zoom to fit">Fit</button>'
+        '<button type="button" class="bracket-zoom-btn" data-zoom-action="in" '
+        'title="Zoom in" aria-label="Zoom in">+</button>'
+        '<span class="bracket-zoom-label" aria-live="polite">—</span>'
+        "</div>"
+        '<div class="bracket-zoom-viewport">'
+        '<div class="bracket-zoom-spacer">'
+        f'<div class="bracket-zoom-stage">{inner}</div>'
+        "</div></div>"
+    )
+
+
+_BRACKET_PAN_SCRIPT = r"""<script>
+(function () {
+  var THRESH = 5;
+  var ZMIN = 0.2;
+  var ZMAX = 2.5;
+  var ZSTEP = 1.12;
+  var activePopOuter = null;
+  var pendingTap = null;
+
+  function matchOuterFrom(el) {
+    return el && el.closest ? el.closest(".bracket-cl-outer, .bracket-pair-wrap") : null;
+  }
+
+  function clamp(z) {
+    return Math.max(ZMIN, Math.min(ZMAX, z));
+  }
+
+  function popLayer() {
+    var layer = document.getElementById("bracket-pop-layer");
+    if (!layer) {
+      layer = document.createElement("div");
+      layer.id = "bracket-pop-layer";
+      document.body.appendChild(layer);
+    }
+    return layer;
+  }
+
+  function viewportSize() {
+    var doc = document.documentElement;
+    return {
+      w: Math.min(window.innerWidth, doc.clientWidth || window.innerWidth),
+      h: Math.min(window.innerHeight, doc.clientHeight || window.innerHeight),
+    };
+  }
+
+  function measurePop(pop) {
+    pop.style.position = "fixed";
+    pop.style.display = "block";
+    pop.style.visibility = "hidden";
+    pop.style.left = "0";
+    pop.style.top = "0";
+    pop.style.right = "auto";
+    pop.style.bottom = "auto";
+    pop.style.maxHeight = "none";
+    pop.style.overflowY = "";
+    var rect = pop.getBoundingClientRect();
+    return {
+      w: rect.width || pop.scrollWidth || 280,
+      h: rect.height || pop.scrollHeight || 180,
+    };
+  }
+
+  function layoutFloatedPop(outer, pop) {
+    var gap = 8;
+    var pad = 10;
+    var vp = viewportSize();
+    var anchor = outer.getBoundingClientRect();
+    var size = measurePop(pop);
+    var w = size.w;
+    var h = size.h;
+
+    var spaceBelow = vp.h - pad - (anchor.bottom + gap);
+    var spaceAbove = anchor.top - gap - pad;
+    var placeAbove = spaceBelow < h && spaceAbove >= spaceBelow;
+    if (spaceBelow < h && spaceAbove < h) {
+      placeAbove = spaceAbove > spaceBelow;
+    }
+
+    var left = Math.max(pad, Math.min(anchor.left, vp.w - w - pad));
+    var top = placeAbove ? anchor.top - h - gap : anchor.bottom + gap;
+
+    if (placeAbove && top < pad) {
+      top = pad;
+    }
+    if (!placeAbove && top + h > vp.h - pad) {
+      top = Math.max(pad, anchor.top - h - gap);
+      placeAbove = true;
+    }
+
+    pop.style.position = "fixed";
+    pop.style.display = "block";
+    pop.style.visibility = "visible";
+    pop.style.left = left + "px";
+    pop.style.top = top + "px";
+    pop.style.right = "auto";
+    pop.style.bottom = "auto";
+    pop.classList.toggle("bracket-pop--above", placeAbove);
+
+    var placed = pop.getBoundingClientRect();
+    if (placed.bottom > vp.h - pad) {
+      top = Math.max(pad, vp.h - pad - placed.height);
+      pop.style.top = top + "px";
+    }
+    if (placed.top < pad) {
+      pop.style.top = pad + "px";
+    }
+    placed = pop.getBoundingClientRect();
+    if (placed.height > vp.h - pad * 2) {
+      pop.style.maxHeight = vp.h - pad * 2 + "px";
+      pop.style.overflowY = "auto";
+    } else {
+      pop.style.maxHeight = "";
+      pop.style.overflowY = "";
+    }
+  }
+
+  function placePop(outer) {
+    var pop = outer._bracketPopEl || outer.querySelector(".bracket-pop");
+    if (!pop) return;
+    if (outer._bracketPopShown && pop.classList.contains("bracket-pop--floated")) {
+      layoutFloatedPop(outer, pop);
+      return;
+    }
+    outer._bracketPopEl = pop;
+    pop._bracketPopHome = outer;
+    popLayer().appendChild(pop);
+    pop.classList.add("bracket-pop--floated");
+    layoutFloatedPop(outer, pop);
+    outer._bracketPopShown = true;
+  }
+
+  function clearPop(outer) {
+    if (!outer._bracketPopShown) return;
+    var pop = outer._bracketPopEl;
+    var home = (pop && pop._bracketPopHome) || outer;
+    if (!pop) return;
+    pop.classList.remove("bracket-pop--floated");
+    pop.classList.remove("bracket-pop--above");
+    pop.style.position = "";
+    pop.style.left = "";
+    pop.style.top = "";
+    pop.style.right = "";
+    pop.style.bottom = "";
+    pop.style.display = "";
+    pop.style.visibility = "";
+    pop.style.maxHeight = "";
+    pop.style.overflowY = "";
+    home.appendChild(pop);
+    outer._bracketPopShown = false;
+    outer._bracketPopEl = null;
+    outer.classList.remove("bracket-match--tap-active");
+    if (activePopOuter === outer) activePopOuter = null;
+  }
+
+  function clearActivePop() {
+    if (activePopOuter) clearPop(activePopOuter);
+  }
+
+  function togglePopTap(outer) {
+    if (activePopOuter === outer) {
+      clearActivePop();
+      return;
+    }
+    clearActivePop();
+    placePop(outer);
+    activePopOuter = outer;
+    outer.classList.add("bracket-match--tap-active");
+  }
+
+  function viewportInsets(viewport) {
+    var cs = window.getComputedStyle(viewport);
+    return {
+      l: parseFloat(cs.paddingLeft) || 0,
+      t: parseFloat(cs.paddingTop) || 0,
+      r: parseFloat(cs.paddingRight) || 0,
+      b: parseFloat(cs.paddingBottom) || 0,
+    };
+  }
+
+  function measureNatural(wrap) {
+    var stage = wrap.querySelector(".bracket-zoom-stage");
+    var spacer = wrap.querySelector(".bracket-zoom-spacer");
+    if (!stage) return;
+    stage.style.transform = "none";
+    if (spacer) {
+      spacer.style.width = "";
+      spacer.style.height = "";
+    }
+    var shell = stage.querySelector(".bracket-shell");
+    var sel =
+      ".bracket-headers-row,.bracket-hcell,.bracket-subsec-h," +
+      ".bracket-cl-outer,.bracket-cl-pending,.bracket-pair-wrap";
+    var nodes = stage.querySelectorAll(sel);
+    var minL = Infinity;
+    var minT = Infinity;
+    var maxR = -Infinity;
+    var maxB = -Infinity;
+    for (var i = 0; i < nodes.length; i++) {
+      var r = nodes[i].getBoundingClientRect();
+      if (r.width < 2 && r.height < 2) continue;
+      minL = Math.min(minL, r.left);
+      minT = Math.min(minT, r.top);
+      maxR = Math.max(maxR, r.right);
+      maxB = Math.max(maxB, r.bottom);
+    }
+    if (maxR > minL && maxB > minT) {
+      wrap._bracketNaturalW = Math.ceil(maxR - minL + 20);
+      wrap._bracketNaturalH = Math.ceil(maxB - minT + 20);
+      return;
+    }
+    if (shell) {
+      var dw = parseFloat(shell.getAttribute("data-bracket-w"));
+      var dh = parseFloat(shell.getAttribute("data-bracket-h"));
+      if (dw > 0 && dh > 0) {
+        wrap._bracketNaturalW = dw;
+        wrap._bracketNaturalH = dh;
+        return;
+      }
+    }
+    var w = stage.scrollWidth || stage.offsetWidth;
+    var h = stage.scrollHeight || stage.offsetHeight;
+    if (w > 0 && h > 0) {
+      wrap._bracketNaturalW = w;
+      wrap._bracketNaturalH = h;
+    }
+  }
+
+  function setZoom(wrap, z, opts) {
+    opts = opts || {};
+    var stage = wrap.querySelector(".bracket-zoom-stage");
+    var spacer = wrap.querySelector(".bracket-zoom-spacer");
+    var viewport = wrap.querySelector(".bracket-zoom-viewport");
+    var label = wrap.querySelector(".bracket-zoom-label");
+    if (!stage || !spacer || !viewport) return;
+    var nw = wrap._bracketNaturalW || stage.offsetWidth;
+    var nh = wrap._bracketNaturalH || stage.offsetHeight;
+    z = clamp(z);
+    wrap._bracketZoom = z;
+    stage.style.transform = "scale(" + z + ")";
+    spacer.style.width = Math.ceil(nw * z) + "px";
+    spacer.style.height = Math.ceil(nh * z) + "px";
+    if (label) label.textContent = Math.round(z * 100) + "%";
+    if (opts.center) {
+      var ins = viewportInsets(viewport);
+      var vw = viewport.clientWidth - ins.l - ins.r;
+      var vh = viewport.clientHeight - ins.t - ins.b;
+      var sl = spacer.offsetWidth;
+      var st = spacer.offsetHeight;
+      viewport.scrollLeft = sl > vw ? Math.max(0, (sl - vw) / 2) : 0;
+      viewport.scrollTop = st > vh ? Math.max(0, (st - vh) / 2) : 0;
+    }
+  }
+
+  function fitZoom(wrap) {
+    var viewport = wrap.querySelector(".bracket-zoom-viewport");
+    if (!viewport) return;
+    measureNatural(wrap);
+    var nw = wrap._bracketNaturalW;
+    var nh = wrap._bracketNaturalH;
+    if (!nw || !nh) return;
+    var ins = viewportInsets(viewport);
+    var availW = viewport.clientWidth - ins.l - ins.r;
+    var availH = viewport.clientHeight - ins.t - ins.b;
+    var z = Math.min(availW / nw, availH / nh);
+    if (!isFinite(z) || z <= 0) z = 1;
+    wrap._bracketFitMode = true;
+    setZoom(wrap, z, { center: true });
+  }
+
+  document.querySelectorAll(".bracket-wrap").forEach(function (wrap) {
+    var viewport = wrap.querySelector(".bracket-zoom-viewport");
+    if (!viewport) return;
+
+    wrap._bracketZoom = 1;
+    wrap._bracketFitMode = true;
+
+    wrap.querySelectorAll("[data-zoom-action]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var act = btn.getAttribute("data-zoom-action");
+        if (act === "fit") {
+          fitZoom(wrap);
+          return;
+        }
+        wrap._bracketFitMode = false;
+        var cur = wrap._bracketZoom || 1;
+        if (act === "in") setZoom(wrap, cur * ZSTEP, { center: false });
+        else if (act === "out") setZoom(wrap, cur / ZSTEP, { center: false });
+      });
+    });
+
+    function initFit() {
+      measureNatural(wrap);
+      fitZoom(wrap);
+    }
+    requestAnimationFrame(function () {
+      requestAnimationFrame(initFit);
+    });
+
+    var resizeTimer;
+    window.addEventListener("resize", function () {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(function () {
+        if (wrap._bracketFitMode) fitZoom(wrap);
+      }, 120);
+    });
+
+    var dragging = false;
+    var moved = false;
+    var startX = 0;
+    var startY = 0;
+    var scroll0 = 0;
+    var scroll0Y = 0;
+    var pid = null;
+
+    function endDrag() {
+      if (!dragging) return;
+      dragging = false;
+      wrap.classList.remove("bracket-wrap--dragging");
+      try {
+        if (pid !== null) viewport.releasePointerCapture(pid);
+      } catch (e) {}
+      pid = null;
+    }
+
+    viewport.addEventListener(
+      "pointerdown",
+      function (e) {
+        if (e.target.closest(".bracket-zoom-controls")) return;
+        if (e.pointerType === "mouse" && e.button !== 0) return;
+        var match = matchOuterFrom(e.target);
+        if (match) {
+          pendingTap = {
+            outer: match,
+            x: e.clientX,
+            y: e.clientY,
+            pid: e.pointerId,
+            wrap: wrap,
+            viewport: viewport,
+          };
+          return;
+        }
+        clearActivePop();
+        dragging = true;
+        moved = false;
+        startX = e.clientX;
+        startY = e.clientY;
+        scroll0 = viewport.scrollLeft;
+        scroll0Y = viewport.scrollTop;
+        pid = e.pointerId;
+        wrap.classList.add("bracket-wrap--dragging");
+        viewport.setPointerCapture(e.pointerId);
+      },
+      { passive: true }
+    );
+
+    viewport.addEventListener(
+      "pointermove",
+      function (e) {
+        if (pendingTap && e.pointerId === pendingTap.pid) {
+          var dx0 = e.clientX - pendingTap.x;
+          var dy0 = e.clientY - pendingTap.y;
+          if (Math.sqrt(dx0 * dx0 + dy0 * dy0) < THRESH) return;
+          dragging = true;
+          moved = true;
+          startX = pendingTap.x;
+          startY = pendingTap.y;
+          scroll0 = viewport.scrollLeft;
+          scroll0Y = viewport.scrollTop;
+          pid = e.pointerId;
+          pendingTap = null;
+          wrap.classList.add("bracket-wrap--dragging");
+          try {
+            viewport.setPointerCapture(e.pointerId);
+          } catch (err) {}
+          viewport.scrollLeft = scroll0 - dx0;
+          viewport.scrollTop = scroll0Y - dy0;
+          e.preventDefault();
+          return;
+        }
+        if (!dragging || e.pointerId !== pid) return;
+        var dx = e.clientX - startX;
+        var dy = e.clientY - startY;
+        if (!moved && Math.sqrt(dx * dx + dy * dy) < THRESH) return;
+        moved = true;
+        viewport.scrollLeft = scroll0 - dx;
+        viewport.scrollTop = scroll0Y - dy;
+        e.preventDefault();
+      },
+      { passive: false }
+    );
+
+    function finishPointer(e) {
+      if (pendingTap && e.pointerId === pendingTap.pid) {
+        togglePopTap(pendingTap.outer);
+        pendingTap = null;
+        return;
+      }
+      if (dragging) endDrag();
+      if (!dragging && !pendingTap && activePopOuter) {
+        var pop = activePopOuter._bracketPopEl;
+        if (!activePopOuter.contains(e.target) && !(pop && pop.contains(e.target))) {
+          clearActivePop();
+        }
+      }
+    }
+
+    viewport.addEventListener("pointerup", finishPointer);
+    viewport.addEventListener("pointercancel", function (e) {
+      pendingTap = null;
+      endDrag();
+    });
+    viewport.addEventListener("lostpointercapture", endDrag);
+
+    viewport.addEventListener(
+      "click",
+      function (e) {
+        if (moved) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          moved = false;
+        }
+      },
+      true
+    );
+
+    viewport.addEventListener("scroll", function () {
+      if (activePopOuter && activePopOuter._bracketPopEl) {
+        layoutFloatedPop(activePopOuter, activePopOuter._bracketPopEl);
+      }
+    });
+  });
+})();
+</script>"""
+
 
 _LIST_PAGE_HEAD = """<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><style>{css}</style></head>
-<body><div class="container">
+<body{body_attr}><div class="container">
   <div class="header">
     <div class="title">{title}</div>
     <div class="subtitle">{subtitle}</div>
@@ -870,11 +1656,27 @@ _LIST_PAGE_HEAD = """<!DOCTYPE html>
 </div>"""
 
 
-def _render_list_page(css: str, title: str, subtitle: str, sections: str) -> str:
+def _render_list_page(
+    css: str,
+    title: str,
+    subtitle: str,
+    sections: str,
+    *,
+    extra_script: str = "",
+    body_class: str = "",
+) -> str:
     """Build list-style document; JS is appended so braces are not interpreted by str.format."""
+    body_attr = f' class="{body_class}"' if body_class else ""
     return (
-        _LIST_PAGE_HEAD.format(css=css, title=title, subtitle=subtitle, sections=sections)
+        _LIST_PAGE_HEAD.format(
+            css=css,
+            title=title,
+            subtitle=subtitle,
+            sections=sections,
+            body_attr=body_attr,
+        )
         + _LIST_SORT_SCRIPT
+        + extra_script
         + "\n</body></html>"
     )
 
@@ -1017,7 +1819,9 @@ def _list_section(title: str, headers: List[dict], rows: List[List[dict]]) -> st
     return f"""
     <div class="section">
       <div class="section-title">{title}</div>
+      <div class="table-scroll">
       <table{table_attr}><thead><tr>{th}</tr></thead><tbody>{trs}</tbody></table>
+      </div>
     </div>"""
 
 
@@ -1063,7 +1867,19 @@ def build_players_html(data: dict, season: str, ascending: bool = False) -> str:
 # Team standings
 # ---------------------------------------------------------------------------
 
-def build_teams_html(data: dict, season: str) -> str:
+def _team_name_cell_html(name: str, champion_team: Optional[str] = None) -> str:
+    name_cell = html_module.escape(name)
+    if champion_team and name == champion_team:
+        name_cell = (
+            '<span class="standings-champion" title="Playoff champion" aria-label="Season champion">'
+            "👑</span> " + name_cell
+        )
+    return name_cell
+
+
+def build_teams_html(
+    data: dict, season: str, *, champion_team: Optional[str] = None
+) -> str:
     headers = [
         {"label": "#", "right": True},
         {"label": "Team"},
@@ -1082,7 +1898,12 @@ def build_teams_html(data: dict, season: str) -> str:
         pins = stats.get("pins_for", 0)
         rows.append([
             {"val": i,            "cls": "right rank"},
-            {"val": name,         "cls": "name-col", "style": _team_color_style(name), "sort": name.lower()},
+            {
+                "val": _team_name_cell_html(name, champion_team),
+                "cls": "name-col",
+                "style": _team_color_style(name),
+                "sort": name.lower(),
+            },
             {"val": record,       "cls": "record", "sort": w * 10000 + l * 100 + t},
             {"val": f"{avg:.1f}", "cls": "right gold"},
             {"val": f"{pins:,}",  "cls": "right sub-col", "sort": pins},
@@ -1093,14 +1914,16 @@ def build_teams_html(data: dict, season: str) -> str:
     )
 
 
-def build_bracket_index_html(seasons: List[str]) -> str:
+def build_bracket_index_html(seasons: List[str], *, embed: bool = False) -> str:
     """Index of /bracket?season=… links for each sheet season."""
     from urllib.parse import quote
 
+    embed_qs = "&embed=1" if embed else ""
     items = []
     for s in seasons:
         items.append(
-            f'<li><a href="/bracket?season={quote(s)}">{html_module.escape(s)}</a></li>'
+            f'<li><a href="/bracket?season={quote(s)}{embed_qs}">'
+            f"{html_module.escape(s)}</a></li>"
         )
     extra = "\n.bracket-index-list { margin: 0; padding-left: 1.25rem; line-height: 1.9; }\n"
     inner = (
@@ -1117,9 +1940,10 @@ def build_bracket_index_html(seasons: List[str]) -> str:
 
 
 # Fixed layout for winner-bracket SVG connectors (must match CSS .bracket-hcell / .bracket-tcell width + gap)
-BRACKET_COL_W_PX = 158
+BRACKET_COL_W_PX = 260
 BRACKET_GAP_PX = 20
 BRACKET_MATCH_SLOT_PX = 58
+BRACKET_HEADER_ROW_PX = 52
 
 
 def _bracket_center_rows(n_first: int, slot_px: float) -> List[List[float]]:
@@ -1256,33 +2080,86 @@ def _elimination_section_html(rows: List[Tuple[str, str, str, str, str, int]]) -
     )
 
 
+def _playoff_snapshots_with_matchups(
+    snapshots: List[Optional[dict]],
+) -> List[dict]:
+    return [s for s in (snapshots or []) if s and s.get("matchups")]
+
+
+def _champion_from_labeled_finals(valid: List[dict], ms: List[dict]) -> Optional[str]:
+    """Winner of the 1st-place game when the finals week has placement matchups."""
+    w3_groups: List[Tuple[FrozenSet[str], str]] = []
+    if len(valid) >= 3:
+        qf_ms = list(valid[0]["matchups"])
+        ms1 = list(valid[1]["matchups"])
+        teams: Set[str] = set()
+        for s in valid:
+            for m in s["matchups"]:
+                teams.add(cast(str, m["home"]["name"]))
+                away = m.get("away")
+                if away:
+                    teams.add(cast(str, away["name"]))
+        round_pairs = compute_bracket_rounds(sorted(teams))[0] if len(teams) >= 2 else []
+        w3_groups = _best_w3_groups(qf_ms, ms1, ms, round_pairs, snapshots=valid)
+    elif len(valid) == 2:
+        parallel = _resolve_two_week_parallel_playoffs(valid, seed_rank=None)
+        if parallel:
+            w3_groups = list(parallel.get("w3_groups") or [])
+    if not w3_groups:
+        return None
+    ordered, _ = order_matchups_by_labeled_groups(ms, w3_groups)
+    for label, mm in ordered:
+        if label.startswith("1st") and mm:
+            wl = winner_loser_from_matchup(mm)
+            if wl:
+                return wl[0]
+    return None
+
+
+def _champion_from_unbeaten_final(valid: List[dict], ms: List[dict]) -> Optional[str]:
+    """Fallback: finals game between two teams still undefeated in prior playoff weeks."""
+    losses: Dict[str, int] = {}
+    for s in valid[:-1]:
+        for m in _playoff_matchups_with_opponent(list(s["matchups"])):
+            wl = winner_loser_from_matchup(m)
+            if not wl:
+                continue
+            winner, loser = wl
+            losses[loser] = losses.get(loser, 0) + 1
+            losses.setdefault(winner, losses.get(winner, 0))
+    for m in ms:
+        away = m.get("away")
+        if not away:
+            continue
+        h, a = cast(str, m["home"]["name"]), cast(str, away["name"])
+        if losses.get(h, 0) != 0 or losses.get(a, 0) != 0:
+            continue
+        wl = winner_loser_from_matchup(m)
+        if wl:
+            return wl[0]
+    return None
+
+
+def champion_from_playoff_snapshots(snapshots: List[Optional[dict]]) -> Optional[str]:
+    """Playoff champion: winner of the 1st-place game (or sole finals matchup)."""
+    valid = _playoff_snapshots_with_matchups(snapshots)
+    if not valid:
+        return None
+    ms = _playoff_matchups_with_opponent(list(valid[-1]["matchups"]))
+    if not ms:
+        return None
+    if len(ms) == 1:
+        wl = winner_loser_from_matchup(ms[0])
+        return wl[0] if wl else None
+    champ = _champion_from_labeled_finals(valid, ms)
+    if champ:
+        return champ
+    return _champion_from_unbeaten_final(valid, ms)
+
+
 def _champion_callout_html(snapshots: List[Optional[dict]]) -> str:
-    snap = None
-    for s in reversed(snapshots or []):
-        if s and s.get("matchups"):
-            snap = s
-            break
-    if not snap:
-        return ""
-    ms = snap["matchups"]
-    if len(ms) != 1:
-        return ""
-    m = ms[0]
-    away = m.get("away")
-    if not away:
-        nm = m["home"]["name"]
-        return (
-            f'<div class="bracket-champion"><span class="bracket-champion-label">Champion</span>'
-            f'<span class="bracket-champion-name" style="{_team_color_style(nm)}">'
-            f"{html_module.escape(nm)}</span></div>"
-        )
-    home = m["home"]
-    hr, ar = home.get("result", ""), away.get("result", "")
-    if hr == "W" and ar == "L":
-        nm = home["name"]
-    elif ar == "W" and hr == "L":
-        nm = away["name"]
-    else:
+    nm = champion_from_playoff_snapshots(snapshots)
+    if not nm:
         return ""
     return (
         f'<div class="bracket-champion"><span class="bracket-champion-label">Champion</span>'
@@ -1296,15 +2173,80 @@ def _champion_callout_html(snapshots: List[Optional[dict]]) -> str:
 # ---------------------------------------------------------------------------
 
 _BRACKET_EXTRA_CSS = """
-html { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+html { overflow-x: hidden; }
 body { overflow-y: auto; min-width: 0; }
 .container { max-width: none; overflow: visible; }
 .bracket-wrap {
-  overflow-x: auto;
-  overflow-y: visible;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   margin: 0 -6px;
-  padding: 6px 12px 20px 12px;
+  padding: 6px 12px 16px 12px;
   max-width: 100%;
+  max-height: min(72vh, 760px);
+  min-height: 360px;
+}
+.bracket-zoom-controls {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.bracket-zoom-btn {
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  min-width: 2rem;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid #4a4068;
+  background: #1e1a32;
+  color: #d4cce8;
+  cursor: pointer;
+}
+.bracket-zoom-btn:hover { border-color: #7c6ec4; color: #fff; }
+.bracket-zoom-btn[data-zoom-action="fit"] {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 6px 12px;
+}
+.bracket-zoom-label {
+  font-size: 11px;
+  color: #8b849c;
+  min-width: 3.2rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.bracket-zoom-viewport {
+  flex: 1 1 auto;
+  min-height: 280px;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  border-radius: 8px;
+  background: rgba(10, 9, 16, 0.35);
+  box-sizing: border-box;
+  padding: 14px 12px 10px 18px;
+}
+.bracket-wrap.bracket-wrap--dragging .bracket-zoom-viewport {
+  cursor: grabbing;
+  user-select: none;
+}
+.bracket-wrap.bracket-wrap--dragging .bracket-zoom-viewport * {
+  user-select: none;
+}
+.bracket-zoom-spacer {
+  position: relative;
+  display: block;
+}
+.bracket-zoom-stage {
+  transform-origin: 0 0;
+  display: inline-block;
+  vertical-align: top;
 }
 .bracket-shell { display: flex; flex-direction: column; gap: 4px; overflow: visible; }
 .bracket-winners-title {
@@ -1410,6 +2352,7 @@ body { overflow-y: auto; min-width: 0; }
   justify-content: center;
   min-height: auto;
   overflow: visible;
+  cursor: pointer;
 }
 .bracket-pair-wrap:hover,
 .bracket-pair-wrap:focus-within { z-index: 80; }
@@ -1580,8 +2523,11 @@ body { overflow-y: auto; min-width: 0; }
 .bracket-line {
   font-size: 11.5px;
   font-weight: 600;
-  word-break: break-word;
   line-height: 1.35;
+}
+.bracket-cl-row-main .bracket-line,
+.bracket-pair-line--row .bracket-line {
+  white-space: nowrap;
 }
 .bracket-line--ghost { color: #555; font-style: italic; font-weight: 500; font-size: 11px; }
 .bracket-line--mini { font-size: 10px; color: #a8a4bc; font-weight: 500; }
@@ -1597,6 +2543,34 @@ body { overflow-y: auto; min-width: 0; }
   text-align: left;
   margin-top: 1px;
 }
+#bracket-pop-layer {
+  position: fixed;
+  inset: 0;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 2147483646;
+}
+.bracket-pop--floated {
+  position: fixed !important;
+  left: 0;
+  top: 0;
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto;
+  z-index: 2147483647;
+  max-width: min(320px, calc(100vw - 24px));
+}
+.bracket-cl-outer.bracket-match--tap-active,
+.bracket-pair-wrap.bracket-match--tap-active {
+  outline: 2px solid #7c6ec4;
+  outline-offset: 2px;
+  z-index: 75;
+}
+.bracket-pop--floated.bracket-pop--above {
+  box-shadow: 0 -8px 28px rgba(0,0,0,0.5);
+}
 .bracket-pop {
   position: absolute;
   left: 0;
@@ -1605,7 +2579,7 @@ body { overflow-y: auto; min-width: 0; }
   bottom: auto;
   transform: none;
   width: max-content;
-  max-width: min(268px, calc(100vw - 24px));
+  max-width: min(320px, calc(100vw - 24px));
   padding: 9px 11px;
   background: linear-gradient(180deg, #252038 0%, #171528 100%);
   border: 1px solid #6a5f9e;
@@ -1623,16 +2597,6 @@ body { overflow-y: auto; min-width: 0; }
 }
 .bracket-cl-outer .bracket-pop {
   left: calc(1.1rem + 6px);
-}
-.bracket-pair-wrap:hover .bracket-pop,
-.bracket-pair-wrap:focus-within .bracket-pop {
-  opacity: 1;
-  visibility: visible;
-}
-.bracket-cl-outer:hover .bracket-pop,
-.bracket-cl-outer:focus-within .bracket-pop {
-  opacity: 1;
-  visibility: visible;
 }
 .bracket-pop-path {
   font-size: 10px;
@@ -1713,20 +2677,12 @@ body { overflow-y: auto; min-width: 0; }
   gap: 6px;
   margin-bottom: 12px;
   z-index: 1;
+  cursor: pointer;
 }
 .bracket-cl-outer:hover,
 .bracket-cl-outer:focus-within { z-index: 80; }
 .bracket-cl-outer:last-child { margin-bottom: 0; }
 .bracket-cl-outer:focus { outline: 2px solid #7c6ec4; outline-offset: 2px; }
-.bracket-cl-mnum {
-  flex: 0 0 1.1rem;
-  font-size: 11px;
-  font-weight: 800;
-  color: #9a96b0;
-  text-align: center;
-  padding-top: 10px;
-  font-variant-numeric: tabular-nums;
-}
 .bracket-cl-match {
   flex: 1 1 auto;
   min-width: 0;
@@ -1917,6 +2873,20 @@ def _match_matchups_to_theoretical_round(
     return out, aligned
 
 
+def _solo_teams_in_week(matchups: List[dict]) -> List[str]:
+    return [m["home"]["name"] for m in matchups if not m.get("away")]
+
+
+def _slot_wl_from_matchup(m: Optional[dict]) -> Optional[SlotWL]:
+    if not m:
+        return None
+    if m.get("_bye_pair"):
+        return (cast(str, m["home"]["name"]), BYE_LOSER)
+    if not m.get("away"):
+        return (cast(str, m["home"]["name"]), BYE_LOSER)
+    return winner_loser_from_matchup(m)
+
+
 def qf_matchups_in_bracket_slot_order(
     matchups: List[dict],
     round_pairs: List[Tuple[BracketSlot, BracketSlot]],
@@ -1933,6 +2903,86 @@ def qf_matchups_in_bracket_slot_order(
                 used.add(j)
                 slots[i] = m
                 break
+    leftover_idxs = [
+        j
+        for j in range(len(matchups))
+        if j not in used and matchups[j].get("away")
+    ]
+    while leftover_idxs:
+        best_j: Optional[int] = None
+        best_i: Optional[int] = None
+        best_ov = 0
+        empty = [i for i in range(len(slots)) if slots[i] is None]
+        for j in leftover_idxs:
+            m = matchups[j]
+            away = m.get("away")
+            if not away:
+                continue
+            teams = frozenset({m["home"]["name"], away["name"]})
+            for i in empty:
+                pool = _theoretical_pair_team_pool(round_pairs[i][0], round_pairs[i][1])
+                ov = len(teams & pool)
+                if ov > best_ov:
+                    best_ov = ov
+                    best_j = j
+                    best_i = i
+        if best_j is None or best_i is None:
+            j = leftover_idxs.pop(0)
+            for i in range(len(slots)):
+                if slots[i] is None:
+                    slots[i] = matchups[j]
+                    used.add(j)
+                    break
+            continue
+        slots[best_i] = matchups[best_j]
+        used.add(best_j)
+        leftover_idxs.remove(best_j)
+
+    teams_in_slots: Set[str] = set()
+    for s in slots:
+        if not s:
+            continue
+        teams_in_slots.add(s["home"]["name"])
+        away = s.get("away")
+        if away:
+            teams_in_slots.add(away["name"])
+    solo = [t for t in _solo_teams_in_week(matchups) if t not in teams_in_slots]
+    solo_used: Set[str] = set()
+    for i, (left, right) in enumerate(round_pairs):
+        if slots[i] is not None:
+            continue
+        pool = _theoretical_pair_team_pool(left, right)
+        in_pool = [t for t in solo if t in pool and t not in solo_used]
+        if len(in_pool) == 1:
+            nm = in_pool[0]
+            solo_used.add(nm)
+            slots[i] = {
+                "home": {"name": nm, "result": "W", "pins": 0, "avg": 0, "game_pins": [], "wins": 0},
+                "away": None,
+            }
+        elif len(in_pool) >= 2:
+            for nm in in_pool[:2]:
+                solo_used.add(nm)
+            slots[i] = {
+                "home": {
+                    "name": in_pool[0],
+                    "result": "W",
+                    "pins": 0,
+                    "avg": 0,
+                    "game_pins": [],
+                    "wins": 0,
+                },
+                "away": {
+                    "name": in_pool[1],
+                    "result": "W",
+                    "pins": 0,
+                    "avg": 0,
+                    "game_pins": [],
+                    "wins": 0,
+                },
+                "_bye_pair": True,
+            }
+
     return slots
 
 
@@ -1943,7 +2993,7 @@ def _qf_results_for_bracket_placement(
     """Use true bracket-slot QF order when all four games match theory; else theory-then-sheet order."""
     slots = qf_matchups_in_bracket_slot_order(qf_matchups, round_pairs)
     if len(slots) >= 4 and all(slots):
-        wl = [winner_loser_from_matchup(s) for s in slots[:4]]
+        wl = [_slot_wl_from_matchup(s) for s in slots[:4]]
         if all(wl):
             return wl
     qf_ord, _ = _match_matchups_to_theoretical_round(qf_matchups, round_pairs)
@@ -1971,6 +3021,12 @@ def _qf_res_candidates(
         acc.append(list(s4))
 
     push(_qf_results_for_bracket_placement(qf_matchups, round_pairs))
+    slot_wl = [
+        _slot_wl_from_matchup(s)
+        for s in qf_matchups_in_bracket_slot_order(qf_matchups, round_pairs)
+    ]
+    if len(slot_wl) >= 4 and all(slot_wl):
+        push(slot_wl[:4])
     sheet_full = qf_slot_results_in_order(qf_matchups)
     if len(sheet_full) >= 4:
         s4 = sheet_full[:4]
@@ -1997,8 +3053,76 @@ def _qf_winner_loser_sets(qf_ms: List[dict]) -> Tuple[Set[str], Set[str]]:
     return w, l
 
 
-def _semis_week_parallel_shape(qf_ms: List[dict], ms1: List[dict]) -> bool:
-    """True if this semis week has two winner–winner games and two loser–loser games (parallel brackets)."""
+def _split_semis_by_playoff_loss_band(
+    snapshots: List[Optional[dict]],
+    ms1: List[dict],
+    *,
+    losses_before_col: int = 1,
+) -> Tuple[List[dict], List[dict], List[dict]]:
+    """Winners-bracket semis = both teams with 0 playoff losses; losers-bracket = both with 1+."""
+    losses = _playoff_losses_through_prior_rounds(snapshots, losses_before_col)
+    wb: List[dict] = []
+    lb: List[dict] = []
+    other: List[dict] = []
+    for m in _playoff_matchups_with_opponent(ms1):
+        away = m.get("away")
+        if not away:
+            continue
+        h, a = m["home"]["name"], away["name"]
+        lh, la = losses.get(h, 0), losses.get(a, 0)
+        if lh == 0 and la == 0:
+            wb.append(m)
+        elif lh >= 1 and la >= 1:
+            lb.append(m)
+        else:
+            other.append(m)
+    return wb, lb, other
+
+
+def _parallel_model_from_loss_band(
+    snapshots: List[Optional[dict]],
+    ms1: List[dict],
+    ms2: List[dict],
+    qf_ms: List[dict],
+    round_pairs: List[Tuple[BracketSlot, BracketSlot]],
+) -> Optional[dict]:
+    """Sheet-style parallel semis: QF winners play winners, QF losers play losers."""
+    wb_ms, lb_ms, other = _split_semis_by_playoff_loss_band(snapshots, ms1)
+    if len(wb_ms) != 2 or len(lb_ms) != 2:
+        return None
+    wb_semis = [winner_loser_from_matchup(m) for m in wb_ms]
+    lb_semis = [winner_loser_from_matchup(m) for m in lb_ms]
+    if not all(wb_semis) or not all(lb_semis):
+        return None
+    w3_groups = expected_week3_groups(wb_semis[:2], lb_semis[:2])
+    ms2_played = _playoff_matchups_with_opponent(ms2)
+    sheet_qf = qf_slot_results_in_order(_playoff_matchups_with_opponent(qf_ms))
+    if len(sheet_qf) >= 4 and all(sheet_qf):
+        qf_res = sheet_qf[:4]
+    else:
+        qf_res = _qf_results_for_bracket_placement(qf_ms, round_pairs)
+    return {
+        "kind": "parallel",
+        "qf_res": list(qf_res[:4]) if qf_res else [],
+        "wb_ord": wb_ms,
+        "lb_ord": lb_ms,
+        "rest": other,
+        "w3_groups": w3_groups,
+        "w3_hits": _week3_match_count(ms2_played, w3_groups),
+    }
+
+
+def _semis_week_parallel_shape(
+    qf_ms: List[dict],
+    ms1: List[dict],
+    *,
+    snapshots: Optional[List[Optional[dict]]] = None,
+) -> bool:
+    """True if semis has two unbeaten-vs-unbeaten games and two one-loss-vs-one-loss games."""
+    if snapshots is not None:
+        wb, lb, other = _split_semis_by_playoff_loss_band(snapshots, ms1)
+        if len(wb) == 2 and len(lb) == 2 and not other:
+            return True
     W, L = _qf_winner_loser_sets(qf_ms)
     if len(W) != 4 or len(L) != 4:
         return False
@@ -2085,19 +3209,171 @@ def _week3_match_count(ms2: List[dict], w3_groups: List[Tuple[FrozenSet[str], st
     return sum(1 for _lab, mm in ord3 if mm is not None)
 
 
+def _playoff_matchups_with_opponent(ms: List[dict]) -> List[dict]:
+    """Sheet rows that are head-to-head (exclude lone 'advances' placeholders)."""
+    return [m for m in ms if m.get("away")]
+
+
+def _backfill_ordered_matchups(
+    ordered: List[Tuple[str, Optional[dict]]],
+    rest: List[dict],
+) -> List[Tuple[str, Optional[dict]]]:
+    pool = list(rest)
+    out: List[Tuple[str, Optional[dict]]] = []
+    for label, mm in ordered:
+        if mm is None and pool:
+            mm = pool.pop(0)
+        out.append((label, mm))
+    return out
+
+
+def _w3_groups_from_ms1_parallel(
+    qf_ms: List[dict], ms1: List[dict]
+) -> List[Tuple[FrozenSet[str], str]]:
+    """Finals pairings from parallel semis (WW / LL games in week 2)."""
+    w_set, l_set = _qf_winner_loser_sets(qf_ms)
+    if len(w_set) != 4 or len(l_set) != 4:
+        return []
+    wb_semis: List[Optional[SlotWL]] = []
+    lb_semis: List[Optional[SlotWL]] = []
+    for m in ms1:
+        wl = winner_loser_from_matchup(m)
+        if not wl:
+            continue
+        win, lose = wl
+        if win in w_set and lose in w_set:
+            wb_semis.append(wl)
+        elif win in l_set and lose in l_set:
+            lb_semis.append(wl)
+    while len(wb_semis) < 2:
+        wb_semis.append(None)
+    while len(lb_semis) < 2:
+        lb_semis.append(None)
+    if not all(wb_semis[:2]) or not all(lb_semis[:2]):
+        return []
+    return expected_week3_groups(wb_semis[:2], lb_semis[:2])
+
+
+def _collect_w3_group_candidates(
+    qf_ms: List[dict],
+    ms1: List[dict],
+    ms2: List[dict],
+    round_pairs: List[Tuple[BracketSlot, BracketSlot]],
+    *,
+    snapshots: Optional[List[Optional[dict]]] = None,
+) -> List[List[Tuple[FrozenSet[str], str]]]:
+    """Every plausible finals-week pairing model to score against the sheet."""
+    candidates: List[List[Tuple[FrozenSet[str], str]]] = []
+    seen: Set[Tuple[Tuple[str, ...], ...]] = set()
+
+    def add(groups: List[Tuple[FrozenSet[str], str]]) -> None:
+        if not groups:
+            return
+        key = tuple(
+            tuple(sorted(t for t in teams)) + (label,)
+            for teams, label in groups
+        )
+        if key in seen:
+            return
+        seen.add(key)
+        candidates.append(groups)
+
+    if snapshots is not None:
+        loss_par = _parallel_model_from_loss_band(
+            snapshots, ms1, ms2, qf_ms, round_pairs
+        )
+        if loss_par and loss_par.get("w3_groups"):
+            add(list(loss_par["w3_groups"]))
+
+    model = _pick_best_eight_team_placement_model(
+        qf_ms, ms1, ms2, round_pairs, snapshots=snapshots
+    )
+    if model and model.get("w3_groups"):
+        add(list(model["w3_groups"]))
+
+    for qf_res in _qf_res_candidates(qf_ms, round_pairs):
+        if not all(qf_res):
+            continue
+        cross_sets = expected_week2_cross_sets(qf_res)
+        cross_ord, _ = matchups_by_cross_ordered_groups(ms1, cross_sets)
+        semis_x = [winner_loser_from_matchup(m) if m else None for m in cross_ord]
+        if len(semis_x) >= 4 and all(semis_x):
+            add(expected_week3_groups_cross(semis_x))
+        wb_g, lb_g = expected_week2_groups(qf_res)
+        wb_ord, r1 = matchups_by_ordered_groups(ms1, wb_g)
+        lb_ord, _ = matchups_by_ordered_groups(r1, lb_g)
+        wb_semis = [winner_loser_from_matchup(m) if m else None for m in wb_ord]
+        lb_semis = [winner_loser_from_matchup(m) if m else None for m in lb_ord]
+        if (
+            len(wb_semis) >= 2
+            and len(lb_semis) >= 2
+            and all(wb_semis[:2])
+            and all(lb_semis[:2])
+        ):
+            add(expected_week3_groups(wb_semis[:2], lb_semis[:2]))
+
+    add(_w3_groups_from_ms1_parallel(qf_ms, ms1))
+    return candidates
+
+
+def _best_w3_groups(
+    qf_ms: List[dict],
+    ms1: List[dict],
+    ms2: List[dict],
+    round_pairs: List[Tuple[BracketSlot, BracketSlot]],
+    *,
+    snapshots: Optional[List[Optional[dict]]] = None,
+) -> List[Tuple[FrozenSet[str], str]]:
+    ms2_played = _playoff_matchups_with_opponent(ms2)
+    best_groups: List[Tuple[FrozenSet[str], str]] = []
+    best_n = -1
+    for groups in _collect_w3_group_candidates(
+        qf_ms, ms1, ms2_played, round_pairs, snapshots=snapshots
+    ):
+        n = _week3_match_count(ms2_played, groups)
+        if n > best_n:
+            best_n = n
+            best_groups = groups
+    if not best_groups and len(ms2_played) == 4:
+        labels = (
+            "1st & 2nd place",
+            "3rd & 4th place",
+            "5th & 6th place",
+            "7th & 8th place",
+        )
+        best_groups = [
+            (
+                frozenset({m["home"]["name"], cast(dict, m["away"])["name"]}),
+                labels[i],
+            )
+            for i, m in enumerate(ms2_played[:4])
+        ]
+    return best_groups
+
+
 def _pick_best_eight_team_placement_model(
     qf_ms: List[dict],
     ms1: List[dict],
     ms2: List[dict],
     round_pairs: List[Tuple[BracketSlot, BracketSlot]],
+    *,
+    snapshots: Optional[List[Optional[dict]]] = None,
 ) -> Optional[dict]:
     """Choose QF slot labeling + cross vs parallel so week-2 fits 2+2 and week-3 placement groups match the sheet."""
+    if snapshots is not None:
+        loss_par = _parallel_model_from_loss_band(snapshots, ms1, ms2, qf_ms, round_pairs)
+        if loss_par is not None and loss_par.get("w3_hits", 0) >= 3:
+            out = dict(loss_par)
+            out.pop("w3_hits", None)
+            return out
+
     candidates = _qf_res_candidates(qf_ms, round_pairs)
     if not candidates:
         return None
+    ms2_played = _playoff_matchups_with_opponent(ms2)
     best: Optional[dict] = None
-    best_key: Tuple[int, int, int] = (-1, -1, -1)
-    shape_parallel = _semis_week_parallel_shape(qf_ms, ms1)
+    best_key: Tuple[int, int, int] = (-1, -1, -1)  # (week3 matches, week2 matches, shape bonus)
+    shape_parallel = _semis_week_parallel_shape(qf_ms, ms1, snapshots=snapshots)
 
     def maybe_take(key: Tuple[int, int, int], row: dict) -> None:
         nonlocal best, best_key
@@ -2105,9 +3381,14 @@ def _pick_best_eight_team_placement_model(
             best_key = key
             best = row
         elif key == best_key and best is not None:
-            pr = prefer_crossover_week2(ms1, row["qf_res"])
-            if (pr and row["kind"] == "cross") or (not pr and row["kind"] == "parallel"):
+            if row["kind"] == "parallel" and best["kind"] == "cross":
                 best = row
+            elif row["kind"] == "cross" and best["kind"] == "parallel":
+                pass
+            else:
+                pr = prefer_crossover_week2(ms1, row["qf_res"])
+                if (pr and row["kind"] == "cross") or (not pr and row["kind"] == "parallel"):
+                    best = row
 
     for qf_res in candidates:
         cross_sets = expected_week2_cross_sets(qf_res)
@@ -2118,10 +3399,10 @@ def _pick_best_eight_team_placement_model(
         w3g_x: List[Tuple[FrozenSet[str], str]] = []
         if all(semis_x):
             w3g_x = expected_week3_groups_cross(semis_x)
-        w3x = _week3_match_count(ms2, w3g_x)
+        w3x = _week3_match_count(ms2_played, w3g_x)
         fit_bonus = 0 if shape_parallel else 1
         maybe_take(
-            (w2x, fit_bonus, w3x),
+            (w3x, w2x, fit_bonus),
             {"kind": "cross", "qf_res": qf_res, "cross_ord": cross_f, "cross_sets": cross_sets, "rest": rest_xf, "w3_groups": w3g_x},
         )
 
@@ -2137,10 +3418,10 @@ def _pick_best_eight_team_placement_model(
             w3g_p: List[Tuple[FrozenSet[str], str]] = []
             if len(wb_semis) >= 2 and len(lb_semis) >= 2 and all(wb_semis) and all(lb_semis):
                 w3g_p = expected_week3_groups(wb_semis[:2], lb_semis[:2])
-            w3p = _week3_match_count(ms2, w3g_p)
+            w3p = _week3_match_count(ms2_played, w3g_p)
             par_bonus = 1 if shape_parallel else 0
             maybe_take(
-                (w2p, par_bonus, w3p),
+                (w3p, w2p, par_bonus),
                 {
                     "kind": "parallel",
                     "qf_res": qf_res,
@@ -2320,6 +3601,36 @@ def _simple_theoretical_pair_html(left: BracketSlot, right: BracketSlot) -> str:
     return f'<div class="bracket-pair-wrap" tabindex="0">{face}{pop}</div>'
 
 
+def _hover_game_line_html(
+    game_num: int,
+    h_p: int,
+    a_p: int,
+    h_r: str,
+    a_r: str,
+    home_name: str,
+    away_name: str,
+) -> str:
+    if h_p <= 0 and a_p <= 0:
+        return ""
+    if h_r == "W":
+        winner_html = (
+            f'<span style="{_team_color_style(home_name)}">'
+            f"{html_module.escape(home_name)}</span>"
+        )
+    elif a_r == "W":
+        winner_html = (
+            f'<span style="{_team_color_style(away_name)}">'
+            f"{html_module.escape(away_name)}</span>"
+        )
+    elif h_r == "T":
+        winner_html = '<span class="bracket-pop-gr">Tie</span>'
+    else:
+        winner_html = '<span class="bracket-pop-gr">—</span>'
+    return (
+        f'<div class="bracket-pop-g">G{game_num}: {h_p:,}–{a_p:,} · {winner_html}</div>'
+    )
+
+
 def _matchup_hover_inner_html(m: dict, *, extra_meta: Optional[str] = None) -> str:
     """Structured HTML for bracket hover card (not a native tooltip)."""
     meta = ""
@@ -2350,20 +3661,45 @@ def _matchup_hover_inner_html(m: dict, *, extra_meta: Optional[str] = None) -> s
 
     head = '<div class="bracket-pop-h">Match totals</div>'
     body = score_row(hn, hp, hr, _team_color_style(hn)) + score_row(an, ap, ar, _team_color_style(an))
-    gr = m.get("game_results") or []
+    gbits: List[str] = []
+    for i, row in enumerate(m.get("game_results") or []):
+        if len(row) >= 4:
+            line = _hover_game_line_html(i + 1, row[2], row[3], row[0], row[1], hn, an)
+            if line:
+                gbits.append(line)
+    gp_h = home.get("game_pins") or []
+    gp_a = away.get("game_pins") or []
+    if (len(gp_h) > 4 or len(gp_a) > 4) and len(m.get("game_results") or []) < 5:
+        hp5 = int(gp_h[4]) if len(gp_h) > 4 else 0
+        ap5 = int(gp_a[4]) if len(gp_a) > 4 else 0
+        if hp5 > 0 or ap5 > 0:
+            if hp5 > ap5:
+                h5_r, a5_r = "W", "L"
+            elif ap5 > hp5:
+                h5_r, a5_r = "L", "W"
+            else:
+                h5_r, a5_r = "T", "T"
+            line = _hover_game_line_html(5, hp5, ap5, h5_r, a5_r, hn, an)
+            if line:
+                gbits.append(line)
+    g5_note = m.get("game5_series_note")
+    if g5_note and not any("G5:" in g for g in gbits):
+        from stats.facts import name_matches_team
+
+        winner = an if name_matches_team(an, g5_note) else hn
+        if name_matches_team(hn, g5_note) and not name_matches_team(an, g5_note):
+            winner = hn
+        w_html = (
+            f'<span style="{_team_color_style(winner)}">'
+            f"{html_module.escape(winner)}</span>"
+        )
+        gbits.append(
+            f'<div class="bracket-pop-g">G5: {w_html} '
+            f'<span class="bracket-pop-gr">(sheet)</span></div>'
+        )
     games_h = ""
-    if gr:
-        gbits: List[str] = []
-        for i, row in enumerate(gr):
-            if len(row) >= 4:
-                h_r, a_r, h_p, a_p = row[0], row[1], row[2], row[3]
-                gbits.append(
-                    f'<div class="bracket-pop-g">G{i + 1}: {h_p:,}–{a_p:,} '
-                    f'<span class="bracket-pop-gr">{html_module.escape(h_r)}/'
-                    f'{html_module.escape(a_r)}</span></div>'
-                )
-        if gbits:
-            games_h = '<div class="bracket-pop-gh">Games</div>' + "".join(gbits)
+    if gbits:
+        games_h = '<div class="bracket-pop-gh">Games</div>' + "".join(gbits)
     return meta + head + body + games_h
 
 
@@ -2412,7 +3748,6 @@ def _classic_match_block_html(
     m: dict,
     *,
     seed_map: Dict[str, int],
-    match_no: Optional[int],
     extra_meta: Optional[str] = None,
 ) -> str:
     away = m.get("away")
@@ -2421,13 +3756,8 @@ def _classic_match_block_html(
         sid = seed_map.get(nm)
         row = _classic_team_row_cl(nm, m["home"].get("result", ""), sid)
         pop = f'<aside class="bracket-pop">{_matchup_hover_inner_html(m, extra_meta=extra_meta)}</aside>'
-        num = (
-            f'<div class="bracket-cl-mnum" aria-hidden="true">{match_no}</div>'
-            if match_no is not None
-            else '<div class="bracket-cl-mnum"></div>'
-        )
         return (
-            f'<div class="bracket-cl-outer" tabindex="0">{num}'
+            f'<div class="bracket-cl-outer" tabindex="0">'
             f'<div class="bracket-cl-match">{row}</div>{pop}</div>'
         )
     home = m["home"]
@@ -2436,13 +3766,8 @@ def _classic_match_block_html(
     rowh = _classic_team_row_cl(hn, hr, seed_map.get(hn))
     rowa = _classic_team_row_cl(an, ar, seed_map.get(an))
     pop = f'<aside class="bracket-pop">{_matchup_hover_inner_html(m, extra_meta=extra_meta)}</aside>'
-    num = (
-        f'<div class="bracket-cl-mnum" aria-hidden="true">{match_no}</div>'
-        if match_no is not None
-        else '<div class="bracket-cl-mnum"></div>'
-    )
     return (
-        f'<div class="bracket-cl-outer" tabindex="0">{num}'
+        f'<div class="bracket-cl-outer" tabindex="0">'
         f'<div class="bracket-cl-match">{rowh}{rowa}</div>{pop}</div>'
     )
 
@@ -2457,15 +3782,24 @@ def _eight_team_week0_classic_column(
     sorted_teams: List[Tuple[str, Dict[str, Any]]],
     seed_map: Dict[str, int],
 ) -> str:
-    ms, _al = _match_matchups_to_theoretical_round(list(snap["matchups"]), rounds[0])
+    slots = qf_matchups_in_bracket_slot_order(list(snap["matchups"]), rounds[0])
     parts: List[str] = []
-    for i, m in enumerate(ms):
+    for i, m in enumerate(slots):
+        if m is None:
+            parts.append(
+                _classic_pending_line(
+                    "Quarterfinal slot — not on the sheet yet, or pairings differ from standard seeds."
+                )
+            )
+            continue
+        meta = "Quarterfinal — winners bracket"
+        if m.get("_bye_pair"):
+            meta = "Quarterfinal bye — both teams advance without a head-to-head week"
         parts.append(
             _classic_match_block_html(
                 m,
                 seed_map=seed_map,
-                match_no=i + 1,
-                extra_meta="Quarterfinal — winners bracket",
+                extra_meta=meta,
             )
         )
     return "".join(parts)
@@ -2495,7 +3829,6 @@ def _eight_team_week2_cross_layout_html(
                 _classic_match_block_html(
                     mm,
                     seed_map=seed_map,
-                    match_no=4 + i,
                     extra_meta=meta,
                 )
             )
@@ -2523,7 +3856,6 @@ def _eight_team_week2_cross_layout_html(
                 _classic_match_block_html(
                     mm,
                     seed_map=seed_map,
-                    match_no=6 + i,
                     extra_meta=meta,
                 )
             )
@@ -2539,7 +3871,6 @@ def _eight_team_week2_cross_layout_html(
             _classic_match_block_html(
                 m,
                 seed_map=seed_map,
-                match_no=None,
                 extra_meta="Playoff game (could not match to winners/losers semifinal slots).",
             )
         )
@@ -2569,9 +3900,8 @@ def _eight_team_week2_parallel_layout_html(
     )
     for idx, mm in enumerate(wb_ord):
         meta = "Winners bracket semifinal — quarterfinal winners from the same half of the draw"
-        mn = 5 + idx if idx < 2 else None
         if mm:
-            sec.append(_classic_match_block_html(mm, seed_map=seed_map, match_no=mn, extra_meta=meta))
+            sec.append(_classic_match_block_html(mm, seed_map=seed_map, extra_meta=meta))
         elif idx < 2:
             sec.append(
                 _classic_pending_line(
@@ -2589,7 +3919,7 @@ def _eight_team_week2_parallel_layout_html(
             "(same pattern as the winners semifinal in that half)."
         )
         if mm:
-            sec.append(_classic_match_block_html(mm, seed_map=seed_map, match_no=None, extra_meta=meta))
+            sec.append(_classic_match_block_html(mm, seed_map=seed_map, extra_meta=meta))
         elif idx < 2:
             sec.append(
                 _classic_pending_line(
@@ -2602,7 +3932,6 @@ def _eight_team_week2_parallel_layout_html(
             _classic_match_block_html(
                 m,
                 seed_map=seed_map,
-                match_no=None,
                 extra_meta="Playoff game (could not match to semifinal slots).",
             )
         )
@@ -2619,6 +3948,8 @@ def _eight_team_week2_loss_bucket_column(
     ms = list(snap["matchups"])
     upper: List[dict] = []
     lower: List[dict] = []
+    upper_solos: List[dict] = []
+    lower_solos: List[dict] = []
     for m in ms:
         away = m.get("away")
         if not away:
@@ -2629,6 +3960,22 @@ def _eight_team_week2_loss_bucket_column(
             lower.append(m)
         else:
             upper.append(m)
+    paired_sf = set()
+    for m in upper + lower:
+        away = m.get("away")
+        if away:
+            paired_sf.add(m["home"]["name"])
+            paired_sf.add(away["name"])
+    for m in ms:
+        if m.get("away"):
+            continue
+        hn = m["home"]["name"]
+        if hn in paired_sf:
+            continue
+        if losses_before.get(hn, 0) >= 1:
+            lower_solos.append(m)
+        else:
+            upper_solos.append(m)
     sec: List[str] = []
     sec.append(
         '<div class="bracket-subsec">'
@@ -2640,7 +3987,21 @@ def _eight_team_week2_loss_bucket_column(
         "(or custom draw: mixed winner/loser games are listed here when the sheet does not follow standard seeds)."
     )
     for mm in upper:
-        sec.append(_classic_match_block_html(mm, seed_map=seed_map, match_no=None, extra_meta=meta_u))
+        sec.append(_classic_match_block_html(mm, seed_map=seed_map, extra_meta=meta_u))
+    for mm in upper_solos:
+        sec.append(
+            _classic_match_block_html(
+                mm,
+                seed_map=seed_map,
+                extra_meta="Bye week — advances without a head-to-head semifinal matchup on the sheet.",
+            )
+        )
+    if len(upper) + len(upper_solos) < 2:
+        sec.append(
+            _classic_pending_line(
+                "Expected winners-bracket semifinal — not on the sheet yet, or still a bye week."
+            )
+        )
     sec.append("</div>")
     sec.append(
         '<div class="bracket-subsec">'
@@ -2651,7 +4012,21 @@ def _eight_team_week2_loss_bucket_column(
         "Both teams lost in the quarterfinals — this week sorts placement in the bottom half of the playoffs."
     )
     for mm in lower:
-        sec.append(_classic_match_block_html(mm, seed_map=seed_map, match_no=None, extra_meta=meta_l))
+        sec.append(_classic_match_block_html(mm, seed_map=seed_map, extra_meta=meta_l))
+    for mm in lower_solos:
+        sec.append(
+            _classic_match_block_html(
+                mm,
+                seed_map=seed_map,
+                extra_meta="Bye week — advances without a head-to-head semifinal matchup on the sheet.",
+            )
+        )
+    if len(lower) + len(lower_solos) < 2:
+        sec.append(
+            _classic_pending_line(
+                "Expected losers-bracket semifinal — not on the sheet yet, or still a bye week."
+            )
+        )
     sec.append("</div>")
     return f'<div class="bracket-tcell-inner">{"".join(sec)}</div>'
 
@@ -2670,7 +4045,9 @@ def _eight_team_week2_placement_column(
     ms2: List[dict] = []
     if len(snapshots) > 2 and snapshots[2] and snapshots[2].get("matchups"):
         ms2 = list(snapshots[2]["matchups"])
-    model = _pick_best_eight_team_placement_model(qf_ms, ms1, ms2, rounds[0])
+    model = _pick_best_eight_team_placement_model(
+        qf_ms, ms1, ms2, rounds[0], snapshots=snapshots
+    )
     if model is None:
         return _eight_team_week2_loss_bucket_column(snap, snapshots, seed_map)
     if model["kind"] == "cross":
@@ -2688,6 +4065,229 @@ def _eight_team_week2_placement_column(
     )
 
 
+def _eight_team_path_band_column(
+    snap: dict,
+    snapshots: List[Optional[dict]],
+    seed_map: Dict[str, int],
+    *,
+    losses_before_col: int,
+) -> str:
+    """Group matchups by playoff-loss bands (1st, 3rd–4th, 5th–8th, etc.)."""
+    all_ms = list(snap["matchups"])
+    ms2 = _playoff_matchups_with_opponent(all_ms)
+    solos = [m for m in all_ms if not m.get("away")]
+    losses = _playoff_losses_through_prior_rounds(snapshots, losses_before_col)
+    title_g: List[dict] = []
+    mixed_g: List[dict] = []
+    place_g: List[dict] = []
+    title_s: List[dict] = []
+    mixed_s: List[dict] = []
+    place_s: List[dict] = []
+    for m in ms2:
+        away = m.get("away")
+        if not away:
+            continue
+        hn, an = m["home"]["name"], away["name"]
+        _lbl, key, _blur = _path_band(losses, hn, an)
+        if key == "title":
+            title_g.append(m)
+        elif key == "mixed":
+            mixed_g.append(m)
+        else:
+            place_g.append(m)
+    for m in solos:
+        hn = m["home"]["name"]
+        n = losses.get(hn, 0)
+        if n == 0:
+            title_s.append(m)
+        elif len(mixed_g) + len(mixed_s) < 2:
+            mixed_s.append(m)
+        else:
+            place_s.append(m)
+    sections: List[Tuple[str, str, List[dict]]] = [
+        ("title", "1st & 2nd place", title_g + title_s),
+        ("mixed", "3rd & 4th place", mixed_g + mixed_s),
+        ("place", "5th & 6th place", place_g[:1] + place_s[:1]),
+        ("place", "7th & 8th place", place_g[1:2] + place_s[1:2]),
+    ]
+    sec: List[str] = []
+    for hkey, label, items in sections:
+        sec.append(
+            f'<div class="bracket-subsec">'
+            f'<div class="bracket-subsec-h bracket-subsec-h--{hkey}">'
+            f"{html_module.escape(label)}</div>"
+        )
+        if items:
+            for mm in items:
+                sec.append(
+                    _classic_match_block_html(
+                        mm,
+                        seed_map=seed_map,
+                        extra_meta=label,
+                    )
+                )
+        else:
+            sec.append(
+                _classic_pending_line(
+                    "Placement game not on the sheet yet, or team had a bye this week."
+                )
+            )
+        sec.append("</div>")
+    return f'<div class="bracket-tcell-inner">{"".join(sec)}</div>'
+
+
+def _eight_team_week3_path_band_column(
+    snap: dict,
+    snapshots: List[Optional[dict]],
+    seed_map: Dict[str, int],
+) -> str:
+    return _eight_team_path_band_column(
+        snap, snapshots, seed_map, losses_before_col=2
+    )
+
+
+def _eight_team_two_week_finals_column(
+    snap: dict,
+    snapshots: List[Optional[dict]],
+    seed_map: Dict[str, int],
+) -> str:
+    """Week 2 of a two-week playoff: placement games after quarterfinals only."""
+    return _eight_team_path_band_column(
+        snap, snapshots, seed_map, losses_before_col=1
+    )
+
+
+def _is_two_week_eight_team_playoffs(
+    pweeks: List[int],
+    snapshots: List[Optional[dict]],
+    n_teams: int,
+) -> bool:
+    if n_teams != 8 or len(pweeks) != 2:
+        return False
+    return any(s and s.get("matchups") for s in snapshots[:2])
+
+
+def _labeled_placement_column_html(
+    snap: dict,
+    seed_map: Dict[str, int],
+    w3_groups: List[Tuple[FrozenSet[str], str]],
+    *,
+    pending_msg: str,
+) -> str:
+    """Four placement games with 1st–2nd, 3rd–4th, etc. labels."""
+    ms2 = _playoff_matchups_with_opponent(list(snap["matchups"]))
+    ordered, rest = order_matchups_by_labeled_groups(ms2, w3_groups)
+    ordered = _backfill_ordered_matchups(ordered, rest)
+    used_ids = {_matchup_identity(mm) for _lb, mm in ordered if mm is not None}
+    rest_ms = [m for m in ms2 if _matchup_identity(m) not in used_ids]
+    sec: List[str] = []
+    for label, mm in ordered:
+        if label.startswith("1st"):
+            hkey = "title"
+        elif "3rd" in label or "4th" in label:
+            hkey = "mixed"
+        else:
+            hkey = "place"
+        sec.append(
+            f'<div class="bracket-subsec">'
+            f'<div class="bracket-subsec-h bracket-subsec-h--{hkey}">'
+            f"{html_module.escape(label)}</div>"
+        )
+        if mm:
+            sec.append(
+                _classic_match_block_html(
+                    mm,
+                    seed_map=seed_map,
+                    extra_meta=label,
+                )
+            )
+        else:
+            sec.append(_classic_pending_line(pending_msg))
+        sec.append("</div>")
+    if rest_ms:
+        sec.append(
+            '<div class="bracket-subsec">'
+            '<div class="bracket-subsec-h bracket-subsec-h--mixed">Other matchups</div>'
+        )
+        for m in rest_ms:
+            sec.append(
+                _classic_match_block_html(
+                    m, seed_map=seed_map, extra_meta="Playoff matchup"
+                )
+            )
+        sec.append("</div>")
+    return f'<div class="bracket-tcell-inner">{"".join(sec)}</div>'
+
+
+def _matchup_seed_rank_sum(m: dict, seed_rank: Dict[str, int]) -> int:
+    away = m.get("away")
+    if not away:
+        return 9999
+    h, a = m["home"]["name"], away["name"]
+    return seed_rank.get(h, 99) + seed_rank.get(a, 99)
+
+
+def _resolve_two_week_parallel_playoffs(
+    snapshots: List[Optional[dict]],
+    seed_rank: Optional[Dict[str, int]] = None,
+) -> Optional[dict]:
+    """Semifinals week (parallel WB/LB) + labeled placement finals — no quarterfinals."""
+    if len(snapshots) < 2:
+        return None
+    snap0, snap1 = snapshots[0], snapshots[1]
+    if not snap0 or not snap1 or not snap0.get("matchups") or not snap1.get("matchups"):
+        return None
+    ms1 = _playoff_matchups_with_opponent(list(snap0["matchups"]))
+    ms2 = _playoff_matchups_with_opponent(list(snap1["matchups"]))
+    if len(ms1) != 4 or len(ms2) < 2:
+        return None
+
+    sr = seed_rank or {}
+    best: Optional[dict] = None
+    best_key: Tuple[int, int] = (-1, -9999)  # (finals hits, -wb seed sum)
+    for wb_idx in itertools.combinations(range(4), 2):
+        lb_idx = [i for i in range(4) if i not in wb_idx]
+        wb_ms = [ms1[i] for i in wb_idx]
+        lb_ms = [ms1[i] for i in lb_idx]
+        wb_semis = [winner_loser_from_matchup(m) for m in wb_ms]
+        lb_semis = [winner_loser_from_matchup(m) for m in lb_ms]
+        if not all(wb_semis) or not all(lb_semis):
+            continue
+        w3g = expected_week3_groups(wb_semis[:2], lb_semis[:2])
+        hits = _week3_match_count(ms2, w3g)
+        wb_seed_sum = sum(_matchup_seed_rank_sum(m, sr) for m in wb_ms)
+        key = (hits, -wb_seed_sum)
+        if key > best_key:
+            best_key = key
+            used = {_matchup_identity(m) for m in wb_ms + lb_ms}
+            rest = [m for m in ms1 if _matchup_identity(m) not in used]
+            best = {
+                "wb_ord": wb_ms,
+                "lb_ord": lb_ms,
+                "w3_groups": w3g,
+                "rest": rest,
+                "hits": hits,
+            }
+    if best is None or best["hits"] < 2:
+        return None
+    return best
+
+
+def _eight_team_two_week_labeled_finals_column(
+    snap: dict,
+    seed_map: Dict[str, int],
+    w3_groups: List[Tuple[FrozenSet[str], str]],
+) -> str:
+    return _labeled_placement_column_html(
+        snap,
+        seed_map,
+        w3_groups,
+        pending_msg=(
+            "Placement game not on the sheet yet, or teams still TBD from semifinals."
+        ),
+    )
+
+
 def _eight_team_week3_placement_column(
     snap: dict,
     snapshots: List[Optional[dict]],
@@ -2700,38 +4300,16 @@ def _eight_team_week3_placement_column(
         return None
     qf_ms = list(snap0["matchups"])
     ms1 = list(snap1["matchups"])
-    ms2 = list(snap["matchups"])
-    model = _pick_best_eight_team_placement_model(qf_ms, ms1, ms2, rounds[0])
-    w3: List[Tuple[FrozenSet[str], str]] = []
-    if model and model.get("w3_groups"):
-        w3 = list(model["w3_groups"])
-    if not w3:
-        qf_res = _qf_results_for_bracket_placement(qf_ms, rounds[0])
-        if prefer_crossover_week2(ms1, qf_res):
-            cross_sets = expected_week2_cross_sets(qf_res)
-            cross_ord, _ = matchups_by_cross_ordered_groups(ms1, cross_sets)
-            n_cross_hit = sum(1 for x in cross_ord if x is not None)
-            wb_g, lb_g = expected_week2_groups(qf_res)
-            wb_try, r1 = matchups_by_ordered_groups(ms1, wb_g)
-            lb_try, _ = matchups_by_ordered_groups(r1, lb_g)
-            n_par_hit = sum(1 for x in wb_try if x is not None) + sum(1 for x in lb_try if x is not None)
-            if n_cross_hit >= n_par_hit:
-                semis_cross = [winner_loser_from_matchup(m) if m else None for m in cross_ord]
-                w3 = expected_week3_groups_cross(semis_cross)
-        if not w3:
-            wb_g, lb_g = expected_week2_groups(qf_res)
-            wb_ord, r1 = matchups_by_ordered_groups(ms1, wb_g)
-            lb_ord, r2 = matchups_by_ordered_groups(r1, lb_g)
-            wb_semis = [winner_loser_from_matchup(m) if m else None for m in wb_ord]
-            lb_semis = [winner_loser_from_matchup(m) if m else None for m in lb_ord]
-            while len(wb_semis) < 2:
-                wb_semis.append(None)
-            while len(lb_semis) < 2:
-                lb_semis.append(None)
-            w3 = expected_week3_groups(wb_semis[:2], lb_semis[:2])
-    if not w3:
-        return None
+    ms2 = _playoff_matchups_with_opponent(list(snap["matchups"]))
+    if not ms2:
+        return _eight_team_week3_path_band_column(snap, snapshots, seed_map)
+    w3 = _best_w3_groups(qf_ms, ms1, ms2, rounds[0], snapshots=snapshots)
+    if not w3 or _week3_match_count(ms2, w3) < 2:
+        return _eight_team_week3_path_band_column(snap, snapshots, seed_map)
     ordered, rest = order_matchups_by_labeled_groups(ms2, w3)
+    ordered = _backfill_ordered_matchups(ordered, rest)
+    used_ids = {_matchup_identity(mm) for _lb, mm in ordered if mm is not None}
+    rest = [m for m in ms2 if _matchup_identity(m) not in used_ids]
     sec: List[str] = []
     for label, mm in ordered:
         if label.startswith("1st"):
@@ -2749,17 +4327,20 @@ def _eight_team_week3_placement_column(
                 _classic_match_block_html(
                     mm,
                     seed_map=seed_map,
-                    match_no=None,
                     extra_meta=label,
                 )
             )
         else:
-            sec.append(_classic_pending_line("Matchup not in sheet or teams still TBD from week 2."))
+            sec.append(
+                _classic_pending_line(
+                    "Matchup not in data or teams still TBD from the prior playoff week."
+                )
+            )
         sec.append("</div>")
     for m in rest:
         sec.append(
             _classic_match_block_html(
-                m, seed_map=seed_map, match_no=None, extra_meta="Playoff matchup (extra)"
+                m, seed_map=seed_map, extra_meta="Playoff matchup (extra)"
             )
         )
     return f'<div class="bracket-tcell-inner">{"".join(sec)}</div>'
@@ -2871,6 +4452,8 @@ def _playoff_snapshot_column_html(
     split_placement_groups: bool,
     eight_placement_layout: bool = False,
     classic_skin: bool = False,
+    two_week_playoffs: bool = False,
+    two_week_parallel: Optional[dict] = None,
 ) -> str:
     seed_rank = _seed_rank_map(sorted_teams)
     nr = len(rounds)
@@ -2884,7 +4467,20 @@ def _playoff_snapshot_column_html(
         and snap.get("matchups")
     ):
         if ri == 0 and classic_skin:
+            if two_week_parallel:
+                return _eight_team_week2_parallel_layout_html(
+                    two_week_parallel["wb_ord"],
+                    two_week_parallel["lb_ord"],
+                    two_week_parallel.get("rest", []),
+                    seed_map,
+                )
             return _eight_team_week0_classic_column(snap, rounds, sorted_teams, seed_map)
+        if ri == 1 and two_week_playoffs:
+            if two_week_parallel and two_week_parallel.get("w3_groups"):
+                return _eight_team_two_week_labeled_finals_column(
+                    snap, seed_map, two_week_parallel["w3_groups"]
+                )
+            return _eight_team_two_week_finals_column(snap, snapshots, seed_map)
         if ri == 1:
             w2 = _eight_team_week2_placement_column(
                 snap, rounds, snapshots, seed_map
@@ -2983,7 +4579,17 @@ def _playoff_snapshot_column_html(
     return f'<div class="bracket-tcell-inner">{"".join(section_parts)}</div>'
 
 
-def _bracket_round_title(round_idx: int, num_rounds: int) -> str:
+def _bracket_round_title(
+    round_idx: int,
+    num_rounds: int,
+    *,
+    two_week_playoffs: bool = False,
+    two_week_parallel_semis: bool = False,
+) -> str:
+    if two_week_playoffs and num_rounds == 2:
+        if two_week_parallel_semis:
+            return ("Semifinals", "Placement finals")[round_idx]
+        return ("Quarterfinals", "Placement finals")[round_idx]
     dist = num_rounds - 1 - round_idx
     if dist == 0:
         return "Final"
@@ -2997,21 +4603,18 @@ def _bracket_round_title(round_idx: int, num_rounds: int) -> str:
 def build_playoff_bracket_html(
     season: str,
     seeding_week: int,
-    seeding_note: str,
     sorted_teams: List[Tuple[str, Dict[str, Any]]],
     rounds: List[List[Tuple[BracketSlot, BracketSlot]]],
     playoff_week_numbers: Optional[List[int]] = None,
     playoff_matchups_by_round: Optional[List[Optional[dict]]] = None,
-    playoff_week_cards_data: Optional[List[dict]] = None,
 ) -> str:
     """sorted_teams: best first, (name, stats).
 
     If playoff_week_numbers / playoff_matchups_by_round are set, each index aligns with a bracket
     column and shows compact names with a styled hover card for scores and games; otherwise seeds.
-
-    When playoff_week_cards_data is set, the same full matchup cards (pins, games) are appended below
-    the bracket for every playoff week that had sheet data.
     """
+    snapshots = playoff_matchups_by_round or []
+    champion_team = champion_from_playoff_snapshots(snapshots)
     headers = [
         {"label": "Seed", "right": True},
         {"label": "Team"},
@@ -3030,7 +4633,7 @@ def build_playoff_bracket_html(
         rows.append([
             {"val": i, "cls": "right rank"},
             {
-                "val": html_module.escape(name),
+                "val": _team_name_cell_html(name, champion_team),
                 "cls": "name-col",
                 "style": _team_color_style(name),
                 "sort": name.lower(),
@@ -3040,13 +4643,12 @@ def build_playoff_bracket_html(
             {"val": f"{pins:,}", "cls": "right sub-col", "sort": pins},
         ])
     seed_section = _list_section(
-        f"Seeds (team avg through week {seeding_week})",
+        f"Seeds (record through week {seeding_week})",
         headers,
         rows,
     )
     nr = len(rounds)
     pweeks = playoff_week_numbers or []
-    snapshots = playoff_matchups_by_round or []
     num_cols = max(len(rounds), len(pweeks))
 
     use_elim_svg = _use_single_elim_connectors(rounds, snapshots)
@@ -3062,16 +4664,36 @@ def build_playoff_bracket_html(
         and len(rounds[0]) == 4
     )
     classic_skin = eight_placement_layout
+    two_week_playoffs = _is_two_week_eight_team_playoffs(pweeks, snapshots, n_teams)
+    seed_rank_for_resolve = {name: i for i, (name, _) in enumerate(sorted_teams)}
+    two_week_parallel = (
+        _resolve_two_week_parallel_playoffs(snapshots, seed_rank_for_resolve)
+        if two_week_playoffs
+        else None
+    )
+    if two_week_playoffs:
+        num_cols = 2
 
     header_frag: List[str] = []
     track_frag: List[str] = []
+    title_rounds = 2 if two_week_playoffs else nr
+    two_week_parallel_semis = bool(two_week_parallel)
     for ri in range(num_cols):
         snap = snapshots[ri] if ri < len(snapshots) else None
         pw = pweeks[ri] if ri < len(pweeks) else None
         has_actual = bool(snap and snap.get("matchups"))
 
         if has_actual and pw is not None:
-            disp = _bracket_round_title(ri, nr) if ri < nr else f"Week {pw}"
+            disp = (
+                _bracket_round_title(
+                    ri,
+                    title_rounds,
+                    two_week_playoffs=two_week_playoffs,
+                    two_week_parallel_semis=two_week_parallel_semis,
+                )
+                if ri < title_rounds
+                else f"Week {pw}"
+            )
             col_title = html_module.escape(disp)
             wk_line = f'<div class="wk-chip">Week {pw}</div>'
             body = _playoff_snapshot_column_html(
@@ -3083,6 +4705,8 @@ def build_playoff_bracket_html(
                 split_placement_groups=split_placement,
                 eight_placement_layout=eight_placement_layout,
                 classic_skin=classic_skin,
+                two_week_playoffs=two_week_playoffs,
+                two_week_parallel=two_week_parallel,
             )
             header_frag.append(
                 f'<div class="bracket-hcell">'
@@ -3090,7 +4714,16 @@ def build_playoff_bracket_html(
             )
             track_frag.append(f'<div class="bracket-tcell">{body}</div>')
         elif ri < len(rounds):
-            title_disp = html_module.escape(_bracket_round_title(ri, nr) if nr else f"Round {ri + 1}")
+            title_disp = html_module.escape(
+                _bracket_round_title(
+                    ri,
+                    title_rounds,
+                    two_week_playoffs=two_week_playoffs,
+                    two_week_parallel_semis=two_week_parallel_semis,
+                )
+                if title_rounds
+                else f"Round {ri + 1}"
+            )
             matches = rounds[ri]
             blocks = [_simple_theoretical_pair_html(left, right) for left, right in matches]
             wk_pending = ""
@@ -3113,7 +4746,16 @@ def build_playoff_bracket_html(
                     '<div class="bracket-tcell"><span class="bracket-idle">—</span></div>'
                 )
             else:
-                title_disp = html_module.escape(_bracket_round_title(ri, nr) if nr else f"Round {ri + 1}")
+                title_disp = html_module.escape(
+                    _bracket_round_title(
+                        ri,
+                        title_rounds,
+                        two_week_playoffs=two_week_playoffs,
+                        two_week_parallel_semis=two_week_parallel_semis,
+                    )
+                    if title_rounds
+                    else f"Round {ri + 1}"
+                )
                 header_frag.append(
                     f'<div class="bracket-hcell">'
                     f'<div class="section-title" style="margin-bottom:4px;">{title_disp}</div></div>'
@@ -3139,92 +4781,53 @@ def build_playoff_bracket_html(
         if use_elim_svg and n_leaf >= 2 and n_draw >= 2
         else ""
     )
-    elim_rows = _elimination_rows_from_playoffs(pweeks, snapshots, nr)
-    elim_html = _elimination_section_html(elim_rows)
-    champ = _champion_callout_html(snapshots)
-    shell_title = (
-        "Full field playoffs (every team each week)"
-        if (split_placement and has_playoff_data)
-        else "Winners bracket"
-    )
-    format_note = ""
-    if eight_placement_layout:
-        format_note = (
-            '<p class="bracket-format-note">'
-            "<strong>8 teams, full field:</strong> Quarterfinals use standard seeding. "
-            "Semifinals are either <strong>winners vs winners / losers vs losers</strong> in each half of the draw, "
-            "or <strong>winner vs loser</strong> from adjacent quarterfinals in each half — the page picks "
-            "whichever matches your sheet. Finals are labeled by finishing spots (1st–2nd, 3rd–4th, etc.). "
-            "Bracket placement uses each matchup&rsquo;s <strong>W/L</strong>. "
-            "If the sheet has a <strong>Game 5 winner</strong> name but no Game 5 pin row, a 2–2 split "
-            "after four games is resolved using that column.</p>"
-        )
-    elif split_placement and has_playoff_data:
-        format_note = (
-            '<p class="bracket-format-note">Every team plays each playoff week. '
-            "Matchups with <strong>no playoff losses yet</strong> are still playing for <strong>1st place</strong>. "
-            "When both teams already have a playoff loss, they are playing for <strong>5th–8th place</strong>. "
-            "When it is one of each, think <strong>2nd–4th place</strong>. "
-            "Connectors are hidden because everyone bowls each week, not strict single-elimination. "
-            "Gold row edge + <strong>1st</strong> / gray + <strong>Lower</strong> row hints start after quarterfinals "
-            "(semifinals: only on the two games that match each half of the seeded bracket). "
-            "In the final week, every matchup shows them.</p>"
-        )
-    elif has_playoff_data:
-        format_note = (
-            '<p class="bracket-format-note">Quarterfinals have no row rank hints. After that, gold + '
-            "<strong>1st</strong> vs gray + <strong>Lower</strong> show who is still in the hunt for 1st vs "
-            "sorting lower spots; in full-field semifinals those hints only appear on the two games that "
-            "match each half of the seeded bracket.</p>"
-        )
     wrap_cls = "bracket-wrap" + (" bracket-wrap--classic" if classic_skin else "")
     grid_cls = "bracket-grid-main" + (" bracket-grid-main--classic" if classic_skin else "")
+    bracket_fit_w = int(w_px)
+    bracket_fit_h = int(h_px + BRACKET_HEADER_ROW_PX + 4)
     bracket_inner = (
-        f'<div class="bracket-shell" style="--bf-slots: {n_leaf};">'
-        f'<div class="bracket-winners-title">{html_module.escape(shell_title)}</div>'
-        f"{format_note}"
+        f'<div class="bracket-shell" style="--bf-slots: {n_leaf};" '
+        f'data-bracket-w="{bracket_fit_w}" data-bracket-h="{bracket_fit_h}">'
         f'<div class="bracket-headers-row">{"".join(header_frag)}</div>'
         f'<div class="{grid_cls}">'
         '<div class="bracket-main-tracks">'
         f"{svg}"
         f'<div class="bracket-tracks-row">{"".join(track_frag)}</div>'
         "</div>"
-        f"{champ}"
         "</div></div>"
-        f"{elim_html}"
     )
     bracket_section = (
         f'<div class="section"><div class="section-title">Bracket</div>'
-        f'<div class="{wrap_cls}">{bracket_inner}</div></div>'
+        f'<div class="{wrap_cls}">{_bracket_zoom_viewport_html(bracket_inner)}</div></div>'
     )
     css = (
         _LIST_CSS
         + _BRACKET_EXTRA_CSS
-        + ("\n" + _MATCHUPS_CSS if playoff_week_cards_data else "")
-        + "\nbody { width: auto !important; max-width: none !important; }\n"
+        + """
+body.page-playoffs {
+  width: 100% !important;
+  max-width: min(1320px, 98vw) !important;
+  margin: 0 auto !important;
+}
+body.page-playoffs .container {
+  max-width: none !important;
+  width: 100% !important;
+  padding: 20px 16px !important;
+}
+"""
     )
     subtitle = (
         f"{html_module.escape(season)} &nbsp;·&nbsp; "
         f"Seeding through week {seeding_week} &nbsp;·&nbsp; "
         f"{len(sorted_teams)} teams"
     )
-    cards_section = ""
-    if playoff_week_cards_data:
-        inner_cards = _playoff_week_cards_inner_html(
-            f"{season} · Playoffs", playoff_week_cards_data
-        )
-        cards_section = (
-            '<div class="section"><div class="section-title">Playoff weeks — scores &amp; games</div>'
-            f'<div class="playoff-cards-embed">{inner_cards}</div></div>'
-        )
     return _render_list_page(
         css=css,
         title="🏆 PLAYOFFS",
         subtitle=subtitle,
-        sections=f'<p class="bracket-note">{html_module.escape(seeding_note)}</p>'
-        + seed_section
-        + bracket_section
-        + cards_section,
+        sections=seed_section + bracket_section,
+        extra_script=_BRACKET_PAN_SCRIPT,
+        body_class="page-playoffs",
     )
 
 
@@ -3234,25 +4837,6 @@ def build_playoff_bracket_html(
 
 def build_leaders_html(data: dict) -> str:
     season = data.get("season", "")
-    avg_lookup = {p["player"]: p["average"] for p in data.get("player_averages", [])}
-
-    # Top games
-    game_headers = [
-        {"label": "#", "right": True},
-        {"label": "Player"},
-        {"label": "Team"},
-        {"label": "Wk", "right": True},
-        {"label": "Score", "right": True},
-    ]
-    game_rows = []
-    for i, (player, team, week, score) in enumerate(data.get("top_games", []), 1):
-        game_rows.append([
-            {"val": i,                   "cls": "right rank"},
-            {"val": _short_name(player), "cls": "name-col", "sort": player.lower()},
-            {"val": team,                "cls": "sub-col", "style": _team_color_style(team), "sort": team.lower()},
-            {"val": week,                "cls": "right sub-col"},
-            {"val": int(score),          "cls": "right gold"},
-        ])
 
     # Top player weeks
     pw_headers = [
@@ -3301,9 +4885,8 @@ def build_leaders_html(data: dict) -> str:
         ])
 
     sections = (
-        _list_section("Top Individual Games", game_headers, game_rows) +
-        _list_section("Top Player Weeks", pw_headers, pw_rows) +
-        _list_section("Top Team Weeks", tw_headers, tw_rows)
+        _list_section("Top Player Weeks", pw_headers, pw_rows)
+        + _list_section("Top Team Weeks", tw_headers, tw_rows)
     )
     return _render_list_page(
         css=_LIST_CSS, title="🏅 LEADERS", subtitle=season, sections=sections
@@ -3384,7 +4967,7 @@ def build_top_games_html(games: list, season: str, n: int) -> str:
 
 _WEB_CHROME_CSS = """
 .site-chrome { background: #1a1730; border-bottom: 1px solid #2a2050; padding: 12px 18px; margin: 0 0 16px 0; }
-.site-chrome-inner { max-width: min(1040px, 94vw); margin: 0 auto; display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; }
+.site-chrome-inner { max-width: min(1320px, 96vw); margin: 0 auto; display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; }
 .site-chrome a { color: #50fa7b; text-decoration: none; font-size: 14px; font-weight: 500;
   padding: 4px 6px; margin: -4px -6px; border-radius: 6px; transition: color 0.2s ease, background 0.2s ease, transform 0.15s ease; }
 .site-chrome a:hover { color: #7bffc9; background: rgba(80,250,123,0.08); }
@@ -3403,7 +4986,7 @@ _WEB_CHROME_CSS = """
 
 _SITE_NAV = """
 <div class="site-chrome"><div class="site-chrome-inner">
-<span class="brand"><a href="/" style="color:#ffb86c;">Bowl League</a></span>
+<span class="brand"><a href="/" style="color:#ffb86c;">Monday Night Friends</a></span>
 <a href="/">Home</a>
 <a href="/bracket">Playoffs</a>
 </div></div>
@@ -3412,7 +4995,36 @@ _SITE_NAV = """
 # Injected when ?embed=1 (home iframe preview): no site nav, tighter body for nested view.
 _EMBED_HEAD_PATCH = """
 <style>
-body { margin: 0 !important; padding: 12px 14px !important; }
+html {
+  overflow-x: hidden;
+  scrollbar-gutter: stable both-edges;
+}
+body {
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+body.page-playoffs { padding: 8px 10px !important; max-width: none !important; width: 100% !important; }
+body.page-playoffs .container {
+  padding-block: 12px !important;
+  padding-inline: 14px !important;
+}
+.container {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box;
+  padding-block: 16px 18px !important;
+  padding-inline: 20px !important;
+}
+@media (max-width: 520px) {
+  .container {
+    padding-block: 16px 18px !important;
+    padding-inline: 20px !important;
+  }
+}
 </style>
 """
 
@@ -3423,6 +5035,12 @@ def inject_web_chrome(full_html: str, *, embed: bool = False) -> str:
         "width: 600px;",
         "max-width: min(960px, 94vw); width: 100%; margin: 0 auto;",
     )
+    if "page-playoffs" in h or "🏆 PLAYOFFS" in h:
+        h = h.replace(
+            "max-width: min(960px, 94vw); width: 100%; margin: 0 auto;",
+            "max-width: min(1320px, 98vw); width: 100%; margin: 0 auto;",
+            1,
+        )
     h = re.sub(r"<head>", '<head><meta name="viewport" content="width=device-width, initial-scale=1">', h, count=1, flags=re.IGNORECASE)
     if embed:
         h = re.sub(r"</head>", _EMBED_HEAD_PATCH + "</head>", h, count=1, flags=re.IGNORECASE)

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bowl League</title>
+  <title>Monday Night Friends</title>
   <style>
     :root {
       --bg: #12101a;
@@ -90,6 +90,9 @@
       .shell {
         max-width: 1200px;
         padding: 1.25rem 1.25rem 2.5rem;
+      }
+      .shell.shell--playoffs {
+        max-width: 1440px;
       }
     }
 
@@ -199,16 +202,61 @@
     .sidebar > .panels > .card:nth-child(1) { animation-delay: 0.05s; }
     .sidebar > .panels > .card:nth-child(2) { animation-delay: 0.1s; }
     .sidebar > .panels > .card:nth-child(3) { animation-delay: 0.15s; }
-    .sidebar > .panels > .card:nth-child(4) { animation-delay: 0.2s; }
 
-    .card--season-totals {
-      border-color: rgba(184, 201, 255, 0.28);
+    .card--context {
+      border-color: rgba(80, 250, 123, 0.28);
     }
 
-    .card--alltime {
-      border-color: rgba(80, 250, 123, 0.35);
-      background: linear-gradient(165deg, rgba(26, 23, 48, 0.98) 0%, rgba(18, 30, 28, 0.55) 100%);
-      box-shadow: 0 0 0 1px rgba(80, 250, 123, 0.08), 0 8px 28px rgba(0, 0, 0, 0.25);
+    .card--reports {
+      border-color: rgba(154, 138, 191, 0.35);
+    }
+
+    .report-group {
+      margin-bottom: 1.15rem;
+    }
+    .report-group:last-child {
+      margin-bottom: 0;
+    }
+    .report-group-label {
+      display: block;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 0.35rem;
+    }
+    .report-group--week .report-group-label {
+      color: #7bffc9;
+    }
+    .report-group--season .report-group-label {
+      color: #b8c9ff;
+    }
+    .report-group-hint {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin: 0 0 0.65rem;
+      line-height: 1.4;
+    }
+
+    .btn.is-unavailable {
+      opacity: 0.38;
+      filter: grayscale(0.4);
+      cursor: not-allowed;
+      pointer-events: none;
+      transform: none !important;
+      box-shadow: none !important;
+      border-color: #2a2445 !important;
+    }
+    .btn.is-unavailable:hover,
+    .btn.is-unavailable:active {
+      filter: grayscale(0.4);
+      transform: none !important;
+      box-shadow: none !important;
+    }
+
+    .field--week.is-disabled {
+      opacity: 0.45;
+      pointer-events: none;
     }
 
     .card-hint {
@@ -218,14 +266,295 @@
       line-height: 1.45;
     }
 
+    .panel-details > summary {
+      list-style: none;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .panel-details > summary::-webkit-details-marker {
+      display: none;
+    }
+    .panel-summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .panel-summary::after {
+      content: "";
+      width: 0.45rem;
+      height: 0.45rem;
+      border-right: 2px solid var(--muted);
+      border-bottom: 2px solid var(--muted);
+      transform: rotate(-45deg);
+      transition: transform var(--dur) var(--ease);
+      flex-shrink: 0;
+    }
+    .panel-details[open] > .panel-summary::after {
+      transform: rotate(45deg);
+    }
+    .panel-summary--context .panel-summary-text {
+      display: flex;
+      flex-direction: column;
+      gap: 0.12rem;
+      min-width: 0;
+      text-align: left;
+    }
+    .context-summary-sub {
+      font-size: 0.78rem;
+      font-weight: 500;
+      letter-spacing: normal;
+      text-transform: none;
+      color: #7bffc9;
+    }
+    .panel-details--context[open] .context-summary-sub {
+      display: none;
+    }
+    .field-label--desktop-only {
+      display: none;
+    }
+
+    .mobile-toolbar,
+    .nav-backdrop,
+    .drawer-head {
+      display: none;
+    }
+
+    .mobile-toolbar {
+      align-items: center;
+      gap: 0.55rem;
+      margin-bottom: 0.75rem;
+    }
+    .nav-toggle {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      padding: 0.5rem 0.75rem;
+      font: inherit;
+      font-size: 0.82rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+    }
+    .nav-toggle:hover {
+      border-color: #5a4a80;
+      background: #221e38;
+    }
+    .nav-toggle-icon {
+      width: 1.05rem;
+      height: 0.7rem;
+      background:
+        linear-gradient(var(--text), var(--text)) 0 0 / 100% 2px no-repeat,
+        linear-gradient(var(--text), var(--text)) 0 50% / 100% 2px no-repeat,
+        linear-gradient(var(--text), var(--text)) 0 100% / 100% 2px no-repeat;
+    }
+    body.nav-open .nav-toggle {
+      border-color: rgba(80, 250, 123, 0.45);
+    }
+    .context-pill {
+      flex: 1 1 auto;
+      min-width: 0;
+      display: block;
+      padding: 0.52rem 0.75rem;
+      font: inherit;
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: #7bffc9;
+      text-align: left;
+      background: rgba(80, 250, 123, 0.08);
+      border: 1px solid rgba(80, 250, 123, 0.35);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .context-pill:hover {
+      background: rgba(80, 250, 123, 0.14);
+      border-color: rgba(80, 250, 123, 0.55);
+    }
+
+    @media (max-width: 899px) {
+      body {
+        min-height: 100dvh;
+      }
+      body.nav-open {
+        overflow: hidden;
+      }
+      .shell {
+        min-height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        padding-bottom: 1rem;
+      }
+      .hero {
+        text-align: center;
+        flex-shrink: 0;
+        margin-bottom: 0.5rem;
+      }
+      .hero .sub {
+        display: none;
+      }
+      .mobile-toolbar {
+        display: flex;
+        flex-shrink: 0;
+      }
+      .nav-backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 290;
+        background: rgba(8, 6, 14, 0.65);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.25s var(--ease);
+      }
+      body.nav-open .nav-backdrop {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      .layout {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .sidebar {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 300;
+        width: min(100vw - 1.5rem, 360px);
+        max-height: none;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        background: var(--bg-elevated);
+        border-left: 1px solid var(--border);
+        box-shadow: -16px 0 48px rgba(0, 0, 0, 0.5);
+        transform: translateX(100%);
+        transition: transform 0.28s var(--ease);
+      }
+      body.nav-open .sidebar {
+        transform: translateX(0);
+      }
+      .drawer-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-shrink: 0;
+        padding: 0.85rem 1rem;
+        border-bottom: 1px solid var(--border);
+        background: var(--card);
+      }
+      .drawer-head-title {
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .drawer-close {
+        font: inherit;
+        font-size: 0.82rem;
+        color: var(--muted);
+        background: transparent;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 0.28rem 0.55rem;
+        cursor: pointer;
+      }
+      .drawer-close:hover {
+        color: var(--text);
+        border-color: #5a4a80;
+      }
+      .sidebar .panels {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        padding: 0.85rem 0.95rem 1.25rem;
+        gap: 0.85rem;
+      }
+      .sidebar .panel-details > summary {
+        display: none;
+      }
+      .sidebar .panel-details-body {
+        display: block !important;
+        margin-top: 0;
+        padding-top: 0;
+        border-top: none;
+      }
+      .sidebar .panel-details[open] .panel-details-body {
+        display: block !important;
+      }
+      .sidebar .field-label--desktop-only {
+        display: block;
+      }
+      .sidebar select,
+      .sidebar input {
+        color: var(--text);
+      }
+      .sidebar .card {
+        padding: 0.7rem 0.95rem;
+        animation: none;
+      }
+      .scores-pane {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .scores-pane .embed-panel {
+        flex: 1 1 auto;
+        min-height: min(72dvh, 680px);
+      }
+      .embed-frame-wrap {
+        overflow-x: hidden;
+      }
+      footer {
+        display: none;
+      }
+    }
+
+    @media (min-width: 900px) {
+      .drawer-head {
+        display: none !important;
+      }
+      .panel-details > summary {
+        display: none;
+      }
+      .panel-details-body {
+        margin-top: 0;
+        padding-top: 0;
+        border-top: none;
+      }
+      .field-label--desktop-only {
+        display: block;
+      }
+    }
+
     @media (min-width: 900px) {
       .card:hover {
         border-color: #3d3066;
         box-shadow: 0 12px 32px var(--shadow);
-      }
-      .card--alltime:hover {
-        border-color: rgba(123, 255, 201, 0.45);
-        box-shadow: 0 12px 36px rgba(45, 27, 105, 0.35);
       }
     }
 
@@ -439,7 +768,7 @@
       align-items: center;
       justify-content: space-between;
       gap: 0.6rem;
-      padding: 0.55rem 0.75rem;
+      padding: 0.55rem 1rem;
       background: var(--card);
       border-bottom: 1px solid var(--border);
     }
@@ -558,83 +887,118 @@
     .embed-placeholder .hint {
       font-size: 0.82rem;
       margin: 0;
-      max-width: 260px;
+      max-width: 280px;
+      line-height: 1.45;
+    }
+
+    .embed-placeholder.embed-placeholder--invalid strong {
+      color: #ff8fa3;
     }
 
     .scores-pane .embed-panel {
       animation: cardRise 0.6s var(--ease) 0.14s both;
+    }
+
+    .embed-panel--playoffs .embed-frame-wrap {
+      min-height: min(78vh, 820px);
+    }
+
+    @media (min-width: 900px) {
+      .embed-panel--playoffs .embed-frame-wrap {
+        min-height: 0;
+      }
     }
   </style>
 </head>
 <body>
   <div class="shell">
     <header class="hero">
-      <h1><span class="hero-ico" aria-hidden="true">🎳</span>Bowl League</h1>
-      <p class="sub"><strong style="color:#b8c9ff;font-weight:600;">This week</strong> uses season + week. <strong style="color:#e8c4ff;font-weight:600;">Season totals</strong> is only the season. <strong style="color:#b8ffe0;font-weight:600;">All seasons</strong> is career/combined.</p>
+      <h1><span class="hero-ico" aria-hidden="true">🎳</span>Monday Night Friends</h1>
+      <p class="sub">Set <strong style="color:#50fa7b;font-weight:600;">season &amp; week</strong> at the top, then pick a report — green labels use the week; blue labels use season only.</p>
     </header>
 
+    <div class="mobile-toolbar" aria-label="Mobile navigation">
+      <button type="button" class="nav-toggle" id="nav-toggle" aria-expanded="false" aria-controls="app-sidebar">
+        <span class="nav-toggle-icon" aria-hidden="true"></span>
+        <span>Menu</span>
+      </button>
+      <button type="button" class="context-pill" id="context-pill" title="Open menu to change season and week">
+        <span id="context-pill-text">…</span>
+      </button>
+    </div>
+    <div class="nav-backdrop" id="nav-backdrop" aria-hidden="true"></div>
+
     <div class="layout">
-      <div class="sidebar">
+      <aside class="sidebar" id="app-sidebar">
+        <div class="drawer-head">
+          <span class="drawer-head-title">Menu</span>
+          <button type="button" class="drawer-close" id="nav-close">Close</button>
+        </div>
         <div class="panels">
-          <section class="card card--this-season context-card">
+          <section class="card card--context context-card">
+            <details class="panel-details panel-details--context">
+              <summary class="panel-summary panel-summary--context">
+                <span class="panel-summary-text">
+                  <span>Season &amp; week</span>
+                  <span class="context-summary-sub" id="context-summary-sub"></span>
+                </span>
+              </summary>
+              <div class="panel-details-body">
+            <span class="field-label field-label--desktop-only">Season &amp; week</span>
             <form id="ctx" onsubmit="return false;">
-              <span class="field-label">This week</span>
-              <p class="card-hint" style="margin-top:0;">Picks a single week (or all weeks). Does not use <em>Season totals</em>.</p>
               <div class="row">
                 <div class="field">
-                  <label class="field-hint" for="season_this">Season</label>
-                  <select id="season_this" name="season_this">
+                  <label class="field-hint" for="season_sel">Season</label>
+                  <select id="season_sel" name="season_sel">
                     {% for s in seasons %}
                     <option value="{{ s }}" {% if s == current_season %}selected{% endif %}>{{ s }}</option>
                     {% endfor %}
-                    <option value="last">Last season</option>
+                    <option value="all">All seasons</option>
                   </select>
                 </div>
-                <div class="field">
-                  <label class="field-hint" for="week_this">Week</label>
-                  <select id="week_this" name="week_this" title="Weeks present in this season (from sheet)"></select>
+                <div class="field field--week" id="week_field">
+                  <label class="field-hint" for="week_sel">Week</label>
+                  <select id="week_sel" name="week_sel" title="Weeks in the selected season"></select>
                 </div>
               </div>
             </form>
-            <div class="btn-grid cols-2" style="margin-top:0.85rem;">
-              <a class="btn btn--spark" href="#" onclick="go('/week/summary', 'Weekly summary'); return false;">Weekly summary</a>
-              <a class="btn btn--spark" href="#" onclick="go('/week/results', 'Weekly matchups'); return false;">Weekly matchups</a>
-            </div>
+              </div>
+            </details>
           </section>
 
-          <section class="card card--season-totals">
-            <span class="field-label">Season totals</span>
-            <p class="card-hint" style="margin-top:0;">Season-long stats — no week. Same sheet seasons as above.</p>
-            <div class="field" style="margin-bottom:0.75rem;">
-              <label class="field-hint" for="season_standings">Season</label>
-              <select id="season_standings" name="season_standings">
-                {% for s in seasons %}
-                <option value="{{ s }}" {% if s == current_season %}selected{% endif %}>{{ s }}</option>
-                {% endfor %}
-                <option value="last">Last season</option>
-              </select>
+          <section class="card card--reports">
+            <details class="panel-details">
+              <summary class="panel-summary">Reports</summary>
+              <div class="panel-details-body">
+            <div class="report-group report-group--week">
+              <span class="report-group-label">This week</span>
+              <p class="report-group-hint">Season + week above (pick the week to preview).</p>
+              <div class="btn-grid cols-2">
+                <a class="btn btn--spark btn-this-week" href="#" onclick="go('/week/summary', 'Weekly summary'); return false;">Weekly summary</a>
+                <a class="btn btn--spark btn-this-week" href="#" onclick="go('/week/results', 'Weekly matchups'); return false;">Weekly matchups</a>
+              </div>
             </div>
-            <div class="btn-grid cols-2">
-              <a class="btn btn--spark" href="#" onclick="goSeasonTotals('/players', 'All players'); return false;">All players</a>
-              <a class="btn btn--spark" href="#" onclick="goSeasonTotals('/teams', 'Team standings'); return false;">Team standings</a>
-              <a class="btn btn--spark" href="#" style="grid-column: 1 / -1;" onclick="goSeasonTotals('/leaders', 'League leaders'); return false;">League leaders</a>
-              <a class="btn btn--ghost btn--spark" href="#" style="grid-column: 1 / -1;" onclick="goSeasonTotals('/bracket', 'Playoffs'); return false;">Playoffs (bracket &amp; scores)</a>
+            <div class="report-group report-group--season">
+              <span class="report-group-label">Season totals</span>
+              <p class="report-group-hint">Season only — no week. <em>All seasons</em> = all-time where available.</p>
+              <div class="btn-grid cols-2">
+                <a class="btn btn--spark" href="#" onclick="goSeasonTotals('/players', 'All players'); return false;">All players</a>
+                <a class="btn btn--spark btn-season-only" href="#" onclick="goSeasonTotals('/teams', 'Team standings'); return false;">Team standings</a>
+                <a class="btn btn--spark" href="#" style="grid-column: 1 / -1;" onclick="goSeasonTotals('/leaders', 'League leaders'); return false;">League leaders</a>
+                <a class="btn btn--ghost btn--spark btn-season-only" href="#" style="grid-column: 1 / -1;" onclick="goSeasonTotals('/bracket', 'Playoffs'); return false;">Playoffs (bracket &amp; scores)</a>
+                <a class="btn btn--ghost btn--spark" href="#" style="grid-column: 1 / -1;" onclick="goSeasonTotals('/top/games', 'Best single games'); return false;">Best single games (top 50)</a>
+              </div>
             </div>
-          </section>
-
-          <section class="card card--alltime">
-            <span class="field-label">All seasons</span>
-            <p class="card-hint">Combined career totals and records across every season in the spreadsheet.</p>
-            <div class="btn-grid cols-2">
-              <a class="btn btn--spark" href="#" onclick="openAlltime('/leaders', 'All-season leaders'); return false;">League leaders</a>
-              <a class="btn btn--spark" href="#" onclick="openAlltime('/players', 'All-season players'); return false;">All players</a>
-              <a class="btn btn--ghost btn--spark" href="#" style="grid-column: 1 / -1;" onclick="openAlltimeTopGames(); return false;">Best single games (top 50)</a>
-            </div>
+              </div>
+            </details>
           </section>
 
           <section class="card">
-            <span class="field-label">Lookups</span>
-            <p class="card-hint" style="margin-top:0;">Uses the <strong>Season totals</strong> season above.</p>
+            <details class="panel-details">
+              <summary class="panel-summary">Lookups</summary>
+              <div class="panel-details-body">
+            <span class="field-label field-label--desktop-only">Lookups</span>
+            <p class="card-hint" style="margin-top:0;">Uses the season selector above (including <strong>All seasons</strong>).</p>
             <div class="stack-v">
               <div>
                 <label class="field-hint" for="playerq">Player</label>
@@ -647,9 +1011,11 @@
                 <a class="btn btn--spark" href="#" style="margin-top:0.5rem;" onclick="teamWeekly(); return false;">Team season weeks</a>
               </div>
             </div>
+              </div>
+            </details>
           </section>
         </div>
-      </div>
+      </aside>
 
       <div class="scores-pane">
         <div id="embed-panel" class="embed-panel" aria-label="Scores preview">
@@ -679,28 +1045,114 @@
   </div>
 
   <script type="application/json" id="weeks-data">{{ weeks_by_season | tojson }}</script>
+  <script type="application/json" id="initial-latest-data">{{ latest_week | tojson }}</script>
   <script>
     (function () {
       var lastPreview = null;
       var replayTimer = null;
       var narrowMq = window.matchMedia("(max-width: 899px)");
+      var panelDetails = function () {
+        return document.querySelectorAll(".sidebar .panel-details");
+      };
+
+      function contextLabel() {
+        var s = getSeason();
+        var w = getWeek();
+        if (s === "all") return "All seasons";
+        return s + " · Week " + w;
+      }
+
+      function ensureDrawerPanelsOpen() {
+        panelDetails().forEach(function (el) {
+          el.open = true;
+        });
+      }
+
+      function openNav() {
+        if (!narrowMq.matches) return;
+        ensureDrawerPanelsOpen();
+        document.body.classList.add("nav-open");
+        var toggle = document.getElementById("nav-toggle");
+        var backdrop = document.getElementById("nav-backdrop");
+        if (toggle) toggle.setAttribute("aria-expanded", "true");
+        if (backdrop) backdrop.setAttribute("aria-hidden", "false");
+      }
+
+      function closeNav() {
+        document.body.classList.remove("nav-open");
+        var toggle = document.getElementById("nav-toggle");
+        var backdrop = document.getElementById("nav-backdrop");
+        if (toggle) toggle.setAttribute("aria-expanded", "false");
+        if (backdrop) backdrop.setAttribute("aria-hidden", "true");
+      }
+
+      function toggleNav() {
+        if (document.body.classList.contains("nav-open")) closeNav();
+        else openNav();
+      }
+
+      function bindMobileNav() {
+        var toggle = document.getElementById("nav-toggle");
+        var backdrop = document.getElementById("nav-backdrop");
+        var pill = document.getElementById("context-pill");
+        var closeBtn = document.getElementById("nav-close");
+        if (toggle) toggle.addEventListener("click", toggleNav);
+        if (backdrop) backdrop.addEventListener("click", closeNav);
+        if (pill) pill.addEventListener("click", openNav);
+        if (closeBtn) closeBtn.addEventListener("click", closeNav);
+      }
+
+      function syncPanelDetails() {
+        /* <details> must stay open when summary is hidden (drawer + desktop). */
+        ensureDrawerPanelsOpen();
+        if (!narrowMq.matches) closeNav();
+      }
+
+      function collapsePanelsForPreview() {
+        if (narrowMq.matches) {
+          closeNav();
+          return;
+        }
+        panelDetails().forEach(function (el) {
+          el.open = false;
+        });
+      }
+
+      if (typeof narrowMq.addEventListener === "function") {
+        narrowMq.addEventListener("change", syncPanelDetails);
+      } else if (typeof narrowMq.addListener === "function") {
+        narrowMq.addListener(syncPanelDetails);
+      }
+      bindMobileNav();
+
       var WEEKS = JSON.parse(document.getElementById("weeks-data").textContent);
-      var INITIAL_LATEST = {{ latest_week | int }};
+      var INITIAL_LATEST = JSON.parse(document.getElementById("initial-latest-data").textContent);
+
+      function getSeason() {
+        return document.getElementById("season_sel").value;
+      }
+
+      function getWeek() {
+        return document.getElementById("week_sel").value;
+      }
+
+      function syncContextSummary() {
+        var label = contextLabel();
+        var sub = document.getElementById("context-summary-sub");
+        var pill = document.getElementById("context-pill-text");
+        if (sub) sub.textContent = label;
+        if (pill) pill.textContent = label;
+      }
 
       function weekListKey() {
-        var s = document.getElementById("season_this").value;
-        return s === "last" ? "__last__" : s;
+        return getSeason();
       }
 
       function rebuildWeekSelect(preserveValue) {
-        var sel = document.getElementById("week_this");
+        var sel = document.getElementById("week_sel");
         var key = weekListKey();
-        var list = WEEKS[key] || [];
+        var list = (WEEKS[key] || []).slice().sort(function (a, b) { return b - a; });
         sel.innerHTML = "";
-        var oAll = document.createElement("option");
-        oAll.value = "all";
-        oAll.textContent = "All weeks";
-        sel.appendChild(oAll);
         list.forEach(function (w) {
           var o = document.createElement("option");
           o.value = String(w);
@@ -708,27 +1160,24 @@
           sel.appendChild(o);
         });
         var ok = function (v) {
-          return [].some.call(sel.options, function (op) { return op.value === v; });
+          return v && v !== "all" && [].some.call(sel.options, function (op) { return op.value === v; });
         };
         if (preserveValue && ok(preserveValue)) {
           sel.value = preserveValue;
         } else if (list.length && ok(String(INITIAL_LATEST))) {
           sel.value = String(INITIAL_LATEST);
         } else if (list.length) {
-          sel.value = String(list[list.length - 1]);
-        } else {
-          sel.value = "all";
+          sel.value = String(list[0]);
         }
+        syncContextSummary();
       }
 
       function qsThisSeason() {
-        var season = document.getElementById("season_this").value;
-        var week = document.getElementById("week_this").value;
-        return "season=" + encodeURIComponent(season) + "&week=" + encodeURIComponent(week);
+        return "season=" + encodeURIComponent(getSeason()) + "&week=" + encodeURIComponent(getWeek());
       }
 
       function qsSeasonTotals() {
-        return "season=" + encodeURIComponent(document.getElementById("season_standings").value);
+        return "season=" + encodeURIComponent(getSeason());
       }
 
       function inferScope(search) {
@@ -745,10 +1194,59 @@
         return u.pathname + u.search;
       }
 
+      var PLACEHOLDER_DEFAULT = {
+        title: "Preview",
+        hint: "Pick a report — scrolling stays inside the preview.",
+      };
+
       function setPlaceholder(show) {
         var ph = document.getElementById("embed-placeholder");
         if (show) ph.classList.remove("is-hidden");
         else ph.classList.add("is-hidden");
+      }
+
+      function resetPlaceholderCopy() {
+        var ph = document.getElementById("embed-placeholder");
+        ph.classList.remove("embed-placeholder--invalid");
+        var strong = ph.querySelector("strong");
+        var hint = ph.querySelector(".hint");
+        if (strong) strong.textContent = PLACEHOLDER_DEFAULT.title;
+        if (hint) hint.textContent = PLACEHOLDER_DEFAULT.hint;
+      }
+
+      function embedBlockedMessage(pathname, search) {
+        if (getSeason() !== "all") return null;
+        var p = pathname || "";
+        if (p.indexOf("/week/") === 0) {
+          return "Weekly reports need a specific season, not All seasons. Choose a season above.";
+        }
+        if (p === "/teams") {
+          return "Team standings need a specific season, not All seasons. Choose a season above.";
+        }
+        if (p === "/bracket" || p === "/playoffs") {
+          return "Playoffs need a specific season, not All seasons. Choose a season above.";
+        }
+        return null;
+      }
+
+      function showEmbedInvalid(message, title, options) {
+        options = options || {};
+        var panel = document.getElementById("embed-panel");
+        var frame = document.getElementById("embed-frame");
+        var titleEl = document.getElementById("embed-title");
+        var ph = document.getElementById("embed-placeholder");
+        panel.classList.remove("embed-panel--playoffs", "loading");
+        document.querySelector(".shell").classList.remove("shell--playoffs");
+        frame.src = "about:blank";
+        titleEl.textContent = title || "Unavailable";
+        ph.classList.add("embed-placeholder--invalid");
+        var strong = ph.querySelector("strong");
+        var hint = ph.querySelector(".hint");
+        if (strong) strong.textContent = "Not available with All seasons";
+        if (hint) hint.textContent = message;
+        setPlaceholder(true);
+        if (!options.noStore) lastPreview = null;
+        if (narrowMq.matches) closeNav();
       }
 
       function showPanel(fullPathWithQuery, title, options) {
@@ -757,6 +1255,11 @@
         var frame = document.getElementById("embed-frame");
         var titleEl = document.getElementById("embed-title");
         var base = new URL(fullPathWithQuery, window.location.origin);
+        var blocked = embedBlockedMessage(base.pathname, base.search);
+        if (blocked) {
+          showEmbedInvalid(blocked, title, options);
+          return;
+        }
         if (!options.noStore) {
           lastPreview = {
             href: base.pathname + base.search,
@@ -764,11 +1267,16 @@
             scope: options.scope || inferScope(base.pathname + base.search),
           };
         }
+        var isPlayoffs = base.pathname === "/bracket" || base.pathname === "/playoffs";
+        panel.classList.toggle("embed-panel--playoffs", isPlayoffs);
+        document.querySelector(".shell").classList.toggle("shell--playoffs", isPlayoffs);
         panel.classList.add("loading");
         titleEl.textContent = title || "Scores";
+        resetPlaceholderCopy();
         setPlaceholder(false);
         frame.src = withEmbed(base.pathname + base.search);
         if (!options.skipScroll && narrowMq.matches) {
+          collapsePanelsForPreview();
           panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
         }
       }
@@ -778,10 +1286,15 @@
         var old = new URL(lastPreview.href, window.location.origin);
         var path = old.pathname;
         var title = lastPreview.title;
+        var blocked = embedBlockedMessage(path, old.search);
+        if (blocked) {
+          showEmbedInvalid(blocked, title, { skipScroll: true, noStore: true });
+          return;
+        }
         var sp;
         if (path === "/bracket" || path === "/playoffs") {
           sp = new URLSearchParams();
-          sp.set("season", document.getElementById("season_this").value);
+          sp.set("season", getSeason());
           old.searchParams.forEach(function (val, key) {
             if (key !== "season") sp.set(key, val);
           });
@@ -799,20 +1312,36 @@
         var old = new URL(lastPreview.href, window.location.origin);
         var path = old.pathname;
         var title = lastPreview.title;
+        var blocked = embedBlockedMessage(path, old.search);
+        if (blocked) {
+          showEmbedInvalid(blocked, title, { skipScroll: true, noStore: true });
+          return;
+        }
         if (path === "/player") {
           var q = old.searchParams.get("q") || "";
-          var season = document.getElementById("season_standings").value;
+          var season = getSeason();
           showPanel("/player?q=" + encodeURIComponent(q) + "&season=" + encodeURIComponent(season), title, { skipScroll: true, noStore: true, scope: "season_totals" });
           return;
         }
         if (path === "/bracket") {
-          var sBr = document.getElementById("season_standings").value;
+          var sBr = getSeason();
           showPanel("/bracket?season=" + encodeURIComponent(sBr), title, { skipScroll: true, noStore: true, scope: "season_totals" });
           return;
         }
         if (/^\/team\/.+\/weekly$/i.test(path)) {
-          var seasonW = document.getElementById("season_standings").value;
+          var seasonW = getSeason();
           showPanel(path + "?season=" + encodeURIComponent(seasonW), title, { skipScroll: true, noStore: true, scope: "season_totals" });
+          return;
+        }
+        if (path === "/top/games") {
+          var seasonTop = getSeason();
+          var spTop = new URLSearchParams();
+          spTop.set("season", seasonTop);
+          spTop.set("n", "50");
+          old.searchParams.forEach(function (val, key) {
+            if (key !== "season" && key !== "n") spTop.set(key, val);
+          });
+          showPanel(path + "?" + spTop.toString(), title, { skipScroll: true, noStore: true, scope: "season_totals" });
           return;
         }
         var sp = new URLSearchParams(qsSeasonTotals());
@@ -837,73 +1366,115 @@
 
       document.getElementById("embed-close").addEventListener("click", function () {
         lastPreview = null;
+        document.getElementById("embed-panel").classList.remove("embed-panel--playoffs");
+        document.querySelector(".shell").classList.remove("shell--playoffs");
         document.getElementById("embed-frame").src = "about:blank";
+        resetPlaceholderCopy();
         setPlaceholder(true);
         document.getElementById("embed-title").textContent = "Scores";
-        var hint = document.querySelector("#embed-placeholder .hint");
-        if (hint) hint.textContent = "Pick a report — scrolling stays inside the preview.";
       });
 
       document.addEventListener("keydown", function (e) {
         if (e.key !== "Escape") return;
+        if (document.body.classList.contains("nav-open")) {
+          closeNav();
+          return;
+        }
         if (lastPreview) document.getElementById("embed-close").click();
       });
 
-      document.getElementById("season_this").addEventListener("change", function () {
+      document.getElementById("season_sel").addEventListener("change", function () {
         rebuildWeekSelect(null);
+        updateContextUI();
+        syncContextSummary();
         scheduleReplay();
       });
-      document.getElementById("week_this").addEventListener("change", scheduleReplay);
-      document.getElementById("season_standings").addEventListener("change", scheduleReplay);
+      document.getElementById("week_sel").addEventListener("change", function () {
+        syncContextSummary();
+        scheduleReplay();
+      });
 
       function go(path, title) {
-        if (path.indexOf("/week/") !== -1 && document.getElementById("week_this").value === "all") {
-          if (path.indexOf("summary") !== -1) title = "Weekly summary — all weeks";
-          else title = "Weekly matchups — all weeks";
+        if (getSeason() === "all") {
+          showEmbedInvalid(
+            "Weekly reports need a specific season, not All seasons. Choose a season above.",
+            title || "Weekly report"
+          );
+          return;
         }
         showPanel(path + "?" + qsThisSeason(), title || "Scores", { scope: "this_week" });
       }
 
+      function setBtnUnavailable(el, unavailable) {
+        el.classList.toggle("is-unavailable", unavailable);
+        if (unavailable) {
+          el.setAttribute("aria-disabled", "true");
+          el.setAttribute("tabindex", "-1");
+        } else {
+          el.removeAttribute("aria-disabled");
+          el.removeAttribute("tabindex");
+        }
+      }
+
+      function updateContextUI() {
+        var all = getSeason() === "all";
+        document.querySelectorAll(".btn-season-only, .btn-this-week").forEach(function (el) {
+          setBtnUnavailable(el, all);
+        });
+        document.getElementById("week_field").classList.toggle("is-disabled", all);
+        if (all && lastPreview) {
+          var prev = new URL(lastPreview.href, window.location.origin);
+          var blocked = embedBlockedMessage(prev.pathname, prev.search);
+          if (blocked) {
+            showEmbedInvalid(blocked, lastPreview.title, { skipScroll: true, noStore: true });
+          }
+        }
+      }
+
       function goSeasonTotals(path, title) {
-        var s = document.getElementById("season_standings").value;
-        if (path === "/teams" && s === "all") {
-          window.alert("Team standings need a specific season.");
+        var s = getSeason();
+        if ((path === "/teams" || path === "/bracket") && s === "all") {
+          showEmbedInvalid(
+            path === "/teams"
+              ? "Team standings need a specific season, not All seasons. Choose a season above."
+              : "Playoffs need a specific season, not All seasons. Choose a season above.",
+            title || "Scores"
+          );
+          return;
+        }
+        if (path === "/top/games") {
+          var sp = new URLSearchParams(qsSeasonTotals());
+          sp.set("n", "50");
+          showPanel(path + "?" + sp.toString(), title || "Scores", { scope: "season_totals" });
           return;
         }
         showPanel(path + "?" + qsSeasonTotals(), title || "Scores", { scope: "season_totals" });
       }
 
-      function openAlltime(path, title) {
-        showPanel(path + "?season=all", title || "All seasons", { scope: "alltime" });
-      }
-
-      function openAlltimeTopGames() {
-        showPanel("/top/games?season=all&n=50", "Best games (all seasons)", { scope: "alltime" });
-      }
-
       function findPlayer() {
         var q = document.getElementById("playerq").value.trim();
         if (!q) { window.alert("Enter a name"); return; }
-        var season = document.getElementById("season_standings").value;
+        var season = getSeason();
         showPanel("/player?q=" + encodeURIComponent(q) + "&season=" + encodeURIComponent(season), "Player lookup", { scope: "season_totals" });
       }
 
       function teamWeekly() {
         var t = document.getElementById("teamq").value.trim();
         if (!t) { window.alert("Enter team name"); return; }
-        var season = document.getElementById("season_standings").value;
+        var season = getSeason();
         showPanel("/team/" + encodeURIComponent(t) + "/weekly?season=" + encodeURIComponent(season), "Team season weeks", { scope: "season_totals" });
       }
 
       window.go = go;
       window.goSeasonTotals = goSeasonTotals;
-      window.openAlltime = openAlltime;
-      window.openAlltimeTopGames = openAlltimeTopGames;
       window.findPlayer = findPlayer;
       window.teamWeekly = teamWeekly;
 
       function initWeeksAndAutoOpen() {
+        syncPanelDetails();
         rebuildWeekSelect(String(INITIAL_LATEST));
+        syncContextSummary();
+        updateContextUI();
         showPanel("/week/summary?" + qsThisSeason(), "Weekly summary", { skipScroll: true, scope: "this_week" });
       }
 

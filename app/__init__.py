@@ -1,12 +1,13 @@
-"""Flask app — bowling league stats from Google Sheets."""
+"""Flask app — bowling league stats from PostgreSQL."""
 import os
 from os.path import dirname, join
 
 from dotenv import load_dotenv
 from flask import Flask
 
+from db.team_colors import refresh_team_colors_cache
+from league_data import create_league_data
 from league_service import LeagueService
-from sheets_handler import get_sheet_handler
 
 
 def create_app() -> Flask:
@@ -19,27 +20,13 @@ def create_app() -> Flask:
 
     load_dotenv(join(_root, ".env"))
 
-    sheet = _init_sheet_handler()
-    app.config["SHEET_HANDLER"] = sheet
-    app.config["LEAGUE_SERVICE"] = LeagueService(sheet) if sheet else None
+    data = create_league_data()
+    app.config["LEAGUE_DATA"] = data
+    app.config["LEAGUE_SERVICE"] = LeagueService(data) if data else None
+    if data:
+        refresh_team_colors_cache()
 
     from app import routes
 
     app.register_blueprint(routes.bp)
     return app
-
-
-def _init_sheet_handler():
-    stype = os.environ.get("SHEET_HANDLER_TYPE", "gsheets")
-    try:
-        if stype == "gsheets":
-            return get_sheet_handler(
-                "gsheets",
-                sheet_id=os.environ["GOOGLE_SHEET_ID"],
-                credentials_json=os.environ["GOOGLE_CREDENTIALS"],
-            )
-        path = os.environ.get("EXCEL_FILE_PATH", "Bowling-Friends League v5.xlsx")
-        return get_sheet_handler("excel", file_path=path)
-    except Exception as e:
-        print(f"Sheet handler init failed: {e}")
-        return None

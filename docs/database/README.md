@@ -1,6 +1,6 @@
 # Database plan (BowlBot)
 
-The app today loads league data from **Google Sheets** or a **local Excel** file via `sheets_handler.py` and serves HTML through `league_service.py`. This folder describes a phased approach to add a **relational database** (recommended: **PostgreSQL** on [Railway](https://railway.app) or similar) so production can scale reads, simplify queries, and optionally decouple from live sheet API latency.
+The app serves league stats from **PostgreSQL** (`db/facts_loader.py` + `stats/compute.py`). Data is imported from a local **Excel v5** file via `sync_db.py`. This folder documents the database rollout (schema → ingest → app → ops).
 
 **Source of truth (decision):** Until a later phase, treat the spreadsheet as canonical and use the database as a **materialized cache** or **sync target**. That avoids a big-bang rewrite and keeps manual sheet edits valid.
 
@@ -18,8 +18,8 @@ Names are indicative; finalize when implementing Phase 1.
 | Variable | Purpose |
 |----------|---------|
 | `DATABASE_URL` | PostgreSQL connection string (Railway sets this for plugins). |
-| `USE_DB_READS` | If `1`, routes use DB-backed repositories when available. |
-| `SHEET_HANDLER_TYPE` | Remains `gsheets` or `excel` for sync jobs and fallback. |
+| `DATABASE_URL` | Required for the web app and `sync_db.py`. |
+| `EXCEL_FILE_PATH` | v5 workbook for `sync_db.py` only (default `Bowling-Friends League v5.xlsx`). |
 
 ## Non-goals (initial phases)
 

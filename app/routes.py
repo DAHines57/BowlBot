@@ -16,21 +16,23 @@ def _svc():
 
 @bp.route("/health")
 def health():
-    sh = current_app.config.get("SHEET_HANDLER")
-    return {"ok": True, "sheets": bool(sh)}, 200
+    svc = _svc()
+    source = getattr(svc.data, "read_source", "sheets") if svc else None
+    return {"ok": True, "service": bool(svc), "read_source": source}, 200
 
 
 @bp.route("/")
 def home():
     svc = _svc()
     if not svc:
-        return render_template("error.html", message="Spreadsheet not configured. Check GOOGLE_SHEET_ID and GOOGLE_CREDENTIALS."), 503
+        return render_template(
+            "error.html",
+            message="Database not ready. Set DATABASE_URL, run docker compose up -d, then python sync_db.py.",
+        ), 503
     seasons = svc.seasons_sorted()
-    cur = svc.h._get_current_season()
-    latest_wk = svc.h.get_latest_week(cur) if cur else 1
-    weeks_by_season = {s: svc.h.list_weeks_for_season(s) for s in seasons}
-    last_sn = svc.resolve_season("last")
-    weeks_by_season["__last__"] = list(svc.h.list_weeks_for_season(last_sn)) if last_sn else []
+    cur = svc.data.get_current_season()
+    latest_wk = svc.data.get_latest_week(cur) if cur else 1
+    weeks_by_season = {s: svc.data.list_weeks_for_season(s) for s in seasons}
     return render_template(
         "home.html",
         seasons=seasons,
@@ -72,7 +74,7 @@ def week_summary():
         return _no_svc()
     season = _season_arg()
     if season == "all":
-        season = svc.h._get_current_season()
+        season = svc.data.get_current_season()
     week = _week_arg()
     html, err = svc.weekly_summary_page(season, week, embed=_embed_flag())
     if err:
@@ -87,7 +89,7 @@ def week_results():
         return _no_svc()
     season = _season_arg()
     if season == "all":
-        season = svc.h._get_current_season()
+        season = svc.data.get_current_season()
     week = _week_arg()
     html, err = svc.weekly_results_page(season, week, embed=_embed_flag())
     if err:
@@ -185,7 +187,7 @@ def top_games():
     svc = _svc()
     if not svc:
         return _no_svc()
-    n = request.args.get("n", default=5, type=int)
+    n = request.args.get("n", default=50, type=int)
     worst = request.args.get("worst", default=0, type=int) == 1
     html, err = svc.top_games_page(_season_arg(), n, worst, embed=_embed_flag())
     if err:
@@ -242,4 +244,7 @@ def reload_sheet():
 
 
 def _no_svc():
-    return render_template("error.html", message="Spreadsheet not configured."), 503
+    return render_template(
+        "error.html",
+        message="Database not ready. Set DATABASE_URL and run python sync_db.py.",
+    ), 503

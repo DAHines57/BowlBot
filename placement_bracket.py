@@ -59,6 +59,9 @@ from typing import FrozenSet, List, Optional, Tuple, cast
 # (winner_name, loser_name) for a decided game — exported for bracket HTML helpers
 SlotWL = Tuple[str, str]
 
+# Loser placeholder when a team advances on a quarterfinal bye (no opponent game).
+BYE_LOSER = "__BYE__"
+
 
 def _norm_team(name: str) -> str:
     """Lowercase, strip, flatten curly quotes — match sheets_handler / Google Sheets quirks."""
@@ -132,7 +135,9 @@ def expected_week2_groups(
 
     def ell(slot: int) -> Optional[str]:
         wl = qf[slot]
-        return wl[1] if wl else None
+        if not wl or wl[1] == BYE_LOSER:
+            return None
+        return wl[1]
 
     wb_groups: List[FrozenSet[str]] = []
     lb_groups: List[FrozenSet[str]] = []
@@ -169,7 +174,9 @@ def expected_week2_cross_sets(
 
     def ell(i: int) -> Optional[str]:
         wl = qf[i]
-        return wl[1] if wl else None
+        if not wl or wl[1] == BYE_LOSER:
+            return None
+        return wl[1]
 
     pairs: List[Optional[FrozenSet[str]]] = []
     if w(0) and ell(1):
