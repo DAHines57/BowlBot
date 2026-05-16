@@ -2,35 +2,59 @@
 migrate.py — One-time migration script from v4 to v5 Excel format.
 
 v4 format (wide):  one row per player, weekly averages in columns
-v5 format (tall):  one row per player per week, with game scores and opponent
+v5 format (tall):  one row per player per week, with game scores and opponent.
+    Optional column **Game 5 winner** (after Playoffs?) holds the series winner when
+    the v4 matchup row shows a 5-game series (W+L[+T]=5) but pin scores for game 5 are unknown.
 
 Since v4 only stores weekly averages (not individual games), each week's
 average is repeated as Game 1–4 so season averages calculate correctly.
 Game 5 is left blank (v4 has no 5-game data).
 
 Output: Bowling-Friends League migrated.xlsx
-  — one sheet per season, ready to copy into v5 as needed.
-  — Season 9 is skipped since it already exists in v5 with real game scores.
+  — one sheet per season, ready to copy into v5 / Google Sheets as needed.
+
+Google Sheets (live app source)
+  The app reads any worksheet whose name starts with ``Season`` (e.g. ``Season 13``).
+  This script does not push to Google Drive. To add **Season 13** there:
+
+  1. Put ``Season 13`` on the v4 workbook (``V4_FILE`` below), OR set ``ONLY_SEASON_NUMBER = 13``
+     if that tab is the only new one you need.
+  2. Run: ``python migrate.py``
+  3. Open ``Bowling-Friends League migrated.xlsx``, copy the whole ``Season 13`` sheet
+     into your Google Sheet (same tab name), or use Sheets import.
+
+  Optional: set ``ONLY_SEASON_NUMBER = 13`` below to migrate only that season.
 """
 
 import re
+from colorsys import hls_to_rgb, rgb_to_hls
+from typing import List, Optional
+
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Font, PatternFill, Border, Side
+from openpyxl.styles.colors import COLOR_INDEX
+from openpyxl.xml.functions import QName, fromstring
+
+# No background — Game 5 winner cells stay clear when empty or unmatched
+_NO_FILL = PatternFill(fill_type='none')
 
 V4_FILE  = "Bowling- Friends League v4.xlsx"
 OUTPUT_FILE = "Bowling-Friends League migrated.xlsx"
 
-# Seasons already present in v5 with real game data — skip these.
-SKIP_SEASONS = {9}
+# Seasons to omit from migration (e.g. if you maintain a tab by hand). Empty = migrate all.
+SKIP_SEASONS = set()
 
 # Seasons where weekly values are 4-game pin totals instead of averages.
 # The script will divide by 4 before writing game scores.
 TOTAL_SEASONS = {3}
 
+# If set, migrate only this season (e.g. 13). None = migrate every season except SKIP_SEASONS.
+ONLY_SEASON_NUMBER: Optional[int] = None
+
 V5_HEADER = [
     "Index", "Team", "Player", "Season", "Week",
     "Game 1", "Game 2", "Game 3", "Game 4", "Game 5",
-    "Average", "Playoffs?", "Absent?", "Substitute?", "Opponent"
+    "Average", "Playoffs?", "Game 5 winner", "Absent?", "Substitute?", "Opponent"
 ]
 
 
@@ -115,6 +139,85 @@ def parse_matchups(ws, matchup_start_col, max_regular_week):
     return matchups
 
 
+def _int_cell(ws, row, col):
+    v = ws.cell(row, col).value
+    if isinstance(v, (int, float)):
+        return int(v)
+    return None
+
+
+def parse_game5_winners(ws, matchup_start_col, max_regular_week):
+    """
+    From v4 matchup rows: if each team's wins+losses (+ ties when present) totals 5,
+    the series went five games. Record the deciding-game (series) winner's team name
+    for both teams for that absolute week.
+
+    Returns:
+        dict: (team_name_lower, absolute_week) -> winner display name, or absent key if no G5.
+    """
+    out = {}
+    current_week = None
+
+    for row in range(1, ws.max_row + 1):
+        cell_val = ws.cell(row, matchup_start_col).value
+        if cell_val is None:
+            continue
+        cell_str = str(cell_val).strip()
+
+        wn, is_playoff = parse_week_label(cell_str)
+        if wn is not None:
+            current_week = max_regular_week + wn if is_playoff else wn
+            continue
+
+        if current_week is None:
+            continue
+
+        vs_offset = find_vs_offset(ws, row, matchup_start_col, matchup_start_col + 12)
+        if vs_offset is None:
+            continue
+
+        team_a = ws.cell(row, matchup_start_col).value
+        team_b = ws.cell(row, matchup_start_col + vs_offset + 1).value
+
+        if not (team_a and isinstance(team_a, str) and
+                team_b and isinstance(team_b, str)):
+            continue
+
+        wins_a = ws.cell(row, matchup_start_col + 1).value
+        if not isinstance(wins_a, (int, float)):
+            continue
+
+        w_a = _int_cell(ws, row, matchup_start_col + 1)
+        l_a = _int_cell(ws, row, matchup_start_col + 2)
+        w_b = _int_cell(ws, row, matchup_start_col + vs_offset + 2)
+        l_b = _int_cell(ws, row, matchup_start_col + vs_offset + 3)
+        if None in (w_a, l_a, w_b, l_b):
+            continue
+
+        # With ties: Team, W, L, T, Pins, Vs — 'Vs' is one column farther than without ties
+        if vs_offset == 5:
+            t_a = _int_cell(ws, row, matchup_start_col + 3) or 0
+            t_b = _int_cell(ws, row, matchup_start_col + vs_offset + 4) or 0
+            games_a = w_a + l_a + t_a
+            games_b = w_b + l_b + t_b
+        else:
+            games_a = w_a + l_a
+            games_b = w_b + l_b
+
+        if games_a != 5 or games_b != 5:
+            continue
+        if w_a == w_b:
+            continue
+
+        team_a = team_a.strip()
+        team_b = team_b.strip()
+        winner = team_a if w_a > w_b else team_b
+        out[(team_a.lower(), current_week)] = winner
+        out[(team_b.lower(), current_week)] = winner
+
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Per-season migration
 # ---------------------------------------------------------------------------
@@ -139,33 +242,148 @@ def _cell_is_highlighted(ws_styles, row, col):
     return ft is not None and ft != 'none'
 
 
-def _get_team_color(ws_styles, row, team_col):
+# --- Excel fill → aRGB (theme / indexed / rgb) --------------------------------
+
+_RGBMAX = 0xFF
+_HLSMAX = 240
+
+
+def _rgb_to_ms_hls(hex6: str):
+    """6-digit RRGGBB (no alpha) → Excel HLS triple on 0..240 scale."""
+    hex6 = hex6[-6:]
+    r = int(hex6[0:2], 16) / _RGBMAX
+    g = int(hex6[2:4], 16) / _RGBMAX
+    b = int(hex6[4:6], 16) / _RGBMAX
+    h, l, s = rgb_to_hls(r, g, b)
+    return (
+        int(round(h * _HLSMAX)),
+        int(round(l * _HLSMAX)),
+        int(round(s * _HLSMAX)),
+    )
+
+
+def _ms_hls_to_hex6(h: int, l: int, s: int) -> str:
+    r01, g01, b01 = hls_to_rgb(h / _HLSMAX, l / _HLSMAX, s / _HLSMAX)
+    return (
+        f"{int(round(r01 * _RGBMAX)):02X}"
+        f"{int(round(g01 * _RGBMAX)):02X}"
+        f"{int(round(b01 * _RGBMAX)):02X}"
+    )
+
+
+def _tint_luminance(tint: float, lum: int) -> int:
+    if tint < 0:
+        return int(round(lum * (1.0 + tint)))
+    return int(round(lum * (1.0 - tint) + (_HLSMAX - _HLSMAX * (1.0 - tint))))
+
+
+def _theme_palette_from_workbook(wb) -> Optional[List[str]]:
+    """Parse theme accent/base colors as 6-char RRGGBB from the workbook."""
+    raw = getattr(wb, "loaded_theme", None)
+    if not raw:
+        return None
+    try:
+        xlmns = "http://schemas.openxmlformats.org/drawingml/2006/main"
+        root = fromstring(raw)
+        theme_el = root.find(QName(xlmns, "themeElements").text)
+        schemes = theme_el.findall(QName(xlmns, "clrScheme").text)
+        first = schemes[0]
+        out = []
+        for name in (
+            "lt1", "dk1", "lt2", "dk2",
+            "accent1", "accent2", "accent3", "accent4", "accent5", "accent6",
+        ):
+            el = first.find(QName(xlmns, name).text)
+            for child in list(el):
+                v = child.attrib.get("val", "")
+                if "window" in v:
+                    out.append(child.attrib["lastClr"])
+                else:
+                    out.append(child.attrib["val"])
+        return out
+    except Exception:
+        return None
+
+
+def _theme_and_tint_to_argb(hex6: str, tint: float) -> str:
+    h, l, s = _rgb_to_ms_hls(hex6)
+    l2 = _tint_luminance(tint, l)
+    body = _ms_hls_to_hex6(h, l2, s)
+    return "FF" + body
+
+
+def _pattern_fill_fg_argb(fill, theme_palette: Optional[List[str]]) -> Optional[str]:
     """
-    Return the ARGB color string for a team row, or None if no fill is set.
-    The team name cell carries the team's color consistently across all seasons.
+    Return 8-char aRGB (e.g. FFFF7C80) for PatternFill.fgColor, or None.
+    Handles rgb, indexed, and theme (+ tint) like the v4 league workbook uses.
+    """
+    if not fill or fill.fill_type is None or fill.fill_type == 'none':
+        return None
+    fg = fill.fgColor
+    t = fg.type
+
+    if t == 'rgb' and fg.rgb:
+        raw = str(fg.rgb).strip().upper()
+        if raw in ('00000000', '00', '0'):
+            return None
+        if len(raw) == 8:
+            return raw
+        if len(raw) == 6:
+            return "FF" + raw
+        return raw
+
+    if t == 'indexed' and fg.indexed is not None:
+        idx = int(fg.indexed)
+        if idx < 0 or idx >= len(COLOR_INDEX):
+            return None
+        entry = COLOR_INDEX[idx]
+        return entry if len(entry) == 8 else "FF" + entry[-6:].upper()
+
+    if t == 'theme' and fg.theme is not None and theme_palette:
+        ti = int(fg.theme)
+        if 0 <= ti < len(theme_palette):
+            tint = float(fg.tint or 0.0)
+            return _theme_and_tint_to_argb(theme_palette[ti], tint)
+
+    return None
+
+
+def _get_team_color(ws_styles, row, team_col, theme_palette: Optional[List[str]]):
+    """
+    Return the ARGB color string for a team row, or None if no usable fill.
     """
     cell = ws_styles.cell(row, team_col)
-    ft = cell.fill.fill_type
-    if not ft or ft == 'none':
-        return None
-    fg = cell.fill.fgColor
-    return fg.rgb if fg.type == 'rgb' else None
+    return _pattern_fill_fg_argb(cell.fill, theme_palette)
 
 
-def build_team_colors(ws_styles, team_col, player_col):
+def build_team_colors(ws_styles, team_col, player_col, theme_palette: Optional[List[str]]):
     """Return a dict of {team_name_lower: rgb_color} from the style sheet."""
     colors = {}
     for r in range(3, ws_styles.max_row + 1):
         team = ws_styles.cell(r, team_col).value
         if not team or not isinstance(team, str):
             continue
-        color = _get_team_color(ws_styles, r, team_col)
+        color = _get_team_color(ws_styles, r, team_col, theme_palette)
         if color:
             colors[team.strip().lower()] = color
     return colors
 
 
-def migrate_season(ws, ws_styles, season_num):
+def _team_color_for_name(team_colors: dict, name: str) -> Optional[str]:
+    """Resolve aRGB fill for a roster team name; exact key then substring match."""
+    key = name.strip().lower()
+    if not key:
+        return None
+    rgb = team_colors.get(key)
+    if rgb:
+        return rgb
+    for tk, rgb in team_colors.items():
+        if tk in key or key in tk:
+            return rgb
+    return None
+
+
+def migrate_season(ws, ws_styles, season_num, wb_book):
     """
     Read one v4 season sheet and return a list of v5 rows (as plain lists).
     """
@@ -224,11 +442,15 @@ def migrate_season(ws, ws_styles, season_num):
 
     # Parse opponent lookup
     matchups = {}
+    game5_winners = {}
     if matchup_start_col:
         matchups = parse_matchups(ws, matchup_start_col, max_regular_week)
+        game5_winners = parse_game5_winners(ws, matchup_start_col, max_regular_week)
+
+    theme_palette = _theme_palette_from_workbook(wb_book)
 
     # Build team color lookup (team_name_lower -> rgb)
-    team_colors = build_team_colors(ws_styles, team_col, player_col)
+    team_colors = build_team_colors(ws_styles, team_col, player_col, theme_palette)
 
     # Iterate player rows
     rows_out = []
@@ -267,6 +489,7 @@ def migrate_season(ws, ws_styles, season_num):
                 or weekly_avg == 0
             )
             opponent = matchups.get((team.lower(), abs_week), "")
+            game5_winner = game5_winners.get((team.lower(), abs_week), "")
 
             # Extract game scores for every row (absent or not).
             # ws_styles holds the raw formula string (loaded without data_only).
@@ -293,11 +516,12 @@ def migrate_season(ws, ws_styles, season_num):
                 g1, g2, g3, g4, g5,
                 avg,
                 "Y" if is_playoff else "N",
+                game5_winner,
                 "Y" if is_absent else "N", "N",
                 opponent
             ]
 
-            team_color = _get_team_color(ws_styles, row, team_col)
+            team_color = _get_team_color(ws_styles, row, team_col, theme_palette)
             rows_out.append((v5_row, team_color, opponent, team_colors))
             index += 1
 
@@ -321,12 +545,18 @@ def main():
     print(f"Seasons found: {[s for s in season_sheets]}")
     if SKIP_SEASONS:
         print(f"Skipping seasons (already in v5): {SKIP_SEASONS}\n")
+    if ONLY_SEASON_NUMBER is not None:
+        print(f"ONLY_SEASON_NUMBER={ONLY_SEASON_NUMBER} — migrating that season tab only.\n")
 
     wb_out = Workbook()
     wb_out.remove(wb_out.active)  # remove default blank sheet
 
     for sheet_name in season_sheets:
         season_num = int(sheet_name.split()[-1])
+
+        if ONLY_SEASON_NUMBER is not None and season_num != ONLY_SEASON_NUMBER:
+            print(f"Skipping {sheet_name} (only season {ONLY_SEASON_NUMBER} requested)")
+            continue
 
         if season_num in SKIP_SEASONS:
             print(f"Skipping {sheet_name} (in SKIP_SEASONS)")
@@ -345,7 +575,7 @@ def main():
         thin = Side(style='thin')
         border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-        rows = migrate_season(ws_vals, ws_styles, season_num)
+        rows = migrate_season(ws_vals, ws_styles, season_num, wb_styles)
         for row_data, team_color, opponent, team_colors in rows:
             ws_out.append(row_data)
             current_row = ws_out.max_row
@@ -362,8 +592,23 @@ def main():
                 if team_fill:
                     cell.fill = team_fill
 
-            # Opponent=15 — opponent's color
-            opp_cell = ws_out.cell(current_row, 15)
+            # Game 5 winner=13 — fill only when a winner is recorded; color matches that team
+            g5_val = row_data[12]
+            g5_name = str(g5_val).strip() if g5_val else ""
+            g5_cell = ws_out.cell(current_row, 13)
+            g5_cell.font = Font(bold=True)
+            g5_cell.border = border
+            if g5_name:
+                win_rgb = _team_color_for_name(team_colors, g5_name)
+                if win_rgb:
+                    g5_cell.fill = PatternFill(patternType='solid', fgColor=win_rgb)
+                else:
+                    g5_cell.fill = _NO_FILL
+            else:
+                g5_cell.fill = _NO_FILL
+
+            # Opponent=16 — opponent's color
+            opp_cell = ws_out.cell(current_row, 16)
             opp_cell.font = Font(bold=True)
             opp_cell.border = border
             if opp_fill:

@@ -1,0 +1,245 @@
+"""HTTP routes for the league site."""
+from __future__ import annotations
+
+import os
+from flask import Blueprint, Response, current_app, render_template, request
+
+bp = Blueprint("site", __name__)
+
+
+def _svc():
+    s = current_app.config.get("LEAGUE_SERVICE")
+    if not s:
+        return None
+    return s
+
+
+@bp.route("/health")
+def health():
+    sh = current_app.config.get("SHEET_HANDLER")
+    return {"ok": True, "sheets": bool(sh)}, 200
+
+
+@bp.route("/")
+def home():
+    svc = _svc()
+    if not svc:
+        return render_template("error.html", message="Spreadsheet not configured. Check GOOGLE_SHEET_ID and GOOGLE_CREDENTIALS."), 503
+    seasons = svc.seasons_sorted()
+    cur = svc.h._get_current_season()
+    latest_wk = svc.h.get_latest_week(cur) if cur else 1
+    weeks_by_season = {s: svc.h.list_weeks_for_season(s) for s in seasons}
+    last_sn = svc.resolve_season("last")
+    weeks_by_season["__last__"] = list(svc.h.list_weeks_for_season(last_sn)) if last_sn else []
+    return render_template(
+        "home.html",
+        seasons=seasons,
+        current_season=cur,
+        latest_week=latest_wk,
+        weeks_by_season=weeks_by_season,
+    )
+
+
+def _season_arg() -> str:
+    svc = _svc()
+    if not svc:
+        return ""
+    return svc.resolve_season(request.args.get("season"))
+
+
+def _embed_flag() -> bool:
+    v = (request.args.get("embed") or "").strip().lower()
+    return v in ("1", "true", "yes")
+
+
+def _week_arg():
+    raw = request.args.get("week")
+    if raw is None or (isinstance(raw, str) and str(raw).strip() == ""):
+        return None
+    s = str(raw).strip().lower()
+    if s in ("all", "*"):
+        return "all"
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+@bp.route("/week/summary")
+def week_summary():
+    svc = _svc()
+    if not svc:
+        return _no_svc()
+    season = _season_arg()
+    if season == "all":
+        season = svc.h._get_current_season()
+    week = _week_arg()
+    html, err = svc.weekly_summary_page(season, week, embed=_embed_flag())
+    if err:
+        return render_template("error.html", message=err), 400
+    return Response(html, mimetype="text/html; charset=utf-8")
+
+
+@bp.route("/week/results")
+def week_results():
+    svc = _svc()
+    if not svc:
+        return _no_svc()
+    season = _season_arg()
+    if season == "all":
+        season = svc.h._get_current_season()
+    week = _week_arg()
+    html, err = svc.weekly_results_page(season, week, embed=_embed_flag())
+    if err:
+        return render_template("error.html", message=err), 400
+    return Response(html, mimetype="text/html; charset=utf-8")
+
+
+@bp.route("/playoffs")
+def playoffs():
+    svc = _svc()
+    if not svc:
+        return _no_svc()
+    season = _season_arg()
+    html, err = svc.playoff_results_page(season, embed=_embed_flag())
+    if err:
+        return render_template("error.html", message=err), 400
+    return Response(html, mimetype="text/html; charset=utf-8")
+
+
+@bp.route("/bracket")
+def playoff_bracket():
+    svc = _svc()
+    if not svc:
+        return _no_svc()
+    raw = request.args.get("season")
+    if raw is None or str(raw).strip().lower() in ("", "all", "all-time", "alltime"):
+        html, err = svc.playoff_bracket_index_page(embed=_embed_flag())
+    else:
+        html, err = svc.playoff_bracket_page(_season_arg(), embed=_embed_flag())
+    if err:
+        return render_template("error.html", message=err), 400
+    return Response(html, mimetype="text/html; charset=utf-8")
+
+
+@bp.route("/players")
+def players():
+    svc = _svc()
+    if not svc:
+        return _no_svc()
+    html, err = svc.players_page(_season_arg(), embed=_embed_flag())
+    if err:
+        return render_template("error.html", message=err), 400
+    return Response(html, mimetype="text/html; charset=utf-8")
+
+
+@bp.route("/teams")
+def teams():
+    svc = _svc()
+    if not svc:
+        return _no_svc()
+    html, err = svc.teams_page(_season_arg(), embed=_embed_flag())
+    if err:
+        return render_template("error.html", message=err), 400
+    return Response(html, mimetype="text/html; charset=utf-8")
+
+
+@bp.route("/leaders")
+def leaders():
+    svc = _svc()
+    if not svc:
+        return _no_svc()
+    html, err = svc.leaders_page(_season_arg(), embed=_embed_flag())
+    if err:
+        return render_template("error.html", message=err), 400
+    return Response(html, mimetype="text/html; charset=utf-8")
+
+
+@bp.route("/team/<path:team_name>/weekly")
+def team_weekly(team_name: str):
+    svc = _svc()
+    if not svc:
+        return _no_svc()
+    html, err = svc.team_weekly_page(team_name, _season_arg(), embed=_embed_flag())
+    if err:
+        return render_template("error.html", message=err), 400
+    return Response(html, mimetype="text/html; charset=utf-8")
+
+
+@bp.route("/top/players")
+def top_players():
+    svc = _svc()
+    if not svc:
+        return _no_svc()
+    n = request.args.get("n", default=5, type=int)
+    worst = request.args.get("worst", default=0, type=int) == 1
+    week = request.args.get("week", type=int)
+    html, err = svc.top_players_page(_season_arg(), n, worst, week, embed=_embed_flag())
+    if err:
+        return render_template("error.html", message=err), 400
+    return Response(html, mimetype="text/html; charset=utf-8")
+
+
+@bp.route("/top/games")
+def top_games():
+    svc = _svc()
+    if not svc:
+        return _no_svc()
+    n = request.args.get("n", default=5, type=int)
+    worst = request.args.get("worst", default=0, type=int) == 1
+    html, err = svc.top_games_page(_season_arg(), n, worst, embed=_embed_flag())
+    if err:
+        return render_template("error.html", message=err), 400
+    return Response(html, mimetype="text/html; charset=utf-8")
+
+
+@bp.route("/player")
+def player_query():
+    svc = _svc()
+    if not svc:
+        return _no_svc()
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return render_template("error.html", message="Missing q= player name."), 400
+    season = _season_arg()
+    if season != "all":
+        matches = svc.find_player_names(q, season)
+        if len(matches) > 1:
+            return render_template(
+                "pick_player.html",
+                query=q,
+                season=request.args.get("season") or "",
+                matches=matches,
+            )
+    html, err = svc.player_detail_page(q, season, embed=_embed_flag())
+    if err:
+        return render_template("error.html", message=err), 400
+    return Response(html, mimetype="text/html; charset=utf-8")
+
+
+@bp.route("/player/<path:name>")
+def player_named(name: str):
+    svc = _svc()
+    if not svc:
+        return _no_svc()
+    season = _season_arg()
+    html, err = svc.player_detail_page(name, season, embed=_embed_flag())
+    if err:
+        return render_template("error.html", message=err), 400
+    return Response(html, mimetype="text/html; charset=utf-8")
+
+
+@bp.route("/reload", methods=["POST"])
+def reload_sheet():
+    secret = os.environ.get("RELOAD_SECRET", "").strip()
+    if secret and request.args.get("key") != secret:
+        return Response("Forbidden", status=403)
+    svc = _svc()
+    if not svc:
+        return _no_svc()
+    ok, msg = svc.reload_data()
+    return Response(msg, status=200 if ok else 500)
+
+
+def _no_svc():
+    return render_template("error.html", message="Spreadsheet not configured."), 503

@@ -1,8 +1,10 @@
 # BowlBot Setup Guide
 
-## Overview
+> **Note:** The project is now a **Flask website** backed by Google Sheets. WhatsApp / Claude command parsing has been removed. See **[README.md](README.md)** for current run instructions. The sections below are largely historical.
 
-BowlBot is a WhatsApp bot that connects to your bowling league Excel file to query team scores, player scores, and enter new scores.
+## Overview (historical)
+
+Previously this was a WhatsApp bot that connected to your bowling league Excel file to query team scores, player scores, and enter new scores.
 
 ## Features
 

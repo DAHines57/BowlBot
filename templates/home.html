@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bowl League</title>
+  <style>
+    :root {
+      --bg: #12101a;
+      --bg-elevated: #16121f;
+      --card: #1a1730;
+      --border: #2a2050;
+      --text: #e8e6ef;
+      --muted: #9a96a8;
+      --accent: #ffb86c;
+      --mint: #50fa7b;
+      --header-accent: #2d1b69;
+      --shadow: rgba(0, 0, 0, 0.35);
+      --ease: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      --dur: 0.22s;
+      --scores-h-mobile: min(72vh, 520px);
+      --scores-h-desktop: calc(100vh - 2rem);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+      body::before,
+      .hero-ico {
+        animation: none !important;
+      }
+      .card,
+      .scores-pane .embed-panel {
+        animation: none !important;
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      min-height: 100vh;
+      line-height: 1.5;
+      position: relative;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      background:
+        radial-gradient(ellipse 90% 60% at 10% -15%, rgba(255, 184, 108, 0.16), transparent 55%),
+        radial-gradient(ellipse 70% 50% at 105% 5%, rgba(80, 250, 123, 0.09), transparent 50%),
+        radial-gradient(ellipse 80% 70% at 50% 110%, rgba(45, 27, 105, 0.45), transparent 55%),
+        var(--bg);
+    }
+
+    @keyframes ambientShift {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.92; }
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      body::before {
+        animation: ambientShift 14s ease-in-out infinite;
+      }
+    }
+
+    .shell {
+      max-width: 28rem;
+      margin: 0 auto;
+      padding: 1.25rem 1rem 2.5rem;
+      animation: pageIn 0.45s var(--ease) both;
+    }
+
+    @keyframes pageIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (min-width: 900px) {
+      .shell {
+        max-width: 1200px;
+        padding: 1.25rem 1.25rem 2.5rem;
+      }
+    }
+
+    .hero {
+      margin-bottom: 1.25rem;
+    }
+
+    .hero h1 {
+      font-size: clamp(1.45rem, 3.2vw, 2rem);
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      margin: 0 0 0.45rem;
+      line-height: 1.15;
+      background: linear-gradient(120deg, #ffb86c 0%, #ffe0c2 38%, #7bffc9 95%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      filter: drop-shadow(0 2px 14px rgba(255, 184, 108, 0.22));
+    }
+
+    .hero-ico {
+      display: inline-block;
+      margin-right: 0.35rem;
+    }
+
+    @keyframes iconNudge {
+      0%, 100% { transform: rotate(-6deg) scale(1); }
+      50% { transform: rotate(6deg) scale(1.06); }
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .hero-ico {
+        animation: iconNudge 3.2s ease-in-out infinite;
+      }
+    }
+
+    .hero .sub {
+      color: var(--muted);
+      font-size: clamp(0.88rem, 1.5vw, 0.98rem);
+      max-width: 46em;
+      margin: 0;
+    }
+
+    .layout {
+      display: flex;
+      flex-direction: column;
+      gap: 1.15rem;
+    }
+
+    @media (min-width: 900px) {
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
+        gap: 1.25rem;
+        align-items: stretch;
+      }
+    }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 1.15rem;
+    }
+
+    @media (min-width: 900px) {
+      .sidebar {
+        max-height: var(--scores-h-desktop);
+        overflow-y: auto;
+        position: sticky;
+        top: 1rem;
+        align-self: start;
+        padding-right: 2px;
+      }
+    }
+
+    .scores-pane {
+      display: flex;
+      flex-direction: column;
+      min-height: var(--scores-h-mobile);
+    }
+
+    @media (min-width: 900px) {
+      .scores-pane {
+        position: sticky;
+        top: 1rem;
+        align-self: start;
+        height: var(--scores-h-desktop);
+        max-height: var(--scores-h-desktop);
+        min-height: 0;
+      }
+    }
+
+    @keyframes cardRise {
+      from { opacity: 0; transform: translateY(14px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.05rem 1.1rem;
+      transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), transform var(--dur) var(--ease);
+      animation: cardRise 0.55s var(--ease) both;
+    }
+
+    .sidebar > .panels > .card:nth-child(1) { animation-delay: 0.05s; }
+    .sidebar > .panels > .card:nth-child(2) { animation-delay: 0.1s; }
+    .sidebar > .panels > .card:nth-child(3) { animation-delay: 0.15s; }
+    .sidebar > .panels > .card:nth-child(4) { animation-delay: 0.2s; }
+
+    .card--season-totals {
+      border-color: rgba(184, 201, 255, 0.28);
+    }
+
+    .card--alltime {
+      border-color: rgba(80, 250, 123, 0.35);
+      background: linear-gradient(165deg, rgba(26, 23, 48, 0.98) 0%, rgba(18, 30, 28, 0.55) 100%);
+      box-shadow: 0 0 0 1px rgba(80, 250, 123, 0.08), 0 8px 28px rgba(0, 0, 0, 0.25);
+    }
+
+    .card-hint {
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin: 0 0 0.75rem;
+      line-height: 1.45;
+    }
+
+    @media (min-width: 900px) {
+      .card:hover {
+        border-color: #3d3066;
+        box-shadow: 0 12px 32px var(--shadow);
+      }
+      .card--alltime:hover {
+        border-color: rgba(123, 255, 201, 0.45);
+        box-shadow: 0 12px 36px rgba(45, 27, 105, 0.35);
+      }
+    }
+
+    .card > label:first-child,
+    .card .field-label {
+      display: block;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.65rem;
+    }
+
+    .context-card .row {
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+    }
+
+    @media (min-width: 600px) {
+      .context-card .row {
+        flex-direction: row;
+        gap: 1rem;
+      }
+      .context-card .field { flex: 1; min-width: 0; }
+    }
+
+    label.field-hint {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 0.35rem;
+      font-weight: 500;
+      letter-spacing: normal;
+      text-transform: none;
+    }
+
+    select, input[type="number"], input[type="text"] {
+      width: 100%;
+      padding: 0.55rem 0.65rem;
+      background: var(--bg-elevated);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.95rem;
+      transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+    }
+
+    select:focus, input:focus {
+      outline: none;
+      border-color: var(--mint);
+      box-shadow: 0 0 0 3px rgba(80, 250, 123, 0.18);
+    }
+
+    .panels {
+      display: flex;
+      flex-direction: column;
+      gap: 1.15rem;
+    }
+
+    .btn-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    @media (min-width: 640px) {
+      .btn-grid.cols-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.5rem;
+      }
+    }
+
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      text-align: center;
+      padding: 0.58rem 0.8rem;
+      background: linear-gradient(180deg, #352080 0%, var(--header-accent) 100%);
+      color: var(--accent);
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.9rem;
+      border: 1px solid #3d2a7a;
+      cursor: pointer;
+      transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease),
+                  filter var(--dur) var(--ease), border-color var(--dur) var(--ease);
+    }
+
+    .btn:hover {
+      filter: brightness(1.08);
+      box-shadow: 0 6px 22px rgba(45, 27, 105, 0.45);
+      transform: translateY(-2px);
+      border-color: #5a43a3;
+    }
+
+    .btn:active {
+      transform: scale(0.98) translateY(0);
+      box-shadow: 0 2px 10px rgba(45, 27, 105, 0.35);
+    }
+
+    .btn--spark {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn--spark::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(105deg, transparent 40%, rgba(255, 255, 255, 0.12) 50%, transparent 60%);
+      transform: translateX(-100%);
+      transition: transform 0.55s var(--ease);
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .btn--spark:hover::after {
+        transform: translateX(100%);
+      }
+    }
+
+    .btn--ghost {
+      background: rgba(45, 27, 105, 0.35);
+      border-color: #4a3a80;
+      color: #c8b4ff;
+    }
+
+    .btn--ghost:hover {
+      border-color: #7bffc9;
+      color: #e8fff4;
+    }
+
+    footer {
+      margin-top: 1.75rem;
+      padding-top: 1.15rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.76rem;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    code {
+      background: var(--bg-elevated);
+      padding: 0.12rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.85em;
+      border: 1px solid var(--border);
+    }
+
+    .stack-v {
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+    }
+
+    .embed-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--bg-elevated);
+      overflow: hidden;
+      transition: box-shadow 0.35s var(--ease), border-color 0.35s var(--ease);
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .embed-panel {
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2), 0 0 40px rgba(80, 250, 123, 0.04);
+      }
+      .embed-panel.loading {
+        border-color: rgba(80, 250, 123, 0.35);
+        box-shadow: 0 4px 28px rgba(45, 27, 105, 0.35), 0 0 48px rgba(80, 250, 123, 0.1);
+      }
+    }
+
+    .embed-progress {
+      height: 0;
+      overflow: hidden;
+      flex-shrink: 0;
+      background: rgba(80, 250, 123, 0.12);
+      transition: height 0.2s var(--ease);
+    }
+
+    .embed-panel.loading .embed-progress {
+      height: 3px;
+    }
+
+    .embed-progress-inner {
+      height: 3px;
+      width: 40%;
+      background: linear-gradient(90deg, var(--mint), #7bffc9);
+      animation: progressSlide 0.9s var(--ease) infinite;
+    }
+
+    @keyframes progressSlide {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(350%); }
+    }
+
+    .embed-toolbar {
+      flex-shrink: 0;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.6rem;
+      padding: 0.55rem 0.75rem;
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .embed-toolbar #embed-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .embed-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.45rem 0.85rem;
+    }
+
+    .embed-actions button {
+      font: inherit;
+      font-size: 0.82rem;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: background var(--dur) var(--ease), color var(--dur) var(--ease), transform 0.15s var(--ease);
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      padding: 0.3rem 0.55rem;
+    }
+
+    .embed-actions button:hover {
+      color: var(--text);
+      border-color: #5a4a80;
+    }
+
+    .embed-actions button:active {
+      transform: scale(0.98);
+    }
+
+    .embed-frame-wrap {
+      position: relative;
+      flex: 1;
+      min-height: 200px;
+      background: #12101a;
+    }
+
+    @media (min-width: 900px) {
+      .embed-frame-wrap {
+        min-height: 0;
+      }
+    }
+
+    .embed-panel.loading .embed-loading {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .embed-loading {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.88rem;
+      color: var(--muted);
+      background: rgba(18, 16, 26, 0.82);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s var(--ease);
+      z-index: 2;
+    }
+
+    #embed-frame {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: #12101a;
+      opacity: 1;
+      transition: opacity 0.2s var(--ease);
+    }
+
+    .embed-panel.loading #embed-frame {
+      opacity: 0.35;
+    }
+
+    .embed-placeholder {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 1.25rem;
+      color: var(--muted);
+      pointer-events: none;
+      background: linear-gradient(180deg, #15121c 0%, #12101a 100%);
+    }
+
+    .embed-placeholder.is-hidden {
+      display: none;
+    }
+
+    .embed-placeholder strong {
+      display: block;
+      color: var(--text);
+      font-size: 0.95rem;
+      margin-bottom: 0.35rem;
+      font-weight: 600;
+    }
+
+    .embed-placeholder .hint {
+      font-size: 0.82rem;
+      margin: 0;
+      max-width: 260px;
+    }
+
+    .scores-pane .embed-panel {
+      animation: cardRise 0.6s var(--ease) 0.14s both;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="hero">
+      <h1><span class="hero-ico" aria-hidden="true">🎳</span>Bowl League</h1>
+      <p class="sub"><strong style="color:#b8c9ff;font-weight:600;">This week</strong> uses season + week. <strong style="color:#e8c4ff;font-weight:600;">Season totals</strong> is only the season. <strong style="color:#b8ffe0;font-weight:600;">All seasons</strong> is career/combined.</p>
+    </header>
+
+    <div class="layout">
+      <div class="sidebar">
+        <div class="panels">
+          <section class="card card--this-season context-card">
+            <form id="ctx" onsubmit="return false;">
+              <span class="field-label">This week</span>
+              <p class="card-hint" style="margin-top:0;">Picks a single week (or all weeks). Does not use <em>Season totals</em>.</p>
+              <div class="row">
+                <div class="field">
+                  <label class="field-hint" for="season_this">Season</label>
+                  <select id="season_this" name="season_this">
+                    {% for s in seasons %}
+                    <option value="{{ s }}" {% if s == current_season %}selected{% endif %}>{{ s }}</option>
+                    {% endfor %}
+                    <option value="last">Last season</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="field-hint" for="week_this">Week</label>
+                  <select id="week_this" name="week_this" title="Weeks present in this season (from sheet)"></select>
+                </div>
+              </div>
+            </form>
+            <div class="btn-grid cols-2" style="margin-top:0.85rem;">
+              <a class="btn btn--spark" href="#" onclick="go('/week/summary', 'Weekly summary'); return false;">Weekly summary</a>
+              <a class="btn btn--spark" href="#" onclick="go('/week/results', 'Weekly matchups'); return false;">Weekly matchups</a>
+            </div>
+          </section>
+
+          <section class="card card--season-totals">
+            <span class="field-label">Season totals</span>
+            <p class="card-hint" style="margin-top:0;">Season-long stats — no week. Same sheet seasons as above.</p>
+            <div class="field" style="margin-bottom:0.75rem;">
+              <label class="field-hint" for="season_standings">Season</label>
+              <select id="season_standings" name="season_standings">
+                {% for s in seasons %}
+                <option value="{{ s }}" {% if s == current_season %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+                <option value="last">Last season</option>
+              </select>
+            </div>
+            <div class="btn-grid cols-2">
+              <a class="btn btn--spark" href="#" onclick="goSeasonTotals('/players', 'All players'); return false;">All players</a>
+              <a class="btn btn--spark" href="#" onclick="goSeasonTotals('/teams', 'Team standings'); return false;">Team standings</a>
+              <a class="btn btn--spark" href="#" style="grid-column: 1 / -1;" onclick="goSeasonTotals('/leaders', 'League leaders'); return false;">League leaders</a>
+              <a class="btn btn--ghost btn--spark" href="#" style="grid-column: 1 / -1;" onclick="goSeasonTotals('/bracket', 'Playoffs'); return false;">Playoffs (bracket &amp; scores)</a>
+            </div>
+          </section>
+
+          <section class="card card--alltime">
+            <span class="field-label">All seasons</span>
+            <p class="card-hint">Combined career totals and records across every season in the spreadsheet.</p>
+            <div class="btn-grid cols-2">
+              <a class="btn btn--spark" href="#" onclick="openAlltime('/leaders', 'All-season leaders'); return false;">League leaders</a>
+              <a class="btn btn--spark" href="#" onclick="openAlltime('/players', 'All-season players'); return false;">All players</a>
+              <a class="btn btn--ghost btn--spark" href="#" style="grid-column: 1 / -1;" onclick="openAlltimeTopGames(); return false;">Best single games (top 50)</a>
+            </div>
+          </section>
+
+          <section class="card">
+            <span class="field-label">Lookups</span>
+            <p class="card-hint" style="margin-top:0;">Uses the <strong>Season totals</strong> season above.</p>
+            <div class="stack-v">
+              <div>
+                <label class="field-hint" for="playerq">Player</label>
+                <input type="text" id="playerq" placeholder="First name or full name">
+                <a class="btn btn--spark" href="#" style="margin-top:0.5rem;" onclick="findPlayer(); return false;">View player</a>
+              </div>
+              <div>
+                <label class="field-hint" for="teamq">Team (weekly breakdown)</label>
+                <input type="text" id="teamq" placeholder="Team name">
+                <a class="btn btn--spark" href="#" style="margin-top:0.5rem;" onclick="teamWeekly(); return false;">Team season weeks</a>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <div class="scores-pane">
+        <div id="embed-panel" class="embed-panel" aria-label="Scores preview">
+          <div class="embed-progress" aria-hidden="true"><div class="embed-progress-inner"></div></div>
+          <div class="embed-toolbar">
+            <span id="embed-title">Scores</span>
+            <div class="embed-actions">
+              <button type="button" id="embed-close">Clear</button>
+            </div>
+          </div>
+          <div class="embed-frame-wrap">
+            <div id="embed-placeholder" class="embed-placeholder">
+              <strong>Preview</strong>
+              <p class="hint">Loading default report… or tap a report to switch.</p>
+            </div>
+            <div class="embed-loading" aria-hidden="true">Loading…</div>
+            <iframe id="embed-frame" title="Scores preview"></iframe>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      Local: <code>python main.py</code> → <code>http://127.0.0.1:3000</code><br>
+      Reload sheet: <code>POST /reload?key=…</code> if <code>RELOAD_SECRET</code> is set.
+    </footer>
+  </div>
+
+  <script type="application/json" id="weeks-data">{{ weeks_by_season | tojson }}</script>
+  <script>
+    (function () {
+      var lastPreview = null;
+      var replayTimer = null;
+      var narrowMq = window.matchMedia("(max-width: 899px)");
+      var WEEKS = JSON.parse(document.getElementById("weeks-data").textContent);
+      var INITIAL_LATEST = {{ latest_week | int }};
+
+      function weekListKey() {
+        var s = document.getElementById("season_this").value;
+        return s === "last" ? "__last__" : s;
+      }
+
+      function rebuildWeekSelect(preserveValue) {
+        var sel = document.getElementById("week_this");
+        var key = weekListKey();
+        var list = WEEKS[key] || [];
+        sel.innerHTML = "";
+        var oAll = document.createElement("option");
+        oAll.value = "all";
+        oAll.textContent = "All weeks";
+        sel.appendChild(oAll);
+        list.forEach(function (w) {
+          var o = document.createElement("option");
+          o.value = String(w);
+          o.textContent = "Week " + w;
+          sel.appendChild(o);
+        });
+        var ok = function (v) {
+          return [].some.call(sel.options, function (op) { return op.value === v; });
+        };
+        if (preserveValue && ok(preserveValue)) {
+          sel.value = preserveValue;
+        } else if (list.length && ok(String(INITIAL_LATEST))) {
+          sel.value = String(INITIAL_LATEST);
+        } else if (list.length) {
+          sel.value = String(list[list.length - 1]);
+        } else {
+          sel.value = "all";
+        }
+      }
+
+      function qsThisSeason() {
+        var season = document.getElementById("season_this").value;
+        var week = document.getElementById("week_this").value;
+        return "season=" + encodeURIComponent(season) + "&week=" + encodeURIComponent(week);
+      }
+
+      function qsSeasonTotals() {
+        return "season=" + encodeURIComponent(document.getElementById("season_standings").value);
+      }
+
+      function inferScope(search) {
+        var u = new URL(search, window.location.origin);
+        if (u.searchParams.get("season") === "all") return "alltime";
+        var p = u.pathname;
+        if (p.indexOf("/week/") === 0 || p === "/playoffs" || p === "/bracket") return "this_week";
+        return "season_totals";
+      }
+
+      function withEmbed(href) {
+        var u = new URL(href, window.location.origin);
+        u.searchParams.set("embed", "1");
+        return u.pathname + u.search;
+      }
+
+      function setPlaceholder(show) {
+        var ph = document.getElementById("embed-placeholder");
+        if (show) ph.classList.remove("is-hidden");
+        else ph.classList.add("is-hidden");
+      }
+
+      function showPanel(fullPathWithQuery, title, options) {
+        options = options || {};
+        var panel = document.getElementById("embed-panel");
+        var frame = document.getElementById("embed-frame");
+        var titleEl = document.getElementById("embed-title");
+        var base = new URL(fullPathWithQuery, window.location.origin);
+        if (!options.noStore) {
+          lastPreview = {
+            href: base.pathname + base.search,
+            title: title || "Scores",
+            scope: options.scope || inferScope(base.pathname + base.search),
+          };
+        }
+        panel.classList.add("loading");
+        titleEl.textContent = title || "Scores";
+        setPlaceholder(false);
+        frame.src = withEmbed(base.pathname + base.search);
+        if (!options.skipScroll && narrowMq.matches) {
+          panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+      }
+
+      function replayThisWeek() {
+        if (!lastPreview || lastPreview.scope !== "this_week") return;
+        var old = new URL(lastPreview.href, window.location.origin);
+        var path = old.pathname;
+        var title = lastPreview.title;
+        var sp;
+        if (path === "/bracket" || path === "/playoffs") {
+          sp = new URLSearchParams();
+          sp.set("season", document.getElementById("season_this").value);
+          old.searchParams.forEach(function (val, key) {
+            if (key !== "season") sp.set(key, val);
+          });
+        } else {
+          sp = new URLSearchParams(qsThisSeason());
+          old.searchParams.forEach(function (val, key) {
+            if (key !== "season" && key !== "week") sp.set(key, val);
+          });
+        }
+        showPanel(path + "?" + sp.toString(), title, { skipScroll: true, noStore: true, scope: "this_week" });
+      }
+
+      function replaySeasonTotals() {
+        if (!lastPreview || lastPreview.scope !== "season_totals") return;
+        var old = new URL(lastPreview.href, window.location.origin);
+        var path = old.pathname;
+        var title = lastPreview.title;
+        if (path === "/player") {
+          var q = old.searchParams.get("q") || "";
+          var season = document.getElementById("season_standings").value;
+          showPanel("/player?q=" + encodeURIComponent(q) + "&season=" + encodeURIComponent(season), title, { skipScroll: true, noStore: true, scope: "season_totals" });
+          return;
+        }
+        if (path === "/bracket") {
+          var sBr = document.getElementById("season_standings").value;
+          showPanel("/bracket?season=" + encodeURIComponent(sBr), title, { skipScroll: true, noStore: true, scope: "season_totals" });
+          return;
+        }
+        if (/^\/team\/.+\/weekly$/i.test(path)) {
+          var seasonW = document.getElementById("season_standings").value;
+          showPanel(path + "?season=" + encodeURIComponent(seasonW), title, { skipScroll: true, noStore: true, scope: "season_totals" });
+          return;
+        }
+        var sp = new URLSearchParams(qsSeasonTotals());
+        old.searchParams.forEach(function (val, key) {
+          if (key !== "season") sp.set(key, val);
+        });
+        showPanel(path + "?" + sp.toString(), title, { skipScroll: true, noStore: true, scope: "season_totals" });
+      }
+
+      function scheduleReplay() {
+        clearTimeout(replayTimer);
+        replayTimer = setTimeout(function () {
+          if (!lastPreview) return;
+          if (lastPreview.scope === "this_week") replayThisWeek();
+          else if (lastPreview.scope === "season_totals") replaySeasonTotals();
+        }, 120);
+      }
+
+      document.getElementById("embed-frame").addEventListener("load", function () {
+        document.getElementById("embed-panel").classList.remove("loading");
+      });
+
+      document.getElementById("embed-close").addEventListener("click", function () {
+        lastPreview = null;
+        document.getElementById("embed-frame").src = "about:blank";
+        setPlaceholder(true);
+        document.getElementById("embed-title").textContent = "Scores";
+        var hint = document.querySelector("#embed-placeholder .hint");
+        if (hint) hint.textContent = "Pick a report — scrolling stays inside the preview.";
+      });
+
+      document.addEventListener("keydown", function (e) {
+        if (e.key !== "Escape") return;
+        if (lastPreview) document.getElementById("embed-close").click();
+      });
+
+      document.getElementById("season_this").addEventListener("change", function () {
+        rebuildWeekSelect(null);
+        scheduleReplay();
+      });
+      document.getElementById("week_this").addEventListener("change", scheduleReplay);
+      document.getElementById("season_standings").addEventListener("change", scheduleReplay);
+
+      function go(path, title) {
+        if (path.indexOf("/week/") !== -1 && document.getElementById("week_this").value === "all") {
+          if (path.indexOf("summary") !== -1) title = "Weekly summary — all weeks";
+          else title = "Weekly matchups — all weeks";
+        }
+        showPanel(path + "?" + qsThisSeason(), title || "Scores", { scope: "this_week" });
+      }
+
+      function goSeasonTotals(path, title) {
+        var s = document.getElementById("season_standings").value;
+        if (path === "/teams" && s === "all") {
+          window.alert("Team standings need a specific season.");
+          return;
+        }
+        showPanel(path + "?" + qsSeasonTotals(), title || "Scores", { scope: "season_totals" });
+      }
+
+      function openAlltime(path, title) {
+        showPanel(path + "?season=all", title || "All seasons", { scope: "alltime" });
+      }
+
+      function openAlltimeTopGames() {
+        showPanel("/top/games?season=all&n=50", "Best games (all seasons)", { scope: "alltime" });
+      }
+
+      function findPlayer() {
+        var q = document.getElementById("playerq").value.trim();
+        if (!q) { window.alert("Enter a name"); return; }
+        var season = document.getElementById("season_standings").value;
+        showPanel("/player?q=" + encodeURIComponent(q) + "&season=" + encodeURIComponent(season), "Player lookup", { scope: "season_totals" });
+      }
+
+      function teamWeekly() {
+        var t = document.getElementById("teamq").value.trim();
+        if (!t) { window.alert("Enter team name"); return; }
+        var season = document.getElementById("season_standings").value;
+        showPanel("/team/" + encodeURIComponent(t) + "/weekly?season=" + encodeURIComponent(season), "Team season weeks", { scope: "season_totals" });
+      }
+
+      window.go = go;
+      window.goSeasonTotals = goSeasonTotals;
+      window.openAlltime = openAlltime;
+      window.openAlltimeTopGames = openAlltimeTopGames;
+      window.findPlayer = findPlayer;
+      window.teamWeekly = teamWeekly;
+
+      function initWeeksAndAutoOpen() {
+        rebuildWeekSelect(String(INITIAL_LATEST));
+        showPanel("/week/summary?" + qsThisSeason(), "Weekly summary", { skipScroll: true, scope: "this_week" });
+      }
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initWeeksAndAutoOpen);
+      } else {
+        initWeeksAndAutoOpen();
+      }
+    })();
+  </script>
+</body>
+</html>

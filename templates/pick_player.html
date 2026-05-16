@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pick a player</title>
+  <style>
+    :root { --ease: cubic-bezier(0.25, 0.46, 0.45, 0.94); --dur: 0.2s; --border: #2a2050; }
+    @media (prefers-reduced-motion: reduce) {
+      * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+    }
+    body {
+      font-family: system-ui, sans-serif;
+      background: #12101a;
+      color: #e8e6ef;
+      margin: 0;
+      min-height: 100vh;
+      padding: 1.75rem 1.25rem 2.5rem;
+    }
+    .shell {
+      max-width: min(28rem, 100%);
+      margin: 0 auto;
+      animation: in 0.35s var(--ease) both;
+    }
+    @keyframes in {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: none; }
+    }
+    h1 { color: #ffb86c; font-size: clamp(1.15rem, 2.5vw, 1.35rem); margin: 0 0 0.35rem; }
+    .muted { color: #9a96a8; font-size: 0.92rem; margin: 0 0 1rem; }
+    p { margin: 0 0 0.65rem; line-height: 1.5; }
+    .list { display: flex; flex-direction: column; gap: 0.35rem; margin: 0.5rem 0 0; }
+    .list a {
+      display: block;
+      color: #50fa7b;
+      padding: 0.55rem 0.75rem;
+      background: #1a1730;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.95rem;
+      transition: transform var(--dur) var(--ease), border-color var(--dur) var(--ease),
+                  box-shadow var(--dur) var(--ease), filter var(--dur) var(--ease);
+    }
+    .list a:hover {
+      border-color: #3d3066;
+      filter: brightness(1.06);
+      box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+      transform: translateY(-1px);
+    }
+    .list a:active { transform: scale(0.98); }
+    .back { margin-top: 1.75rem; }
+    .back a {
+      color: #9a96a8;
+      font-weight: 500;
+      font-size: 0.9rem;
+      text-decoration: none;
+      padding: 0.35rem 0.45rem;
+      margin: -0.35rem -0.45rem;
+      border-radius: 6px;
+      display: inline-block;
+      transition: color var(--dur) var(--ease), background var(--dur) var(--ease), transform 0.15s var(--ease);
+    }
+    .back a:hover { color: #50fa7b; background: rgba(80, 250, 123, 0.08); }
+    .back a:active { transform: scale(0.97); }
+    @media (min-width: 640px) {
+      .list { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+    }
+    @media (min-width: 900px) {
+      .shell { max-width: 42rem; }
+      body { padding: 2.25rem 2rem 3rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <h1>Multiple matches</h1>
+    <p class="muted">Search: {{ query }}{% if season %} · {{ season }}{% endif %}</p>
+    <p>Choose one:</p>
+    <div class="list">
+      {% for m in matches %}
+      <a href="{{ url_for('site.player_named', name=m) }}{% if season %}?season={{ season|urlencode }}{% endif %}">{{ m }}</a>
+      {% endfor %}
+    </div>
+    <p class="back"><a href="/">← Home</a></p>
+  </div>
+</body>
+</html>

@@ -12,8 +12,16 @@ class SheetHandler(ABC):
     """Abstract base class for sheet handlers."""
     
     @abstractmethod
-    def get_team_scores(self, team_name: Optional[str] = None, season: Optional[str] = None, week: Optional[int] = None) -> Dict:
-        """Get team scores. If team_name is None, return all teams."""
+    def get_team_scores(
+        self,
+        team_name: Optional[str] = None,
+        season: Optional[str] = None,
+        week: Optional[int] = None,
+        through_week: Optional[int] = None,
+    ) -> Dict:
+        """Get team scores. If team_name is None, return all teams.
+        If through_week is set, aggregate only rows with Week <= through_week and exclude playoff-flagged rows.
+        Do not pass both week and through_week."""
         pass
     
     @abstractmethod
@@ -97,16 +105,56 @@ class ExcelHandler(SheetHandler):
         if isinstance(value, str):
             return value.upper() in ['Y', 'YES', 'TRUE', '1']
         return bool(value)
-    
-    def get_team_scores(self, team_name: Optional[str] = None, season: Optional[str] = None, week: Optional[int] = None) -> Dict:
+
+    def _is_playoff_row(self, value) -> bool:
+        """True if v5 'Playoffs?' column (col 12) marks this player-week as playoffs."""
+        if value is None:
+            return False
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().upper() in ['Y', 'YES', 'TRUE', '1']
+        return bool(value)
+
+    def _name_matches_sheet_team_value(self, roster_name: str, sheet_value: str) -> bool:
+        """Loose match: roster team vs 'Game 5 winner' / opponent string from the sheet."""
+        if not roster_name or not sheet_value:
+            return False
+        a = self._normalize(str(roster_name).strip())
+        b = self._normalize(str(sheet_value).strip())
+        return a == b or a in b or b in a
+
+    def _fifth_game_pins_decisive(self, td: Dict, opp: Dict) -> bool:
+        """True if Game 5 has real pin totals for both teams and they differ."""
+        gp_h = td.get("game_pins") or []
+        gp_a = opp.get("game_pins") or []
+        if len(gp_h) < 5 or len(gp_a) < 5:
+            return False
+        hp = int(gp_h[4])
+        ap = int(gp_a[4])
+        if hp <= 0 or ap <= 0:
+            return False
+        return hp != ap
+
+    def get_team_scores(
+        self,
+        team_name: Optional[str] = None,
+        season: Optional[str] = None,
+        week: Optional[int] = None,
+        through_week: Optional[int] = None,
+    ) -> Dict:
         """Get team scores from Excel. Team average is average of individual player averages.
         Total pins includes absences but excludes substitutes.
         Calculates wins/losses/ties from weekly matchups.
         If week is specified, returns individual games for that week.
+        If through_week is set (and week is None), stats include only weeks 1..through_week (excluding playoff rows).
         If season is None, uses the latest/current season."""
         # Save week parameter immediately to avoid it being overwritten by loop variables
         week_param = week
-        
+        through_param = through_week
+        if week_param is not None and through_param is not None:
+            return {"error": "Use either week or through_week, not both."}
+
         # If no season specified, use current season
         if season is None:
             season = self._get_current_season()
@@ -129,22 +177,28 @@ class ExcelHandler(SheetHandler):
         team_data = {}
         
         # Column mapping: Index=1 (ignored), Team=2, Player=3, Season=4, Week=5, Game1=6, Game2=7, Game3=8, Game4=9, Game5=10, Average=11
-        # Absent?=13, Substitute?=14, Opponent=15
+        # Playoffs?=12, Game 5 winner=13, Absent?=14, Substitute?=15, Opponent=16
         for row in range(2, sheet.max_row + 1):
             row_team = sheet.cell(row=row, column=2).value
             row_player = sheet.cell(row=row, column=3).value
             row_season = sheet.cell(row=row, column=4).value
             row_week = sheet.cell(row=row, column=5).value
-            absent = sheet.cell(row=row, column=13).value
-            substitute = sheet.cell(row=row, column=14).value
-            opponent = sheet.cell(row=row, column=15).value  # Opponent column
+            absent = sheet.cell(row=row, column=14).value
+            substitute = sheet.cell(row=row, column=15).value
+            opponent = sheet.cell(row=row, column=16).value  # Opponent column
             
             if row_season != season_num:
                 continue
-            
+
+            rw = self._safe_int(row_week, 0)
             # If week is specified, skip other weeks
             if week_param is not None:
-                if self._safe_int(row_week, 0) != week_param:
+                if rw != week_param:
+                    continue
+            elif through_param is not None:
+                if rw < 1 or rw > through_param:
+                    continue
+                if self._is_playoff_row(sheet.cell(row=row, column=12).value):
                     continue
             
             if not row_team or not isinstance(row_team, str):
@@ -220,7 +274,7 @@ class ExcelHandler(SheetHandler):
                 row_team = sheet.cell(row=row, column=2).value
                 row_season = sheet.cell(row=row, column=4).value
                 row_week = sheet.cell(row=row, column=5).value
-                substitute = sheet.cell(row=row, column=14).value
+                substitute = sheet.cell(row=row, column=15).value
                 
                 if (row_season != season_num or 
                     not row_team or 
@@ -229,6 +283,11 @@ class ExcelHandler(SheetHandler):
                     continue
                 
                 row_week_num = self._safe_int(row_week, 0)
+                if through_param is not None:
+                    if row_week_num < 1 or row_week_num > through_param:
+                        continue
+                    if self._is_playoff_row(sheet.cell(row=row, column=12).value):
+                        continue
                 if row_week_num > 0:
                     if row_week_num not in team_weekly_game_totals:
                         team_weekly_game_totals[row_week_num] = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
@@ -264,13 +323,15 @@ class ExcelHandler(SheetHandler):
                             row_team = sheet.cell(row=row, column=2).value
                             row_season = sheet.cell(row=row, column=4).value
                             row_week = sheet.cell(row=row, column=5).value
-                            substitute = sheet.cell(row=row, column=14).value
+                            substitute = sheet.cell(row=row, column=15).value
                             
                             if (row_season != season_num or
                                 not row_team or
                                 row_team.strip() != opp_team_found or
                                 self._safe_int(row_week, 0) != week_num or
                                 self._is_substitute(substitute)):
+                                continue
+                            if through_param is not None and self._is_playoff_row(sheet.cell(row=row, column=12).value):
                                 continue
                             
                             # Sum games by game number
@@ -331,7 +392,7 @@ class ExcelHandler(SheetHandler):
                             r_player = sheet.cell(row=row, column=3).value
                             r_season = sheet.cell(row=row, column=4).value
                             r_week = sheet.cell(row=row, column=5).value
-                            r_substitute = sheet.cell(row=row, column=14).value
+                            r_substitute = sheet.cell(row=row, column=15).value
                             
                             if (r_season == season_num and
                                 r_team and r_team.strip() == team and
@@ -376,7 +437,7 @@ class ExcelHandler(SheetHandler):
                                     row_team = sheet.cell(row=row, column=2).value
                                     row_season = sheet.cell(row=row, column=4).value
                                     row_week = sheet.cell(row=row, column=5).value
-                                    substitute = sheet.cell(row=row, column=14).value
+                                    substitute = sheet.cell(row=row, column=15).value
                                     
                                     if (row_season != season_num or
                                         not row_team or
@@ -466,7 +527,7 @@ class ExcelHandler(SheetHandler):
             row_team = sheet.cell(row=row, column=2).value
             row_season = sheet.cell(row=row, column=4).value
             row_week = sheet.cell(row=row, column=5).value
-            substitute = sheet.cell(row=row, column=14).value
+            substitute = sheet.cell(row=row, column=15).value
             
             if (row_season != season_num or 
                 not row_team or
@@ -495,8 +556,8 @@ class ExcelHandler(SheetHandler):
             row_team = sheet.cell(row=row, column=2).value
             row_season = sheet.cell(row=row, column=4).value
             row_week = sheet.cell(row=row, column=5).value
-            substitute = sheet.cell(row=row, column=14).value
-            opponent = sheet.cell(row=row, column=15).value
+            substitute = sheet.cell(row=row, column=15).value
+            opponent = sheet.cell(row=row, column=16).value
             
             if (row_season != season_num or 
                 not row_team or 
@@ -569,7 +630,7 @@ class ExcelHandler(SheetHandler):
                 row_team = sheet.cell(row=row, column=2).value
                 row_season = sheet.cell(row=row, column=4).value
                 row_week = sheet.cell(row=row, column=5).value
-                substitute = sheet.cell(row=row, column=14).value
+                substitute = sheet.cell(row=row, column=15).value
                 
                 if (row_season == season_num and
                     row_team and row_team.strip() == team_found and
@@ -621,8 +682,8 @@ class ExcelHandler(SheetHandler):
             row_player = sheet.cell(row=row, column=3).value
             row_season = sheet.cell(row=row, column=4).value
             row_week = sheet.cell(row=row, column=5).value
-            absent = sheet.cell(row=row, column=13).value
-            substitute = sheet.cell(row=row, column=14).value
+            absent = sheet.cell(row=row, column=14).value
+            substitute = sheet.cell(row=row, column=15).value
             
             if row_season != season_num:
                 continue
@@ -712,7 +773,7 @@ class ExcelHandler(SheetHandler):
         
         # Sort individual games (highest first)
         individual_games.sort(key=lambda x: x[3], reverse=True)
-        top_games = individual_games[:10]
+        top_games = individual_games[:50]
         
         return {
             "season": season or f"Season {season_num}",
@@ -746,8 +807,8 @@ class ExcelHandler(SheetHandler):
                 row_player = sheet.cell(row=row, column=3).value
                 row_season = sheet.cell(row=row, column=4).value
                 row_week   = sheet.cell(row=row, column=5).value
-                absent     = sheet.cell(row=row, column=13).value
-                substitute = sheet.cell(row=row, column=14).value
+                absent     = sheet.cell(row=row, column=14).value
+                substitute = sheet.cell(row=row, column=15).value
 
                 if row_season != season_num:
                     continue
@@ -824,7 +885,7 @@ class ExcelHandler(SheetHandler):
             "player_averages": player_avg_list,
             "top_player_weeks": all_player_weeks[:10],
             "top_team_totals": team_totals[:5],
-            "top_games": all_individual_games[:10],
+            "top_games": all_individual_games[:50],
         }
     
     def get_player_scores(self, player_name: Optional[str] = None, season: Optional[str] = None, week: Optional[int] = None) -> Dict:
@@ -848,12 +909,13 @@ class ExcelHandler(SheetHandler):
         player_data = {}  # player_name -> {team, scores, absent_count}
         
         # Column mapping: Index=1 (ignored), Team=2, Player=3, Season=4, Week=5, Game1=6, Game2=7, Game3=8, Game4=9, Game5=10, Average=11
+        # Playoffs?=12, Game 5 winner=13, Absent?=14, Substitute?=15, Opponent=16
         for row in range(2, sheet.max_row + 1):
             row_team = sheet.cell(row=row, column=2).value
             row_player = sheet.cell(row=row, column=3).value
             row_season = sheet.cell(row=row, column=4).value
             row_week = sheet.cell(row=row, column=5).value
-            absent = sheet.cell(row=row, column=13).value  # Absent? column
+            absent = sheet.cell(row=row, column=14).value  # Absent? column
             
             # Skip if not this season
             if row_season != season_num:
@@ -1077,6 +1139,90 @@ class ExcelHandler(SheetHandler):
                 max_week = w
         return max_week
 
+    def list_weeks_for_season(self, season: Optional[str] = None) -> List[int]:
+        """Sorted distinct week numbers that have at least one row for this season."""
+        if season is None:
+            season = self._get_current_season()
+        season_num = self._get_season_number(season)
+        if season_num is None:
+            return []
+        sheet_name = f"Season {season_num}"
+        if sheet_name not in self.workbook.sheetnames:
+            return []
+        sheet = self.workbook[sheet_name]
+        found = set()
+        for row in range(2, sheet.max_row + 1):
+            if sheet.cell(row=row, column=4).value != season_num:
+                continue
+            w = self._safe_int(sheet.cell(row=row, column=5).value, 0)
+            if w > 0:
+                found.add(w)
+        return sorted(found)
+
+    def list_playoff_weeks_for_season(self, season: Optional[str] = None) -> List[int]:
+        """Week numbers to show as playoff weeks.
+
+        1) Prefer v5 **Playoffs?** column (col 12): any week with at least one row flagged.
+        2) Else trailing weeks with fewer rows than a typical week (brackets / BYEs).
+        """
+        if season is None:
+            season = self._get_current_season()
+        low = (str(season).strip().lower() if season is not None else "")
+        if low == "last":
+            seasons = sorted(
+                [x for x in self.get_seasons() if x.startswith("Season")],
+                key=lambda x: int(x.split()[-1]) if x.split()[-1].isdigit() else 0,
+            )
+            if len(seasons) >= 2:
+                season = seasons[-2]
+            elif seasons:
+                season = seasons[-1]
+            else:
+                season = self._get_current_season()
+        weeks = self.list_weeks_for_season(season)
+        if not weeks:
+            return []
+        season_num = self._get_season_number(season)
+        if season_num is None:
+            return []
+        sheet_name = f"Season {season_num}"
+        if sheet_name not in self.workbook.sheetnames:
+            return []
+        sheet = self.workbook[sheet_name]
+        from_flag: set = set()
+        for row in range(2, sheet.max_row + 1):
+            if sheet.cell(row=row, column=4).value != season_num:
+                continue
+            w = self._safe_int(sheet.cell(row=row, column=5).value, 0)
+            if w <= 0:
+                continue
+            if self._is_playoff_row(sheet.cell(row=row, column=12).value):
+                from_flag.add(w)
+        if from_flag:
+            return sorted(from_flag)
+
+        if len(weeks) < 2:
+            return []
+        counts: Dict[int, int] = {}
+        for row in range(2, sheet.max_row + 1):
+            if sheet.cell(row=row, column=4).value != season_num:
+                continue
+            w = self._safe_int(sheet.cell(row=row, column=5).value, 0)
+            if w > 0:
+                counts[w] = counts.get(w, 0) + 1
+        sorted_weeks = sorted(weeks)
+        peak = max(counts.get(w, 0) for w in sorted_weeks)
+        if peak < 2:
+            return []
+        cutoff = max(4, int(peak * 0.80))
+        playoff_rev: List[int] = []
+        for w in reversed(sorted_weeks):
+            if counts.get(w, 0) < cutoff:
+                playoff_rev.append(w)
+            else:
+                break
+        return sorted(playoff_rev)
+
     def get_week_summary(self, week: int, season: Optional[str] = None) -> dict:
         """Return all player and league stats for a specific week."""
         if season is None:
@@ -1101,7 +1247,7 @@ class ExcelHandler(SheetHandler):
             if not player or not isinstance(player, str):
                 continue
 
-            is_absent = self._is_absent(sheet.cell(row=row, column=13).value)
+            is_absent = self._is_absent(sheet.cell(row=row, column=14).value)
             games = []
             for col in range(6, 11):
                 g = sheet.cell(row=row, column=col).value
@@ -1147,7 +1293,9 @@ class ExcelHandler(SheetHandler):
         }
 
     def get_week_matchups(self, week: int, season: Optional[str] = None) -> dict:
-        """Return team matchup results for a specific week — total pins, avg, and W/L/T."""
+        """Return team matchup results for a specific week — total pins, avg, and W/L/T.
+        Overall result is by games won per team; if game wins are equal, higher total pins wins.
+        If pins are also equal, the match is scored a tie."""
         if season is None:
             season = self._get_current_season()
         season_num = self._get_season_number(season)
@@ -1172,9 +1320,9 @@ class ExcelHandler(SheetHandler):
             if not player or not isinstance(player, str):
                 continue
 
-            is_absent = self._is_absent(sheet.cell(row=row, column=13).value)
-            is_sub    = self._is_substitute(sheet.cell(row=row, column=14).value)
-            opponent  = sheet.cell(row=row, column=15).value or ""
+            is_absent = self._is_absent(sheet.cell(row=row, column=14).value)
+            is_sub    = self._is_substitute(sheet.cell(row=row, column=15).value)
+            opponent  = sheet.cell(row=row, column=16).value or ""
 
             team = team.strip()
             if team not in teams:
@@ -1182,7 +1330,12 @@ class ExcelHandler(SheetHandler):
                     "game_pins": [],  # list of per-game team totals
                     "player_count": 0,
                     "opponent": opponent.strip() if opponent else "",
+                    "game5_winner": "",
                 }
+
+            g5_cell = sheet.cell(row=row, column=13).value
+            if g5_cell and str(g5_cell).strip() and not teams[team]["game5_winner"]:
+                teams[team]["game5_winner"] = str(g5_cell).strip()
 
             # Include absent players (their avg counts as blind score) but exclude substitutes
             if not is_sub:
@@ -1245,7 +1398,39 @@ class ExcelHandler(SheetHandler):
             elif a_wins > h_wins:
                 h_result, a_result = "L", "W"
             else:
-                h_result = a_result = "T"
+                # Same number of game-level wins — winner by total team pins; still tie if pins equal
+                if total_h > total_a:
+                    h_result, a_result = "W", "L"
+                elif total_a > total_h:
+                    h_result, a_result = "L", "W"
+                else:
+                    h_result = a_result = "T"
+
+            # Legacy: v5 'Game 5 winner' column (no pin line) after 2–2 split
+            g5_h = (td.get("game5_winner") or "").strip()
+            g5_a = (opp.get("game5_winner") or "").strip()
+            g5_series = g5_h or g5_a
+            if g5_h and g5_a and self._normalize(g5_h) != self._normalize(g5_a):
+                g5_series = g5_h
+            game5_series_note = None
+            fifth_dec = self._fifth_game_pins_decisive(td, opp)
+            series_split_2_2 = h_wins == 2 and a_wins == 2 and len(game_results) >= 4
+            winner_side = None
+            if g5_series and series_split_2_2 and not fifth_dec:
+                if self._name_matches_sheet_team_value(team_name, g5_series):
+                    winner_side = "home"
+                elif self._name_matches_sheet_team_value(opp_name, g5_series):
+                    winner_side = "away"
+            if winner_side:
+                if winner_side == "home":
+                    h_result, a_result = "W", "L"
+                    h_wins, a_wins = 3, 2
+                else:
+                    h_result, a_result = "L", "W"
+                    h_wins, a_wins = 2, 3
+                game5_series_note = (
+                    f"Game 5 / series: {g5_series} (sheet column — no decisive Game 5 pin totals)."
+                )
 
             matchups.append({
                 "home": {"name": team_name, "pins": total_h, "avg": avg_h,
@@ -1253,6 +1438,7 @@ class ExcelHandler(SheetHandler):
                 "away": {"name": opp_name,  "pins": total_a, "avg": avg_a,
                          "game_pins": opp["game_pins"], "wins": a_wins, "result": a_result},
                 "game_results": game_results,
+                "game5_series_note": game5_series_note,
             })
 
         matchups.sort(key=lambda m: m["home"]["name"])
