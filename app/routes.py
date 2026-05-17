@@ -16,9 +16,24 @@ def _svc():
 
 @bp.route("/health")
 def health():
+    from db.availability import db_status
+    from db.config import get_database_url
+
     svc = _svc()
     source = getattr(svc.data, "read_source", "sheets") if svc else None
-    return {"ok": True, "service": bool(svc), "read_source": source}, 200
+    try:
+        get_database_url()
+        database_url_set = True
+    except RuntimeError:
+        database_url_set = False
+    db = db_status()
+    return {
+        "ok": True,
+        "service": bool(svc),
+        "read_source": source,
+        "database_url_set": database_url_set,
+        "db": db,
+    }, 200
 
 
 @bp.route("/")
