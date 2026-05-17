@@ -41,4 +41,4 @@ Start **denormalized** where it matches the sheet (e.g. store opponent string) t
 ## Risks / notes
 
 - **Player identity:** Sheet uses display names; matching “same person across seasons” may stay string-based until you add stable player IDs.
-- **Multi-handler:** Excel vs Google Sheets should produce identical ingested rows; the DB should not depend on file vs API.
+- **Ingest:** Excel via `sync_db.py` is the only ingest path; row shape is defined in `sheets_handler.py`.

@@ -7,7 +7,7 @@
 - [ ] Create **PostgreSQL** plugin; copy `DATABASE_URL` into the web service.
 - [ ] Use **SSL** (Railway URLs typically require TLS; ensure SQLAlchemy / driver uses `sslmode=require` if needed).
 - [ ] **Networking:** DB not publicly exposed if possible; service-to-service private URL on Railway.
-- [ ] **Health:** Web `/health` can check DB with `SELECT 1` when `USE_DB_READS=1`.
+- [ ] **Health:** Extend `/health` with a DB `SELECT 1` (today it reports `read_source: database` only).
 
 ## Migrations in deploy
 

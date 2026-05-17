@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 
 from db.availability import db_has_data
 from db.config import get_database_url
-from db.facts_loader import load_all_facts
+from db.facts_loader import load_all_facts, load_all_matchup_overrides
 from stats import compute
 
 
@@ -97,6 +97,7 @@ class DbLeagueData(LeagueDataSource):
 
     def __init__(self):
         self._facts: Optional[List[dict]] = None
+        self._matchup_overrides: Optional[List[dict]] = None
 
     @property
     def read_source(self) -> str:
@@ -104,11 +105,17 @@ class DbLeagueData(LeagueDataSource):
 
     def reload_workbook(self) -> None:
         self._facts = None
+        self._matchup_overrides = None
 
     def _facts_list(self) -> List[dict]:
         if self._facts is None:
             self._facts = load_all_facts()
         return self._facts
+
+    def _overrides_list(self) -> List[dict]:
+        if self._matchup_overrides is None:
+            self._matchup_overrides = load_all_matchup_overrides()
+        return self._matchup_overrides
 
     def get_seasons(self) -> List[str]:
         return compute.seasons_from_facts(self._facts_list())
@@ -133,6 +140,7 @@ class DbLeagueData(LeagueDataSource):
             week,
             through_week,
             season_num=season_num,
+            matchup_overrides=self._overrides_list(),
         )
 
     def get_player_scores(
@@ -174,7 +182,11 @@ class DbLeagueData(LeagueDataSource):
             season = self.get_current_season()
         season_num = compute.parse_season_number(season)
         return compute.get_week_matchups(
-            self._facts_list(), week, season, season_num=season_num
+            self._facts_list(),
+            week,
+            season,
+            season_num=season_num,
+            matchup_overrides=self._overrides_list(),
         )
 
     def get_team_weekly_summary(
@@ -182,7 +194,11 @@ class DbLeagueData(LeagueDataSource):
     ) -> Dict:
         season_num = compute.parse_season_number(season)
         return compute.get_team_weekly_summary(
-            self._facts_list(), team_name, season, season_num=season_num
+            self._facts_list(),
+            team_name,
+            season,
+            season_num=season_num,
+            matchup_overrides=self._overrides_list(),
         )
 
     def list_weeks_for_season(self, season: Optional[str] = None) -> List[int]:

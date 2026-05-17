@@ -1,6 +1,6 @@
 """
-Sheet handler module for reading/writing bowling league data.
-Supports local Excel files with one row per week per player structure.
+Sheet handler module for reading bowling league data from local Excel workbooks.
+Used by sync_db.py (one row per week per player). The web app reads PostgreSQL only.
 """
 import hashlib
 from abc import ABC, abstractmethod
@@ -31,11 +31,6 @@ class SheetHandler(ABC):
         """Get player scores. If player_name is None, return all players."""
         pass
 
-    @abstractmethod
-    def add_score(self, player_name: str, score: int, week: Optional[int] = None, season: Optional[str] = None) -> bool:
-        """Add a score for a player. Returns True if successful."""
-        pass
-    
     @abstractmethod
     def get_seasons(self) -> List[str]:
         """Get list of available seasons."""
@@ -209,8 +204,6 @@ class ExcelHandler(SheetHandler):
                 playoffs = self._is_playoff_row(sheet.cell(row=row, column=12).value)
                 opponent_cell = sheet.cell(row=row, column=16).value
                 opponent = str(opponent_cell).strip() if opponent_cell else None
-                g5_cell = sheet.cell(row=row, column=13).value
-                game5_winner = str(g5_cell).strip() if g5_cell else None
 
                 yield {
                     "sheet_key": sheet_key,
@@ -229,7 +222,6 @@ class ExcelHandler(SheetHandler):
                     "substitute": substitute,
                     "playoffs": playoffs,
                     "opponent": opponent,
-                    "game5_winner": game5_winner,
                     "source_row_fingerprint": self._row_fingerprint(
                         sheet_key,
                         week,
@@ -321,74 +313,6 @@ class ExcelHandler(SheetHandler):
         return compute.get_player_scores(
             self._facts_for_season(season), player_name, season, week, season_num=season_num,
         )
-
-    def add_score(self, player_name: str, score: int, week: Optional[int] = None, season: Optional[str] = None) -> bool:
-        """Add a score for a player. Note: This modifies the Excel file.
-
-        LIMITATION: The workbook is loaded with data_only=True, which caches formula results
-        as static values. Saving after a write will permanently strip any Excel formulas in the
-        file (e.g. the Average column). Do not use this method if you rely on Excel formulas
-        being preserved. Manual edits in Excel are the recommended way to update scores.
-        """
-        season_num = self._get_season_number(season)
-        if season_num is None:
-            return False
-        
-        season_sheet = f"Season {season_num}"
-        if season_sheet not in self.workbook.sheetnames:
-            return False
-        
-        sheet = self.workbook[season_sheet]
-        
-        # Find the player's row for the specified week (or latest week if not specified)
-        target_row = None
-        
-        if week is None:
-            # Find the latest week for this player
-            max_week = 0
-            for row in range(2, sheet.max_row + 1):
-                row_player = sheet.cell(row=row, column=3).value
-                row_season = sheet.cell(row=row, column=4).value
-                row_week = sheet.cell(row=row, column=5).value
-                
-                if (row_player and isinstance(row_player, str) and 
-                    player_name.lower() in row_player.lower() and 
-                    row_season == season_num):
-                    week_num = self._safe_int(row_week, 0)
-                    if week_num > max_week:
-                        max_week = week_num
-                        target_row = row
-            
-            if target_row:
-                # Find first empty game column
-                for col in range(6, 11):  # Game 1-5 columns
-                    game_value = sheet.cell(row=target_row, column=col).value
-                    if game_value is None or game_value == "":
-                        sheet.cell(row=target_row, column=col, value=score)
-                        self.workbook.save(self.file_path)
-                        return True
-        else:
-            # Find specific week for this player
-            for row in range(2, sheet.max_row + 1):
-                row_player = sheet.cell(row=row, column=3).value
-                row_season = sheet.cell(row=row, column=4).value
-                row_week = sheet.cell(row=row, column=5).value
-                
-                if (row_player and isinstance(row_player, str) and 
-                    player_name.lower() in row_player.lower() and 
-                    row_season == season_num and 
-                    self._safe_int(row_week, 0) == week):
-                    
-                    # Find first empty game column
-                    for col in range(6, 11):  # Game 1-5 columns
-                        game_value = sheet.cell(row=row, column=col).value
-                        if game_value is None or game_value == "":
-                            sheet.cell(row=row, column=col, value=score)
-                            self.workbook.save(self.file_path)
-                            return True
-                    break
-        
-        return False
 
     def get_latest_week(self, season: Optional[str] = None) -> int:
         """Return the highest week number that has any data in the given season."""

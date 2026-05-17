@@ -555,14 +555,6 @@ body {
 .game-result.W { color: #50fa7b; }
 .game-result.L { color: #ff6b81; }
 .game-result.T { color: #ffb86c; }
-.game5-series-note {
-    font-size: 11px;
-    color: #9cbcff;
-    margin-top: 8px;
-    padding-top: 8px;
-    border-top: 1px dashed #3d3560;
-    line-height: 1.35;
-}
 .week-block {
     margin-bottom: 28px;
     padding-bottom: 20px;
@@ -884,13 +876,6 @@ def _build_matchup_card_list(data: dict, *, for_bracket: bool = False) -> str:
 
         games_row = f'<div class="games-row">{game_cells}</div>' if game_cells else ""
 
-        g5_note = m.get("game5_series_note")
-        g5_note_html = (
-            f'<div class="game5-series-note">{html_module.escape(g5_note)}</div>'
-            if g5_note
-            else ""
-        )
-
         player_details = ""
         if not for_bracket:
             n_games = len(game_results) if game_results else max(
@@ -929,7 +914,6 @@ def _build_matchup_card_list(data: dict, *, for_bracket: bool = False) -> str:
       </div>
       {games_row}
       {player_details}
-      {g5_note_html}
     </div>""")
 
     return "".join(cards)
@@ -1118,6 +1102,39 @@ _LIST_SORT_SCRIPT = r"""<script>
     return parseInt(trA.getAttribute("data-default-index"), 10) - parseInt(trB.getAttribute("data-default-index"), 10);
   }
 
+  function tbodyUnits(tbody) {
+    var units = [];
+    var i = 0;
+    var rows = tbody.rows;
+    while (i < rows.length) {
+      var tr = rows[i];
+      if (
+        tr.classList.contains("team-standings-row") &&
+        i + 1 < rows.length &&
+        rows[i + 1].classList.contains("team-standings-detail")
+      ) {
+        units.push([tr, rows[i + 1]]);
+        i += 2;
+      } else {
+        units.push([tr]);
+        i += 1;
+      }
+    }
+    return units;
+  }
+
+  function appendUnits(tbody, units, rankCol) {
+    units.forEach(function (unit, idx) {
+      unit.forEach(function (tr) { tbody.appendChild(tr); });
+      if (rankCol) {
+        var r = unit[0].cells[0];
+        if (r && r.classList.contains("rank")) {
+          r.textContent = String(idx + 1);
+        }
+      }
+    });
+  }
+
   function clearInds(table) {
     table.querySelectorAll("thead th.sortable-th .sort-ind").forEach(function (el) { el.textContent = ""; });
   }
@@ -1125,16 +1142,19 @@ _LIST_SORT_SCRIPT = r"""<script>
   function applySort(table, col, phase, types, rankCol) {
     var tbody = table.tBodies[0];
     if (!tbody) { return; }
-    var rows = Array.prototype.slice.call(tbody.rows);
+    var units = tbodyUnits(tbody);
     clearInds(table);
     if (phase === 0) {
-      rows.sort(function (a, b) {
-        return parseInt(a.getAttribute("data-default-index"), 10) - parseInt(b.getAttribute("data-default-index"), 10);
+      units.sort(function (a, b) {
+        return (
+          parseInt(a[0].getAttribute("data-default-index"), 10) -
+          parseInt(b[0].getAttribute("data-default-index"), 10)
+        );
       });
-      rows.forEach(function (tr) {
-        tbody.appendChild(tr);
+      units.forEach(function (unit) {
+        unit.forEach(function (tr) { tbody.appendChild(tr); });
         if (rankCol) {
-          var r = tr.cells[0];
+          var r = unit[0].cells[0];
           if (r && r.hasAttribute("data-orig-rank")) {
             r.textContent = r.getAttribute("data-orig-rank");
           }
@@ -1142,19 +1162,11 @@ _LIST_SORT_SCRIPT = r"""<script>
       });
       return;
     }
-    rows.sort(function (a, b) {
-      var x = cmpRow(a, b, col, types);
+    units.sort(function (a, b) {
+      var x = cmpRow(a[0], b[0], col, types);
       return phase === 1 ? x : -x;
     });
-    rows.forEach(function (tr, idx) {
-      tbody.appendChild(tr);
-      if (rankCol) {
-        var r = tr.cells[0];
-        if (r && r.classList.contains("rank")) {
-          r.textContent = String(idx + 1);
-        }
-      }
-    });
+    appendUnits(tbody, units, rankCol);
     var th = table.querySelector('thead th.sortable-th[data-sort-col="' + col + '"]');
     var ind = th && th.querySelector(".sort-ind");
     if (ind) { ind.textContent = phase === 1 ? "\u25b2" : "\u25bc"; }
@@ -1168,8 +1180,8 @@ _LIST_SORT_SCRIPT = r"""<script>
       types[parseInt(th.getAttribute("data-sort-col"), 10)] = th.getAttribute("data-sort-type") || "string";
     });
     var rankCol = table.getAttribute("data-has-rank-col") === "1";
-    Array.prototype.forEach.call(tbody.rows, function (tr, i) {
-      tr.setAttribute("data-default-index", String(i));
+    tbodyUnits(tbody).forEach(function (unit, i) {
+      unit[0].setAttribute("data-default-index", String(i));
     });
     var state = { col: null, phase: 0 };
     table.querySelectorAll("thead th.sortable-th").forEach(function (th) {
@@ -1877,6 +1889,161 @@ def _team_name_cell_html(name: str, champion_team: Optional[str] = None) -> str:
     return name_cell
 
 
+def _team_name_cell_expandable(name: str, champion_team: Optional[str] = None) -> str:
+    chevron = '<span class="team-expand-chevron" aria-hidden="true">▸</span> '
+    return chevron + _team_name_cell_html(name, champion_team)
+
+
+def _team_roster_detail_html(players: Dict[str, float]) -> str:
+    if not players:
+        return '<p class="team-roster-empty">No player averages for this team.</p>'
+    items = []
+    for pname, avg in sorted(players.items(), key=lambda x: (-x[1], x[0].lower())):
+        label = html_module.escape(_short_name(pname))
+        items.append(
+            '<li class="team-roster-item">'
+            f'<span class="team-roster-name">{label}</span>'
+            f'<span class="team-roster-avg">{avg:.1f}</span>'
+            "</li>"
+        )
+    return f'<ul class="team-roster-list">{"".join(items)}</ul>'
+
+
+def _teams_standings_section(
+    title: str, headers: List[dict], team_rows: List[Tuple[List[dict], Dict[str, float]]]
+) -> str:
+    """Standings table with expandable per-team player rosters."""
+    ncols = len(headers)
+    th_parts: List[str] = []
+    for i, h in enumerate(headers):
+        cls_parts: List[str] = ["sortable-th"]
+        if h.get("right"):
+            cls_parts.append("right")
+        st = html_module.escape(_header_sort_type(h))
+        ind = '<span class="sort-ind" aria-hidden="true"></span>'
+        th_parts.append(
+            f'<th class="{" ".join(cls_parts)}" data-sort-col="{i}" data-sort-type="{st}">'
+            f'{h["label"]}{ind}</th>'
+        )
+    th = "".join(th_parts)
+
+    def _td(c: dict, col_idx: int) -> str:
+        style_attr = f' style="{c["style"]}"' if c.get("style") else ""
+        sort_raw = _cell_data_sort_value(c)
+        esc_sort = html_module.escape(sort_raw, quote=True)
+        orig = ""
+        if col_idx == 0:
+            orig = f' data-orig-rank="{html_module.escape(str(c["val"]), quote=True)}"'
+        return (
+            f'<td class="{c.get("cls", "")}" data-sort="{esc_sort}"{orig}{style_attr}>'
+            f'{c["val"]}</td>'
+        )
+
+    body_parts: List[str] = []
+    for main_cells, players in team_rows:
+        main_tr = (
+            '<tr class="team-standings-row" tabindex="0" role="button" '
+            'aria-expanded="false">'
+            + "".join(_td(c, j) for j, c in enumerate(main_cells))
+            + "</tr>"
+        )
+        detail_tr = (
+            f'<tr class="team-standings-detail hidden">'
+            f'<td colspan="{ncols}">'
+            f"{_team_roster_detail_html(players)}"
+            f"</td></tr>"
+        )
+        body_parts.append(main_tr + detail_tr)
+
+    return f"""
+    <div class="section">
+      <div class="section-title">{title}</div>
+      <div class="table-scroll">
+      <table class="sortable-table teams-standings-table" data-has-rank-col="1">
+        <thead><tr>{th}</tr></thead>
+        <tbody>{"".join(body_parts)}</tbody>
+      </table>
+      </div>
+    </div>"""
+
+
+_TEAMS_STANDINGS_CSS = """
+.team-standings-row { cursor: pointer; }
+.team-standings-row:hover td { background: rgba(255, 184, 108, 0.06); }
+.team-standings-row.expanded td { background: #221e3d; }
+.team-expand-chevron {
+    display: inline-block;
+    width: 0.85em;
+    margin-right: 5px;
+    color: #666;
+    font-size: 11px;
+    transition: transform 0.15s ease, color 0.15s ease;
+    vertical-align: middle;
+}
+.team-standings-row.expanded .team-expand-chevron {
+    transform: rotate(90deg);
+    color: #ffb86c;
+}
+.team-standings-detail td {
+    padding: 2px 12px 14px 28px;
+    background: #141226;
+    border-bottom: 1px solid #2a2050;
+}
+.team-standings-detail.hidden { display: none; }
+.team-roster-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-width: 220px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.team-roster-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 20px;
+    font-size: 12px;
+    line-height: 1.45;
+}
+.team-roster-name { color: #9a94b0; font-weight: 500; }
+.team-roster-avg {
+    color: #ffb86c;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+}
+.team-roster-empty { margin: 0; color: #888; font-size: 12px; }
+"""
+
+_TEAMS_EXPAND_SCRIPT = r"""<script>
+(function () {
+  document.querySelectorAll(".teams-standings-table").forEach(function (table) {
+    table.querySelectorAll(".team-standings-row").forEach(function (row) {
+      function toggle() {
+        var detail = row.nextElementSibling;
+        if (!detail || !detail.classList.contains("team-standings-detail")) {
+          return;
+        }
+        var open = !row.classList.contains("expanded");
+        row.classList.toggle("expanded", open);
+        detail.classList.toggle("hidden", !open);
+        row.setAttribute("aria-expanded", open ? "true" : "false");
+      }
+      row.addEventListener("click", toggle);
+      row.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          toggle();
+        }
+      });
+    });
+  });
+})();
+</script>"""
+
+
 def build_teams_html(
     data: dict, season: str, *, champion_team: Optional[str] = None
 ) -> str:
@@ -1887,7 +2054,7 @@ def build_teams_html(
         {"label": "Avg", "right": True},
         {"label": "Total Pins", "right": True},
     ]
-    rows = []
+    team_rows: List[Tuple[List[dict], Dict[str, float]]] = []
     sorted_teams = sorted(data.items(), key=lambda x: x[1].get("avg_per_game", 0), reverse=True)
     for i, (name, stats) in enumerate(sorted_teams, 1):
         w = stats.get("wins", 0)
@@ -1896,21 +2063,27 @@ def build_teams_html(
         record = f"{w}-{l}" + (f"-{t}" if t else "")
         avg = stats.get("avg_per_game", 0)
         pins = stats.get("pins_for", 0)
-        rows.append([
-            {"val": i,            "cls": "right rank"},
+        players = stats.get("players") or {}
+        main_cells = [
+            {"val": i, "cls": "right rank"},
             {
-                "val": _team_name_cell_html(name, champion_team),
+                "val": _team_name_cell_expandable(name, champion_team),
                 "cls": "name-col",
                 "style": _team_color_style(name),
                 "sort": name.lower(),
             },
-            {"val": record,       "cls": "record", "sort": w * 10000 + l * 100 + t},
+            {"val": record, "cls": "record", "sort": w * 10000 + l * 100 + t},
             {"val": f"{avg:.1f}", "cls": "right gold"},
-            {"val": f"{pins:,}",  "cls": "right sub-col", "sort": pins},
-        ])
-    section = _list_section("Standings", headers, rows)
+            {"val": f"{pins:,}", "cls": "right sub-col", "sort": pins},
+        ]
+        team_rows.append((main_cells, players))
+    section = _teams_standings_section("Standings", headers, team_rows)
     return _render_list_page(
-        css=_LIST_CSS, title="🏆 TEAMS", subtitle=season, sections=section
+        css=_LIST_CSS + _TEAMS_STANDINGS_CSS,
+        title="🏆 TEAMS",
+        subtitle=season,
+        sections=section,
+        extra_script=_TEAMS_EXPAND_SCRIPT,
     )
 
 
@@ -2626,6 +2799,36 @@ body { overflow-y: auto; min-width: 0; }
 .bracket-pop-pins { font-variant-numeric: tabular-nums; color: #ada5c8; font-size: 10px; }
 .bracket-pop-res { font-weight: 800; width: 1.1rem; text-align: right; color: #ffb86c; font-size: 11px; }
 .bracket-pop-meta { color: #948ca8; font-size: 10px; margin-top: 5px; }
+.record-override-mark {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  color: #9b8ec4;
+  cursor: help;
+  line-height: 1;
+}
+.list-table .record-override-mark { font-size: 11px; margin-left: 3px; }
+.bracket-cl-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bracket-cl-trail {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+}
+.bracket-cl-override-slot {
+  flex: 0 0 0.65rem;
+  width: 0.65rem;
+  text-align: center;
+  line-height: 1;
+}
+.bracket-cl-trail .record-override-mark { margin: 0; }
 .bracket-pop-gh {
   font-size: 9px;
   letter-spacing: 0.1em;
@@ -2721,8 +2924,7 @@ body { overflow-y: auto; min-width: 0; }
   display: flex;
   flex-direction: row;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
   padding: 4px 8px 4px 10px;
   min-width: 0;
 }
@@ -3227,6 +3429,23 @@ def _backfill_ordered_matchups(
     return out
 
 
+def _w3_groups_from_snapshots_parallel(
+    snapshots: List[Optional[dict]],
+    ms1: List[dict],
+) -> List[Tuple[FrozenSet[str], str]]:
+    """Finals pairings from parallel semis (0-loss vs 0-loss, 1+ vs 1+)."""
+    wb_ms, lb_ms, _other = _split_semis_by_playoff_loss_band(
+        snapshots, ms1, losses_before_col=1
+    )
+    if len(wb_ms) != 2 or len(lb_ms) != 2:
+        return []
+    wb_semis = [winner_loser_from_matchup(m) for m in wb_ms]
+    lb_semis = [winner_loser_from_matchup(m) for m in lb_ms]
+    if not all(wb_semis) or not all(lb_semis):
+        return []
+    return expected_week3_groups(wb_semis[:2], lb_semis[:2])
+
+
 def _w3_groups_from_ms1_parallel(
     qf_ms: List[dict], ms1: List[dict]
 ) -> List[Tuple[FrozenSet[str], str]]:
@@ -3325,8 +3544,27 @@ def _best_w3_groups(
     snapshots: Optional[List[Optional[dict]]] = None,
 ) -> List[Tuple[FrozenSet[str], str]]:
     ms2_played = _playoff_matchups_with_opponent(ms2)
+    parallel_shape = _semis_week_parallel_shape(qf_ms, ms1, snapshots=snapshots)
     best_groups: List[Tuple[FrozenSet[str], str]] = []
     best_n = -1
+
+    if parallel_shape:
+        if snapshots is not None:
+            snap_par = _w3_groups_from_snapshots_parallel(snapshots, ms1)
+            if snap_par and _week3_match_count(ms2_played, snap_par) >= 3:
+                return snap_par
+        ms1_par = _w3_groups_from_ms1_parallel(qf_ms, ms1)
+        if ms1_par and _week3_match_count(ms2_played, ms1_par) >= 3:
+            return ms1_par
+        if snapshots is not None:
+            loss_par = _parallel_model_from_loss_band(
+                snapshots, ms1, ms2, qf_ms, round_pairs
+            )
+            if loss_par and loss_par.get("w3_groups"):
+                w3g = list(loss_par["w3_groups"])
+                if _week3_match_count(ms2_played, w3g) >= 2:
+                    return w3g
+
     for groups in _collect_w3_group_candidates(
         qf_ms, ms1, ms2_played, round_pairs, snapshots=snapshots
     ):
@@ -3334,20 +3572,19 @@ def _best_w3_groups(
         if n > best_n:
             best_n = n
             best_groups = groups
-    if not best_groups and len(ms2_played) == 4:
-        labels = (
-            "1st & 2nd place",
-            "3rd & 4th place",
-            "5th & 6th place",
-            "7th & 8th place",
-        )
-        best_groups = [
-            (
-                frozenset({m["home"]["name"], cast(dict, m["away"])["name"]}),
-                labels[i],
-            )
-            for i, m in enumerate(ms2_played[:4])
-        ]
+
+    if best_groups and best_n >= 2:
+        return best_groups
+
+    if parallel_shape:
+        if snapshots is not None:
+            snap_par = _w3_groups_from_snapshots_parallel(snapshots, ms1)
+            if snap_par:
+                return snap_par
+        ms1_par = _w3_groups_from_ms1_parallel(qf_ms, ms1)
+        if ms1_par:
+            return ms1_par
+
     return best_groups
 
 
@@ -3682,21 +3919,6 @@ def _matchup_hover_inner_html(m: dict, *, extra_meta: Optional[str] = None) -> s
             line = _hover_game_line_html(5, hp5, ap5, h5_r, a5_r, hn, an)
             if line:
                 gbits.append(line)
-    g5_note = m.get("game5_series_note")
-    if g5_note and not any("G5:" in g for g in gbits):
-        from stats.facts import name_matches_team
-
-        winner = an if name_matches_team(an, g5_note) else hn
-        if name_matches_team(hn, g5_note) and not name_matches_team(an, g5_note):
-            winner = hn
-        w_html = (
-            f'<span style="{_team_color_style(winner)}">'
-            f"{html_module.escape(winner)}</span>"
-        )
-        gbits.append(
-            f'<div class="bracket-pop-g">G5: {w_html} '
-            f'<span class="bracket-pop-gr">(sheet)</span></div>'
-        )
     games_h = ""
     if gbits:
         games_h = '<div class="bracket-pop-gh">Games</div>' + "".join(gbits)
@@ -3711,6 +3933,13 @@ def _bracket_name_result_class(res: str) -> str:
     if res == "T":
         return "bracket-name--tie"
     return "bracket-name--pending"
+
+
+def _record_override_marker_html() -> str:
+    return (
+        '<span class="record-override-mark" '
+        'title="Regular-season win–loss from sheet override (pin totals unchanged)">†</span>'
+    )
 
 
 def _bracket_result_badge_html(res: str) -> str:
@@ -3737,20 +3966,37 @@ def _matchup_series_games_won(side: Optional[dict], matchup: dict) -> Optional[i
     return int(side.get("wins", 0) or 0)
 
 
-def _classic_team_row_cl(name: str, res: str, games_won: Optional[int]) -> str:
+def _classic_team_row_cl(
+    name: str,
+    res: str,
+    games_won: Optional[int],
+    *,
+    show_override_mark: bool = False,
+) -> str:
     seed_el = (
         f'<span class="bracket-cl-seed" title="Games won in this matchup">{games_won}</span>'
         if games_won is not None
         else '<span class="bracket-cl-seed bracket-cl-seed--empty" title="Games won in this matchup">—</span>'
     )
+    override_slot = (
+        f'<span class="bracket-cl-override-slot">{_record_override_marker_html()}</span>'
+        if show_override_mark
+        else ""
+    )
+    trail = (
+        f'<span class="bracket-cl-trail">'
+        f"{override_slot}{_bracket_result_badge_html(res)}"
+        f"</span>"
+    )
     return (
         f'<div class="bracket-cl-row">'
         f"{seed_el}"
         f'<div class="bracket-cl-row-main">'
-        f'<span class="bracket-line {_bracket_name_result_class(res)}" style="{_team_color_style(name)}">'
-        f"{html_module.escape(name)}</span>"
-        f"{_bracket_result_badge_html(res)}</div></div>"
+        f'<span class="bracket-line bracket-cl-name {_bracket_name_result_class(res)}" '
+        f'style="{_team_color_style(name)}">{html_module.escape(name)}</span>'
+        f"{trail}</div></div>"
     )
+
 
 
 def _classic_match_block_html(
@@ -3758,11 +4004,15 @@ def _classic_match_block_html(
     *,
     extra_meta: Optional[str] = None,
 ) -> str:
+    overridden = bool(m.get("record_overridden"))
     away = m.get("away")
     if not away:
         nm = m["home"]["name"]
         row = _classic_team_row_cl(
-            nm, m["home"].get("result", ""), _matchup_series_games_won(m["home"], m)
+            nm,
+            m["home"].get("result", ""),
+            _matchup_series_games_won(m["home"], m),
+            show_override_mark=overridden,
         )
         pop = f'<aside class="bracket-pop">{_matchup_hover_inner_html(m, extra_meta=extra_meta)}</aside>'
         return (
@@ -3772,8 +4022,12 @@ def _classic_match_block_html(
     home = m["home"]
     hn, an = home["name"], away["name"]
     hr, ar = home.get("result", ""), away.get("result", "")
-    rowh = _classic_team_row_cl(hn, hr, _matchup_series_games_won(home, m))
-    rowa = _classic_team_row_cl(an, ar, _matchup_series_games_won(away, m))
+    rowh = _classic_team_row_cl(
+        hn, hr, _matchup_series_games_won(home, m), show_override_mark=overridden
+    )
+    rowa = _classic_team_row_cl(
+        an, ar, _matchup_series_games_won(away, m), show_override_mark=overridden
+    )
     pop = f'<aside class="bracket-pop">{_matchup_hover_inner_html(m, extra_meta=extra_meta)}</aside>'
     return (
         f'<div class="bracket-cl-outer" tabindex="0">'
@@ -4610,6 +4864,8 @@ def build_playoff_bracket_html(
         l = stats.get("losses", 0)
         t = stats.get("ties", 0)
         record = f"{w}-{l}" + (f"-{t}" if t else "")
+        if stats.get("record_override_mark"):
+            record += _record_override_marker_html()
         avg = stats.get("avg_per_game", 0)
         pins = stats.get("pins_for", 0)
         rows.append([

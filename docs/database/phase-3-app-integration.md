@@ -1,38 +1,45 @@
-# Phase 3 — App integration (read path)
+# Phase 3 — App reads from the database
 
-**Goal:** Serve league stats from PostgreSQL when enabled, with fallback to live sheets.
+**Status:** Done. The web app reads **only** from PostgreSQL.
 
-## Architecture (fact-based)
+## Architecture
 
 ```
-app/routes.py → league_service.LeagueService
-                    → league_data.LeagueDataSource
-                        → SheetLeagueData  (iter_player_week_rows → stats.compute)
-                        → DbLeagueData     (load_all_facts → stats.compute)
-                        → HybridLeagueData (USE_DB_READS + db_has_data)
+Excel (v5)  →  sync_db.py  →  Postgres (player_weeks, matchup_overrides, …)
+                                    ↓
+                         db/facts_loader.py  →  stats/compute.py
+                                    ↓
+                         league_data.DbLeagueData  →  league_service.py  →  Flask routes
 ```
 
-- **Facts:** one dict per player-week row (`team`, `player_display_name`, `season_number`, `week`, `game1`–`game5`, `week_average`, `absent`, `substitute`, `playoffs`, `opponent`, optional `game5_winner`).
-- **Compute:** all aggregation lives in `stats/compute.py` so sheet and DB paths stay aligned.
-- **No fake workbook:** DB reads do not rebuild an Excel proxy.
+- **`create_league_data()`** returns `DbLeagueData` when `DATABASE_URL` is set and `player_weeks` has rows; otherwise the app shows a “run sync” error.
+- **`read_source`** is always `"database"` (see `GET /health`).
+- There is no feature flag and no in-process sheet cache for HTTP requests.
 
-## Env
+## Facts shape
 
-- `USE_DB_READS=1` — prefer Postgres when `player_weeks` has rows.
-- `DATABASE_URL` — required for DB reads and sync.
+One dict per `player_weeks` row: `team`, `player_display_name`, `season_number`, `week`, `game1`–`game5`, `week_average`, `absent`, `substitute`, `playoffs`, `opponent`, etc. See `db/facts_loader.py`.
 
-## Outcomes
+Weekly **W/L/T** for display:
 
-- [x] `LeagueDataSource` + `create_league_data(handler)`
-- [x] Parity for team standings, players, leaders, weeks, matchups (via shared compute)
-- [x] `GET /health` → `read_source`
+1. **`matchup_overrides`** when a row exists for `(season, week, team)`.
+2. Otherwise pin-by-game comparison in `stats/compute.py`.
 
-## Rollout
+## Reload after sync
 
-1. Deploy with `USE_DB_READS=0`, run sync on schedule.
-2. Compare staging HTML/JSON vs sheets.
-3. Flip `USE_DB_READS=1` in staging, then production.
+| Mechanism | Behavior |
+|-----------|----------|
+| `python sync_db.py` | Replace season rows in Postgres from Excel |
+| `POST /reload?key=…` | Runs `sync_database()` then clears `DbLeagueData` caches (requires `RELOAD_SECRET`) |
 
-## Risks
+## Deliverables (complete)
 
-- Rounding, absent/substitute, playoff filtering — validate with `sync_db.py` + spot checks after sheet changes.
+- [x] `DbLeagueData` implements `LeagueDataSource`.
+- [x] All pages use `stats/compute` on loaded facts.
+- [x] `matchup_overrides` loaded for override-aware standings and matchups.
+- [x] Health endpoint reports `read_source: database`.
+
+## Non-goals
+
+- Reading Google Sheets or Excel at request time in the web process.
+- Hybrid fallback if the DB is empty (fail fast with setup instructions instead).

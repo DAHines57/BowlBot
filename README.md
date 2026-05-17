@@ -86,9 +86,9 @@ See [docs/database/phase-1-schema-and-migrations.md](docs/database/phase-1-schem
 |------|------|
 | `app/` | Flask app + routes |
 | `league_service.py` | Stats + HTML (uses `league_data`, `image_generator`) |
-| `league_data.py` | Sheet / DB / hybrid read API |
-| `stats/` | Fact filters + compute (shared by sheet and DB) |
-| `sheets_handler.py` | Excel / Google Sheets ingest + `iter_player_week_rows` |
+| `league_data.py` | Postgres read API (`DbLeagueData`) |
+| `stats/` | Fact filters + compute (DB facts and sync share the same shape) |
+| `sheets_handler.py` | Excel ingest for `sync_db.py` only (`iter_player_week_rows`) |
 | `image_generator.py` | HTML templates (card look) + `inject_web_chrome` |
 | `templates/` | Home + error + player pick |
 
@@ -99,4 +99,4 @@ See [docs/database/phase-1-schema-and-migrations.md](docs/database/phase-1-schem
 ## One-off tools
 
 - `migrate.py` — v4 → v5 migration
-- `extract_colors.py` — print team colors from a workbook (persist via `sync_db.py`)
+- `scripts/seed_matchup_overrides.py` — load v4 matchup W/L into `matchup_overrides`

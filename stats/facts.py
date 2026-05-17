@@ -44,7 +44,7 @@ def games_slots(fact: dict) -> List[Optional[int]]:
 
 
 def name_matches_team(a: str, b: str) -> bool:
-    """Loose match: roster team vs opponent / Game 5 winner string."""
+    """Loose match: roster team vs opponent or override team name."""
     if not a or not b:
         return False
     na = normalize(str(a).strip())
@@ -109,35 +109,6 @@ def resolve_opponent_on_roster(
             if name_matches_team(alias, candidate):
                 return canonical_team_name(candidate, season_num=season_num)
     return None
-
-
-def fifth_game_pins_decisive(td: Dict, opp: Dict) -> bool:
-    """True if Game 5 has full-roster pin totals for both teams and they differ.
-
-    Absent teammates often have no game5 in the DB; comparing team sums then
-    skews the series (e.g. 3 bowlers vs 4). Require every active player to have
-    game 5 pins before pins decide the matchup.
-    """
-    gp_h = td.get("game_pins") or []
-    gp_a = opp.get("game_pins") or []
-    if len(gp_h) < 5 or len(gp_a) < 5:
-        return False
-    h_active = int(td.get("active_player_count") or td.get("player_count") or 0)
-    a_active = int(opp.get("active_player_count") or opp.get("player_count") or 0)
-    h_g5 = int(td.get("game5_bowler_count") or 0)
-    a_g5 = int(opp.get("game5_bowler_count") or 0)
-    # Uneven active rosters (e.g. absent bowler) — do not award a fifth game on pins.
-    if h_active and a_active and h_active != a_active:
-        return False
-    if h_active and h_g5 < h_active:
-        return False
-    if a_active and a_g5 < a_active:
-        return False
-    hp = int(gp_h[4])
-    ap = int(gp_a[4])
-    if hp <= 0 or ap <= 0:
-        return False
-    return hp != ap
 
 
 def filter_facts(

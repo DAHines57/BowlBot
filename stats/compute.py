@@ -5,13 +5,14 @@ from typing import Dict, List, Optional, Tuple
 
 from stats.facts import (
     filter_facts,
-    fifth_game_pins_decisive,
     games_list,
     games_slots,
     name_matches_team,
     resolve_opponent_on_roster,
     normalize,
 )
+from placement_bracket import winner_loser_from_matchup
+from stats.matchup_overrides import find_matchup_override, sides_from_overrides
 from utils import safe_float, safe_int
 
 
@@ -111,6 +112,89 @@ def _team_game_totals_by_week(
     return out
 
 
+def _resolve_matchup_opponent_team(
+    opponent_name: Optional[str],
+    team_names: List[str],
+    *,
+    season_num: int,
+    override_row: Optional[dict],
+) -> Optional[str]:
+    if opponent_name:
+        found = _find_opponent_team(
+            str(opponent_name).strip(), team_names, season_num=season_num
+        )
+        if found:
+            return found
+    if override_row:
+        hint = str(override_row.get("opponent") or "").strip()
+        if hint:
+            return _find_opponent_team(hint, team_names, season_num=season_num)
+    return None
+
+
+def _week_wlt_and_pins_against(
+    team: str,
+    week_num: int,
+    opponent_name: Optional[str],
+    team_names: List[str],
+    season_num: int,
+    game_index: Dict[str, Dict[int, Dict[int, float]]],
+    team_weekly_game_totals: Dict[int, Dict[int, float]],
+    matchup_overrides: Optional[List[dict]],
+) -> Tuple[int, int, int, bool, int, Optional[str]]:
+    """Wins, losses, ties, record_overridden, pins_against, resolved opponent team."""
+    o_row = find_matchup_override(
+        matchup_overrides, season_num=season_num, week=week_num, team=team
+    )
+    opp_team = _resolve_matchup_opponent_team(
+        opponent_name, team_names, season_num=season_num, override_row=o_row
+    )
+    o_opp = None
+    if opp_team:
+        o_opp = find_matchup_override(
+            matchup_overrides, season_num=season_num, week=week_num, team=opp_team
+        )
+
+    pins_against = 0
+    team_games = team_weekly_game_totals.get(
+        week_num, {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+    )
+    if opp_team:
+        opp_games = game_index.get(opp_team, {}).get(
+            week_num, {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+        )
+        for game_num in range(1, 6):
+            team_total = team_games.get(game_num, 0)
+            opp_total = opp_games.get(game_num, 0)
+            if team_total > 0 or opp_total > 0:
+                pins_against += opp_total
+
+    if o_row is not None or o_opp is not None:
+        wk_w, wk_l, wk_t, _, _, _, _, _ = sides_from_overrides(
+            team, opp_team or opponent_name or "", o_row, o_opp
+        )
+        return wk_w, wk_l, wk_t, True, pins_against, opp_team
+
+    if not opp_team:
+        return 0, 0, 0, False, 0, None
+
+    opp_games = game_index.get(opp_team, {}).get(
+        week_num, {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+    )
+    wk_w = wk_l = wk_t = 0
+    for game_num in range(1, 6):
+        team_total = team_games.get(game_num, 0)
+        opp_total = opp_games.get(game_num, 0)
+        if team_total > 0 or opp_total > 0:
+            if team_total > opp_total:
+                wk_w += 1
+            elif team_total < opp_total:
+                wk_l += 1
+            else:
+                wk_t += 1
+    return wk_w, wk_l, wk_t, False, pins_against, opp_team
+
+
 def get_team_scores(
     facts: List[dict],
     team_name: Optional[str] = None,
@@ -119,6 +203,7 @@ def get_team_scores(
     through_week: Optional[int] = None,
     *,
     season_num: Optional[int] = None,
+    matchup_overrides: Optional[List[dict]] = None,
 ) -> Dict:
     week_param = week
     through_param = through_week
@@ -176,6 +261,20 @@ def get_team_scores(
 
     game_index = _team_game_totals_by_week(rows)
     team_names = list(team_data.keys())
+    playoff_weeks: set[int] = set()
+    for f in season_rows:
+        if f.get("playoffs"):
+            w = safe_int(f.get("week"), 0)
+            if w > 0:
+                playoff_weeks.add(w)
+    if matchup_overrides:
+        for row in matchup_overrides:
+            if int(row.get("season_number", 0)) != season_num:
+                continue
+            if row.get("playoffs"):
+                w = safe_int(row.get("week"), 0)
+                if w > 0:
+                    playoff_weeks.add(w)
     results: Dict = {}
 
     for team, data in team_data.items():
@@ -191,32 +290,42 @@ def get_team_scores(
         total_pins = sum(wd["pins"] for wd in data["weekly_totals"].values())
 
         wins = losses = ties = pins_against = 0
+        record_overridden = False
+        record_override_mark = False
         team_weekly_game_totals = game_index.get(team, {})
 
         for week_num, week_data in data["weekly_totals"].items():
-            opponent_name = week_data["opponent"]
-            team_games = team_weekly_game_totals.get(
-                week_num, {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+            wk_w, wk_l, wk_t, wk_ov, pa, _opp = _week_wlt_and_pins_against(
+                team,
+                week_num,
+                week_data.get("opponent"),
+                team_names,
+                season_num,
+                game_index,
+                team_weekly_game_totals,
+                matchup_overrides,
             )
-            if opponent_name and team_games:
-                opp_team_found = _find_opponent_team(
-                    opponent_name, team_names, season_num=season_num
-                )
-                if opp_team_found:
-                    opp_games = game_index.get(opp_team_found, {}).get(
-                        week_num, {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+            if not (wk_w or wk_l or wk_t or wk_ov):
+                continue
+            wins += wk_w
+            losses += wk_l
+            ties += wk_t
+            pins_against += pa
+            if wk_ov:
+                record_overridden = True
+                if week_num not in playoff_weeks:
+                    pin_w, pin_l, pin_t, _, _, _ = _week_wlt_and_pins_against(
+                        team,
+                        week_num,
+                        week_data.get("opponent"),
+                        team_names,
+                        season_num,
+                        game_index,
+                        team_weekly_game_totals,
+                        None,
                     )
-                    for game_num in range(1, 6):
-                        team_total = team_games.get(game_num, 0)
-                        opp_total = opp_games.get(game_num, 0)
-                        if team_total > 0 or opp_total > 0:
-                            pins_against += opp_total
-                            if team_total > opp_total:
-                                wins += 1
-                            elif team_total < opp_total:
-                                losses += 1
-                            else:
-                                ties += 1
+                    if (wk_w, wk_l, wk_t) != (pin_w, pin_l, pin_t):
+                        record_override_mark = True
 
         player_averages_dict = {}
         for player, player_data in data["players"].items():
@@ -232,6 +341,8 @@ def get_team_scores(
             "pins_against": int(pins_against),
             "avg_per_game": round(avg_per_game, 2),
             "players": player_averages_dict,
+            "record_overridden": record_overridden,
+            "record_override_mark": record_override_mark,
         }
 
         if week_param is not None and team_name:
@@ -256,24 +367,45 @@ def get_team_scores(
 
                     opponent_name = week_info.get("opponent", "Unknown")
                     week_wins = week_losses = week_ties = 0
+                    week_record_overridden = False
                     if opponent_name and opponent_name != "Unknown":
                         opp_team_found = _find_opponent_team(
                             opponent_name, team_names, season_num=season_num
                         )
                         if opp_team_found:
-                            opp_games = game_index.get(opp_team_found, {}).get(
-                                week_param, {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+                            o_row = find_matchup_override(
+                                matchup_overrides,
+                                season_num=season_num,
+                                week=week_param,
+                                team=team,
                             )
-                            for game_num in range(1, 6):
-                                team_total = twgt.get(game_num, 0)
-                                opp_total = opp_games.get(game_num, 0)
-                                if team_total > 0 or opp_total > 0:
-                                    if team_total > opp_total:
-                                        week_wins += 1
-                                    elif team_total < opp_total:
-                                        week_losses += 1
-                                    else:
-                                        week_ties += 1
+                            o_opp = find_matchup_override(
+                                matchup_overrides,
+                                season_num=season_num,
+                                week=week_param,
+                                team=opp_team_found,
+                            )
+                            if o_row is not None or o_opp is not None:
+                                week_record_overridden = True
+                                week_wins, week_losses, week_ties, _, _, _, _, _ = (
+                                    sides_from_overrides(
+                                        team, opp_team_found, o_row, o_opp
+                                    )
+                                )
+                            else:
+                                opp_games = game_index.get(opp_team_found, {}).get(
+                                    week_param, {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+                                )
+                                for game_num in range(1, 6):
+                                    team_total = twgt.get(game_num, 0)
+                                    opp_total = opp_games.get(game_num, 0)
+                                    if team_total > 0 or opp_total > 0:
+                                        if team_total > opp_total:
+                                            week_wins += 1
+                                        elif team_total < opp_total:
+                                            week_losses += 1
+                                        else:
+                                            week_ties += 1
 
                     return {
                         "team": team,
@@ -284,6 +416,7 @@ def get_team_scores(
                             "wins": week_wins,
                             "losses": week_losses,
                             "ties": week_ties,
+                            "record_overridden": week_record_overridden,
                         },
                     }
                 return {
@@ -311,6 +444,7 @@ def get_team_weekly_summary(
     season: Optional[str] = None,
     *,
     season_num: Optional[int] = None,
+    matchup_overrides: Optional[List[dict]] = None,
 ) -> Dict:
     if season_num is None:
         season_num = parse_season_number(season)
@@ -367,25 +501,25 @@ def get_team_weekly_summary(
             if i <= 5:
                 weekly_data[week]["game_totals"][i] += g
 
+    team_names = list(all_teams.keys())
+    team_weekly_games = all_teams.get(team_found, {})
     for week, week_info in weekly_data.items():
-        opponent_name = week_info["opponent"]
-        team_games = week_info["game_totals"]
-        opp_team_found = _find_opponent_team(
-            opponent_name, list(all_teams.keys()), season_num=season_num
+        wk_w, wk_l, wk_t, wk_ov, pa, opp_team = _week_wlt_and_pins_against(
+            team_found,
+            week,
+            week_info.get("opponent"),
+            team_names,
+            season_num,
+            all_teams,
+            team_weekly_games,
+            matchup_overrides,
         )
-        if opp_team_found and week in all_teams.get(opp_team_found, {}):
-            opp_games = all_teams[opp_team_found][week]
-            week_info["opp_game_totals"] = dict(opp_games)
-            for game_num in range(1, 6):
-                team_total = team_games.get(game_num, 0)
-                opp_total = opp_games.get(game_num, 0)
-                if team_total > 0 or opp_total > 0:
-                    if team_total > opp_total:
-                        week_info["wins"] += 1
-                    elif team_total < opp_total:
-                        week_info["losses"] += 1
-                    else:
-                        week_info["ties"] += 1
+        week_info["wins"] = wk_w
+        week_info["losses"] = wk_l
+        week_info["ties"] = wk_t
+        week_info["record_overridden"] = wk_ov
+        if opp_team and week in all_teams.get(opp_team, {}):
+            week_info["opp_game_totals"] = dict(all_teams[opp_team][week])
 
     for week, week_info in weekly_data.items():
         team_games = week_info["game_totals"]
@@ -901,6 +1035,7 @@ def get_week_matchups(
     season: Optional[str] = None,
     *,
     season_num: Optional[int] = None,
+    matchup_overrides: Optional[List[dict]] = None,
 ) -> dict:
     if season_num is None:
         season_num = parse_season_number(season)
@@ -926,16 +1061,9 @@ def get_week_matchups(
             teams[team] = {
                 "game_pins": [],
                 "player_count": 0,
-                "active_player_count": 0,
-                "game5_bowler_count": 0,
                 "opponent": opponent,
-                "game5_winner": "",
                 "players": [],
             }
-
-        g5 = f.get("game5_winner")
-        if g5 and str(g5).strip() and not teams[team]["game5_winner"]:
-            teams[team]["game5_winner"] = str(g5).strip()
 
         if not is_sub:
             teams[team]["players"].append(
@@ -946,10 +1074,6 @@ def get_week_matchups(
                 }
             )
             teams[team]["player_count"] += 1
-            if not is_absent:
-                teams[team]["active_player_count"] += 1
-                if safe_float(f.get("game5")) > 0:
-                    teams[team]["game5_bowler_count"] += 1
             for i, g in enumerate(games_list(f)):
                 gi = int(g)
                 if i >= len(teams[team]["game_pins"]):
@@ -1009,8 +1133,7 @@ def get_week_matchups(
             else 0
         )
 
-        h_wins = a_wins = ties = 0
-        h_wins_first4 = a_wins_first4 = 0
+        h_wins = a_wins = 0
         num_games_cmp = max(len(td["game_pins"]), len(opp["game_pins"]))
         game_results = []
         for i in range(num_games_cmp):
@@ -1018,80 +1141,72 @@ def get_week_matchups(
             ap = opp["game_pins"][i] if i < len(opp["game_pins"]) else 0
             if hp > ap:
                 h_wins += 1
-                if i < 4:
-                    h_wins_first4 += 1
                 game_results.append(("W", "L", hp, ap))
             elif ap > hp:
                 a_wins += 1
-                if i < 4:
-                    a_wins_first4 += 1
                 game_results.append(("L", "W", hp, ap))
             else:
-                ties += 1
                 game_results.append(("T", "T", hp, ap))
 
-        g5_h = (td.get("game5_winner") or "").strip()
-        g5_a = (opp.get("game5_winner") or "").strip()
-        g5_series = g5_h or g5_a
-        if g5_h and g5_a and normalize(g5_h) != normalize(g5_a):
-            g5_series = g5_h
-        game5_series_note = None
-        series_split_2_2 = (
-            h_wins_first4 == 2 and a_wins_first4 == 2 and num_games_cmp >= 4
-        )
-        pins_decisive_g5 = fifth_game_pins_decisive(td, opp)
-        winner_side = None
-        if g5_series and not pins_decisive_g5:
-            g5_home = name_matches_team(team_name, g5_series)
-            g5_away = name_matches_team(opp_name, g5_series)
-            g5_side: Optional[str] = None
-            if g5_home:
-                g5_side = "home"
-            elif g5_away:
-                g5_side = "away"
-            if g5_side:
-                if series_split_2_2:
-                    winner_side = g5_side
-                else:
-                    pin_leader_home = h_wins_first4 > a_wins_first4
-                    pin_leader_away = a_wins_first4 > h_wins_first4
-                    if pin_leader_home and g5_side != "home":
-                        winner_side = g5_side
-                    elif pin_leader_away and g5_side != "away":
-                        winner_side = g5_side
-        if winner_side:
-            if winner_side == "home":
-                h_result, a_result = "W", "L"
-                h_wins, a_wins = 3, 2
-            else:
-                h_result, a_result = "L", "W"
-                h_wins, a_wins = 2, 3
-            if pins_decisive_g5:
-                game5_series_note = (
-                    f"Game 5 / series: {g5_series} (sheet series winner; "
-                    "2–2 after four games)."
-                )
-            elif series_split_2_2:
-                game5_series_note = (
-                    f"Game 5 / series: {g5_series} (sheet column — "
-                    "2–2 after four games; no decisive Game 5 pin totals)."
-                )
-            else:
-                game5_series_note = (
-                    f"Game 5 / series: {g5_series} (sheet column overrides "
-                    "games 1–4 pin totals; no decisive Game 5 pin totals)."
-                )
-        elif h_wins > a_wins:
+        if h_wins > a_wins:
             h_result, a_result = "W", "L"
         elif a_wins > h_wins:
             h_result, a_result = "L", "W"
+        elif total_h > total_a:
+            h_result, a_result = "W", "L"
+        elif total_a > total_h:
+            h_result, a_result = "L", "W"
         else:
-            if total_h > total_a:
-                h_result, a_result = "W", "L"
-            elif total_a > total_h:
-                h_result, a_result = "L", "W"
-            else:
-                h_result = a_result = "T"
+            h_result = a_result = "T"
+
+        record_overridden = False
+        o_home = find_matchup_override(
+            matchup_overrides,
+            season_num=season_num,
+            week=week,
+            team=team_name,
+        )
+        o_away = find_matchup_override(
+            matchup_overrides,
+            season_num=season_num,
+            week=week,
+            team=opp_name,
+        )
+        if o_home is not None or o_away is not None:
+            record_overridden = True
+            (
+                h_wins,
+                _,
+                _,
+                a_wins,
+                _,
+                _,
+                h_result,
+                a_result,
+            ) = sides_from_overrides(team_name, opp_name, o_home, o_away)
+
+        if h_result == "T" and a_result == "T":
+            wl = winner_loser_from_matchup(
+                {
+                    "home": {
+                        "name": team_name,
+                        "result": h_result,
+                        "pins": total_h,
+                        "game_pins": td["game_pins"],
+                    },
+                    "away": {
+                        "name": opp_name,
+                        "result": a_result,
+                        "pins": total_a,
+                        "game_pins": opp["game_pins"],
+                    },
+                }
+            )
+            if wl:
+                if name_matches_team(team_name, wl[0]):
+                    h_result, a_result = "W", "L"
+                else:
+                    h_result, a_result = "L", "W"
 
         matchups.append(
             {
@@ -1114,7 +1229,7 @@ def get_week_matchups(
                     "players": list(opp.get("players", [])),
                 },
                 "game_results": game_results,
-                "game5_series_note": game5_series_note,
+                "record_overridden": record_overridden,
             }
         )
 

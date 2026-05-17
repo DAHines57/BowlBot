@@ -104,16 +104,32 @@ def sheet_matchup_matches_expected_pair(
     )
 
 
+def _matchup_total_pins(side: dict) -> int:
+    """Team pin total for the week (sum of game_pins, else pins field)."""
+    gp = side.get("game_pins") or []
+    if gp:
+        return int(sum(gp))
+    return int(side.get("pins", 0) or 0)
+
+
 def winner_loser_from_matchup(m: dict) -> Optional[SlotWL]:
     away = m.get("away")
     if not away:
         return None
     home, a = m["home"], cast(dict, away)
     hr, ar = home.get("result", ""), a.get("result", "")
+    hn, an = cast(str, home["name"]), cast(str, a["name"])
     if hr == "W" and ar == "L":
-        return (cast(str, home["name"]), cast(str, a["name"]))
+        return (hn, an)
     if ar == "W" and hr == "L":
-        return (cast(str, a["name"]), cast(str, home["name"]))
+        return (an, hn)
+    # Matchup tie (sheet T/T or 2–2 override) — higher total pins wins the week.
+    hp = _matchup_total_pins(home)
+    ap = _matchup_total_pins(a)
+    if hp > ap:
+        return (hn, an)
+    if ap > hp:
+        return (an, hn)
     return None
 
 

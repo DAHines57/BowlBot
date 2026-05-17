@@ -3,8 +3,8 @@ migrate.py — One-time migration script from v4 to v5 Excel format.
 
 v4 format (wide):  one row per player, weekly averages in columns
 v5 format (tall):  one row per player per week, with game scores and opponent.
-    Optional column **Game 5 winner** (after Playoffs?) holds the series winner when
-    the v4 matchup row shows a 5-game series (W+L[+T]=5) but pin scores for game 5 are unknown.
+    Weekly matchup W/L/T lives in matchup_overrides (seeded separately), not in a
+    per-row Game 5 winner column.
 
 Since v4 only stores weekly averages (not individual games), each week's
 average is repeated as Game 1–4 so season averages calculate correctly.
@@ -146,16 +146,51 @@ def _int_cell(ws, row, col):
     return None
 
 
-def parse_game5_winners(ws, matchup_start_col, max_regular_week):
+def get_v4_matchup_section(ws) -> Optional[tuple]:
     """
-    From v4 matchup rows: if each team's wins+losses (+ ties when present) totals 5,
-    the series went five games. Record the deciding-game (series) winner's team name
-    for both teams for that absolute week.
+    Locate the matchup block on a v4 season sheet.
 
-    Returns:
-        dict: (team_name_lower, absolute_week) -> winner display name, or absent key if no G5.
+    Returns (matchup_start_col, max_regular_week) or None if the sheet has no
+  matchup columns (e.g. Seasons 1–3).
     """
-    out = {}
+    header = [ws.cell(2, c).value for c in range(1, ws.max_column + 1)]
+    player_col = None
+    for i, val in enumerate(header):
+        if val == "Player":
+            player_col = i + 1
+            break
+    if player_col is None:
+        return None
+
+    matchup_start_col = None
+    week_cols: dict = {}
+    for i, val in enumerate(header):
+        col = i + 1
+        if col <= player_col:
+            continue
+        if isinstance(val, str):
+            if "Matchup" in val and matchup_start_col is None:
+                matchup_start_col = col
+            else:
+                wn, is_p = parse_week_label(val)
+                if wn is not None:
+                    week_cols[col] = (wn, is_p)
+
+    if matchup_start_col is None or not week_cols:
+        return None
+
+    max_regular_week = max(wn for wn, is_p in week_cols.values() if not is_p)
+    return matchup_start_col, max_regular_week
+
+
+def parse_matchup_overrides(ws, matchup_start_col: int, max_regular_week: int) -> List[dict]:
+    """
+    Parse v4 matchup rows into per-team weekly W/L/T records.
+
+    Each dict has: week, team, opponent, wins, losses, ties, playoffs.
+    Handles sheets with or without a ties column (vs_offset 5 vs 4).
+    """
+    rows_out: List[dict] = []
     current_week = None
 
     for row in range(1, ws.max_row + 1):
@@ -178,15 +213,19 @@ def parse_game5_winners(ws, matchup_start_col, max_regular_week):
 
         team_a = ws.cell(row, matchup_start_col).value
         team_b = ws.cell(row, matchup_start_col + vs_offset + 1).value
-
-        if not (team_a and isinstance(team_a, str) and
-                team_b and isinstance(team_b, str)):
-            continue
-
         wins_a = ws.cell(row, matchup_start_col + 1).value
+        if not (
+            team_a
+            and isinstance(team_a, str)
+            and team_b
+            and isinstance(team_b, str)
+        ):
+            continue
         if not isinstance(wins_a, (int, float)):
             continue
 
+        team_a = team_a.strip()
+        team_b = team_b.strip()
         w_a = _int_cell(ws, row, matchup_start_col + 1)
         l_a = _int_cell(ws, row, matchup_start_col + 2)
         w_b = _int_cell(ws, row, matchup_start_col + vs_offset + 2)
@@ -194,28 +233,39 @@ def parse_game5_winners(ws, matchup_start_col, max_regular_week):
         if None in (w_a, l_a, w_b, l_b):
             continue
 
-        # With ties: Team, W, L, T, Pins, Vs — 'Vs' is one column farther than without ties
         if vs_offset == 5:
             t_a = _int_cell(ws, row, matchup_start_col + 3) or 0
             t_b = _int_cell(ws, row, matchup_start_col + vs_offset + 4) or 0
-            games_a = w_a + l_a + t_a
-            games_b = w_b + l_b + t_b
         else:
-            games_a = w_a + l_a
-            games_b = w_b + l_b
+            t_a = t_b = 0
 
-        if games_a != 5 or games_b != 5:
-            continue
-        if w_a == w_b:
-            continue
+        playoffs = current_week > max_regular_week
+        for team, opponent, w, l, t in (
+            (team_a, team_b, w_a, l_a, t_a),
+            (team_b, team_a, w_b, l_b, t_b),
+        ):
+            rows_out.append(
+                {
+                    "week": current_week,
+                    "team": team,
+                    "opponent": opponent,
+                    "wins": w,
+                    "losses": l,
+                    "ties": t,
+                    "playoffs": playoffs,
+                }
+            )
 
-        team_a = team_a.strip()
-        team_b = team_b.strip()
-        winner = team_a if w_a > w_b else team_b
-        out[(team_a.lower(), current_week)] = winner
-        out[(team_b.lower(), current_week)] = winner
+    return rows_out
 
-    return out
+
+def v4_matchup_overrides_for_sheet(ws) -> List[dict]:
+    """All matchup override rows for one v4 season worksheet."""
+    section = get_v4_matchup_section(ws)
+    if section is None:
+        return []
+    matchup_start_col, max_regular_week = section
+    return parse_matchup_overrides(ws, matchup_start_col, max_regular_week)
 
 
 # ---------------------------------------------------------------------------
@@ -442,10 +492,8 @@ def migrate_season(ws, ws_styles, season_num, wb_book):
 
     # Parse opponent lookup
     matchups = {}
-    game5_winners = {}
     if matchup_start_col:
         matchups = parse_matchups(ws, matchup_start_col, max_regular_week)
-        game5_winners = parse_game5_winners(ws, matchup_start_col, max_regular_week)
 
     theme_palette = _theme_palette_from_workbook(wb_book)
 
@@ -489,7 +537,6 @@ def migrate_season(ws, ws_styles, season_num, wb_book):
                 or weekly_avg == 0
             )
             opponent = matchups.get((team.lower(), abs_week), "")
-            game5_winner = game5_winners.get((team.lower(), abs_week), "")
 
             # Extract game scores for every row (absent or not).
             # ws_styles holds the raw formula string (loaded without data_only).
@@ -516,7 +563,7 @@ def migrate_season(ws, ws_styles, season_num, wb_book):
                 g1, g2, g3, g4, g5,
                 avg,
                 "Y" if is_playoff else "N",
-                game5_winner,
+                "",
                 "Y" if is_absent else "N", "N",
                 opponent
             ]

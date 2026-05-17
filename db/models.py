@@ -30,6 +30,9 @@ class Season(Base):
 
     teams: Mapped[list["Team"]] = relationship(back_populates="season")
     player_weeks: Mapped[list["PlayerWeek"]] = relationship(back_populates="season")
+    matchup_overrides: Mapped[list["MatchupOverride"]] = relationship(
+        back_populates="season"
+    )
 
 
 class Team(Base):
@@ -92,7 +95,6 @@ class PlayerWeek(Base):
     substitute: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     playoffs: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     opponent: Mapped[Optional[str]] = mapped_column(Text)
-    game5_winner: Mapped[Optional[str]] = mapped_column(String(128))
 
     source_row_fingerprint: Mapped[Optional[str]] = mapped_column(String(64), unique=True)
     updated_at: Mapped[datetime] = mapped_column(
@@ -105,3 +107,32 @@ class PlayerWeek(Base):
     season: Mapped["Season"] = relationship(back_populates="player_weeks")
     team: Mapped["Team"] = relationship(back_populates="player_weeks")
     player: Mapped[Optional["Player"]] = relationship(back_populates="player_weeks")
+
+
+class MatchupOverride(Base):
+    __tablename__ = "matchup_overrides"
+    __table_args__ = (
+        UniqueConstraint(
+            "season_id",
+            "week",
+            "team",
+            name="uq_matchup_overrides_season_week_team",
+        ),
+        Index("ix_matchup_overrides_season_week", "season_id", "week"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    season_id: Mapped[int] = mapped_column(
+        ForeignKey("seasons.id", ondelete="CASCADE"), nullable=False
+    )
+    week: Mapped[int] = mapped_column(Integer, nullable=False)
+    team: Mapped[str] = mapped_column(String(128), nullable=False)
+    opponent: Mapped[str] = mapped_column(String(128), nullable=False)
+    wins: Mapped[int] = mapped_column(Integer, nullable=False)
+    losses: Mapped[int] = mapped_column(Integer, nullable=False)
+    ties: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    playoffs: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+
+    season: Mapped["Season"] = relationship(back_populates="matchup_overrides")

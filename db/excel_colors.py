@@ -79,7 +79,7 @@ def build_season_color_maps(
 
 
 def extract_all_team_colors(file_path: str) -> dict[str, str]:
-    """Global map; newest season sheet wins (matches legacy extract_colors.py)."""
+    """Global map; newest season sheet wins per team name."""
     wb = load_workbook(file_path, data_only=False)
     try:
         season_sheets = sorted(

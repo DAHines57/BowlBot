@@ -109,7 +109,6 @@ def _replace_season_rows(
                 substitute=row["substitute"],
                 playoffs=row["playoffs"],
                 opponent=row["opponent"],
-                game5_winner=row.get("game5_winner"),
                 source_row_fingerprint=row["source_row_fingerprint"],
             )
         )

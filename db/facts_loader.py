@@ -6,7 +6,7 @@ from typing import List, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from db.models import PlayerWeek, Season, Team
+from db.models import MatchupOverride, PlayerWeek, Season, Team
 from db.session import get_session
 from stats.facts import canonical_team_name
 
@@ -60,11 +60,45 @@ def load_all_facts(session: Optional[Session] = None) -> List[dict]:
                     )
                     if pw.opponent
                     else None,
-                    "game5_winner": pw.game5_winner,
                     "source_row_fingerprint": pw.source_row_fingerprint,
                 }
             )
         return facts
+    finally:
+        if own_session:
+            session.close()
+
+
+def load_all_matchup_overrides(session: Optional[Session] = None) -> List[dict]:
+    own_session = session is None
+    if own_session:
+        session = get_session()
+    try:
+        stmt = (
+            select(MatchupOverride)
+            .options(joinedload(MatchupOverride.season))
+            .join(MatchupOverride.season)
+            .order_by(Season.number, MatchupOverride.week, MatchupOverride.team)
+        )
+        rows = session.scalars(stmt).all()
+        out: List[dict] = []
+        for mo in rows:
+            sn = mo.season.number
+            out.append(
+                {
+                    "season_number": sn,
+                    "week": mo.week,
+                    "team": canonical_team_name(mo.team, season_num=sn),
+                    "opponent": canonical_team_name(mo.opponent, season_num=sn)
+                    if mo.opponent
+                    else "",
+                    "wins": int(mo.wins),
+                    "losses": int(mo.losses),
+                    "ties": int(mo.ties),
+                    "playoffs": bool(mo.playoffs),
+                }
+            )
+        return out
     finally:
         if own_session:
             session.close()
