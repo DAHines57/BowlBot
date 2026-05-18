@@ -37,6 +37,28 @@ def sort_teams_for_playoff_seeding(
     )
 
 
+def standings_sort_key(stats: dict) -> Tuple[int, int, int, int, float]:
+    """Best-first for standings: W-L-T, then total pins, then average."""
+    return (
+        stats.get("wins", 0),
+        -stats.get("losses", 0),
+        -stats.get("ties", 0),
+        stats.get("pins_for", 0),
+        stats.get("avg_per_game", 0),
+    )
+
+
+def sort_teams_by_standings(
+    team_scores: Dict[str, dict],
+) -> List[Tuple[str, dict]]:
+    """Return (team_name, stats) pairs best record first."""
+    return sorted(
+        team_scores.items(),
+        key=lambda item: standings_sort_key(item[1]),
+        reverse=True,
+    )
+
+
 def parse_season_number(season: Optional[str]) -> Optional[int]:
     if season is None:
         return None
@@ -86,6 +108,141 @@ def _find_opponent_team(
     return resolve_opponent_on_roster(
         opponent_name, team_names, season_num=season_num
     )
+
+
+def _facts_by_team_week(
+    rows: List[dict],
+    *,
+    week_label_fn=None,
+) -> Dict[tuple, List[dict]]:
+    """(team, week_or_label) -> fact rows for that team-week (non-substitutes)."""
+    buckets: Dict[tuple, List[dict]] = {}
+    for f in rows:
+        if f.get("substitute"):
+            continue
+        team = str(f.get("team") or "").strip()
+        if not team:
+            continue
+        week = safe_int(f.get("week"), 0)
+        if week <= 0:
+            continue
+        wl = week_label_fn(week) if week_label_fn else week
+        buckets.setdefault((team, wl), []).append(f)
+    return buckets
+
+
+def _roster_from_week_facts(facts: List[dict]) -> Dict[str, dict]:
+    """player -> {absent: bool, slots: game1-5 pin slots}."""
+    roster: Dict[str, dict] = {}
+    for f in facts:
+        player = str(f.get("player_display_name") or "").strip()
+        if not player:
+            continue
+        if f.get("absent"):
+            roster[player] = {"absent": True, "slots": games_slots(f)}
+            continue
+        slots = games_slots(f)
+        if player not in roster or roster[player].get("absent"):
+            roster[player] = {"absent": False, "slots": slots}
+    return roster
+
+
+def _player_breakdown_entry(
+    *, absent: bool, value: Optional[float]
+) -> Dict[str, object]:
+    return {"absent": absent, "value": value}
+
+
+def _team_game_players_index(
+    rows: List[dict],
+    *,
+    week_label_fn=None,
+) -> Dict[tuple, Dict[str, dict]]:
+    """(team, week_or_label, game_num) -> {player: {absent, value}}."""
+    out: Dict[tuple, Dict[str, dict]] = {}
+    for (team, wl), facts in _facts_by_team_week(
+        rows, week_label_fn=week_label_fn
+    ).items():
+        roster = _roster_from_week_facts(facts)
+        for game_num in range(1, 6):
+            key = (team, wl, game_num)
+            players: Dict[str, dict] = {}
+            for player, info in roster.items():
+                slot = (
+                    info["slots"][game_num - 1]
+                    if game_num - 1 < len(info["slots"])
+                    else None
+                )
+                score = float(slot) if slot is not None and slot > 0 else None
+                players[player] = _player_breakdown_entry(
+                    absent=bool(info["absent"]), value=score
+                )
+            if players:
+                out[key] = players
+    return out
+
+
+def _team_week_players_index(
+    rows: List[dict],
+    *,
+    week_label_fn=None,
+) -> Dict[tuple, Dict[str, dict]]:
+    """(team, week_or_label) -> {player: {absent, value}} (value = week avg)."""
+    out: Dict[tuple, Dict[str, dict]] = {}
+    for (team, wl), facts in _facts_by_team_week(
+        rows, week_label_fn=week_label_fn
+    ).items():
+        players: Dict[str, dict] = {}
+        for player, info in _roster_from_week_facts(facts).items():
+            games = [s for s in info["slots"] if s is not None and s > 0]
+            avg = round(sum(games) / len(games), 2) if games else None
+            players[player] = _player_breakdown_entry(
+                absent=bool(info["absent"]), value=avg
+            )
+        if players:
+            out[(team, wl)] = players
+    return out
+
+
+def _attach_team_game_players(
+    games: List[tuple], player_index: Dict[tuple, Dict[str, dict]]
+) -> List[tuple]:
+    return [
+        (
+            team,
+            week,
+            game_num,
+            score,
+            player_index.get((team, week, game_num), {}),
+        )
+        for team, week, game_num, score in games
+    ]
+
+
+def _attach_team_week_players(
+    weeks: List[tuple], player_index: Dict[tuple, Dict[str, dict]]
+) -> List[tuple]:
+    return [
+        (team, week, total, games, player_index.get((team, week), {}))
+        for team, week, total, games in weeks
+    ]
+
+
+def _flatten_team_game_scores(
+    game_index: Dict[str, Dict[int, Dict[int, float]]],
+    *,
+    week_label_fn=None,
+) -> List[tuple]:
+    """(team, week_or_label, game_num, score), best score first."""
+    out: List[tuple] = []
+    for team, weeks in game_index.items():
+        for week, games in weeks.items():
+            label = week_label_fn(week) if week_label_fn else week
+            for game_num, score in games.items():
+                if score > 0:
+                    out.append((team, label, game_num, score))
+    out.sort(key=lambda x: x[3], reverse=True)
+    return out
 
 
 def _team_game_totals_by_week(
@@ -609,7 +766,7 @@ def get_league_stats(
     player_weekly_totals.sort(
         key=lambda x: x[3] / x[4] if x[4] else 0, reverse=True
     )
-    top_player_weeks = player_weekly_totals[:10]
+    top_weeks = player_weekly_totals[:50]
 
     team_week_dict: Dict[tuple, List[float]] = {}
     for team, week, total, games in team_weekly_totals:
@@ -626,7 +783,16 @@ def get_league_stats(
     team_totals_list.sort(
         key=lambda x: x[2] / x[3] if x[3] else 0, reverse=True
     )
-    top_team_totals = team_totals_list[:5]
+    top_team_weeks = _attach_team_week_players(
+        team_totals_list[:50],
+        _team_week_players_index(rows),
+    )
+
+    team_game_index = _team_game_totals_by_week(rows)
+    top_team_games = _attach_team_game_players(
+        _flatten_team_game_scores(team_game_index)[:50],
+        _team_game_players_index(rows),
+    )
 
     individual_games.sort(key=lambda x: x[3], reverse=True)
     top_games = individual_games[:50]
@@ -634,15 +800,17 @@ def get_league_stats(
     return {
         "season": season or season_label(season_num),
         "player_averages": player_avg_list,
-        "top_player_weeks": top_player_weeks,
-        "top_team_totals": top_team_totals,
         "top_games": top_games,
+        "top_weeks": top_weeks,
+        "top_team_games": top_team_games,
+        "top_team_weeks": top_team_weeks,
     }
 
 
 def get_all_time_stats(facts: List[dict]) -> Dict:
     all_individual_games: List[tuple] = []
     all_player_weeks: List[tuple] = []
+    all_team_games: List[tuple] = []
     all_team_weeks: Dict[tuple, List[float]] = {}
     player_totals: Dict[str, dict] = {}
 
@@ -653,9 +821,23 @@ def get_all_time_stats(facts: List[dict]) -> Dict:
             continue
         by_season.setdefault(int(sn), []).append(f)
 
+    game_player_index: Dict[tuple, Dict[str, float]] = {}
+    week_player_index: Dict[tuple, Dict[str, float]] = {}
     for season_num in sorted(by_season.keys(), reverse=True):
+        season_rows = by_season[season_num]
         team_week_pins: Dict[tuple, List[float]] = {}
-        for f in by_season[season_num]:
+        label_fn = lambda w, sn=season_num: f"S{sn} W{w}"
+        game_index = _team_game_totals_by_week(season_rows)
+        all_team_games.extend(
+            _flatten_team_game_scores(game_index, week_label_fn=label_fn)
+        )
+        game_player_index.update(
+            _team_game_players_index(season_rows, week_label_fn=label_fn)
+        )
+        week_player_index.update(
+            _team_week_players_index(season_rows, week_label_fn=label_fn)
+        )
+        for f in season_rows:
             if f.get("substitute"):
                 continue
             team = str(f.get("team") or "").strip()
@@ -697,6 +879,7 @@ def get_all_time_stats(facts: List[dict]) -> Dict:
             all_team_weeks[(team, label)][1] += vals[1]
 
     all_individual_games.sort(key=lambda x: x[3], reverse=True)
+    all_team_games.sort(key=lambda x: x[3], reverse=True)
     all_player_weeks.sort(
         key=lambda x: x[3] / x[4] if x[4] else 0, reverse=True
     )
@@ -734,9 +917,14 @@ def get_all_time_stats(facts: List[dict]) -> Dict:
     return {
         "season": "All Time",
         "player_averages": player_avg_list,
-        "top_player_weeks": all_player_weeks[:10],
-        "top_team_totals": team_totals[:5],
         "top_games": all_individual_games[:50],
+        "top_weeks": all_player_weeks[:50],
+        "top_team_games": _attach_team_game_players(
+            all_team_games[:50], game_player_index
+        ),
+        "top_team_weeks": _attach_team_week_players(
+            team_totals[:50], week_player_index
+        ),
     }
 
 
@@ -1066,6 +1254,25 @@ def list_weeks_for_season(
     return sorted(found)
 
 
+def list_flagged_playoff_weeks_for_season(
+    facts: List[dict],
+    season: Optional[str] = None,
+    *,
+    season_num: Optional[int] = None,
+) -> List[int]:
+    """Week numbers with playoffs=True on at least one row (no roster heuristics)."""
+    if season_num is None:
+        season_num = parse_season_number(season)
+    if season_num is None:
+        return []
+    found: set[int] = set()
+    for f in filter_facts(facts, season_num=season_num):
+        w = safe_int(f.get("week"), 0)
+        if w > 0 and f.get("playoffs"):
+            found.add(w)
+    return sorted(found)
+
+
 def list_playoff_weeks_for_season(
     facts: List[dict],
     season: Optional[str] = None,
@@ -1094,13 +1301,11 @@ def list_playoff_weeks_for_season(
     if season_num is None:
         return []
 
-    from_flag: set = set()
-    for f in filter_facts(facts, season_num=season_num):
-        w = safe_int(f.get("week"), 0)
-        if w > 0 and f.get("playoffs"):
-            from_flag.add(w)
-    if from_flag:
-        return sorted(from_flag)
+    flagged = list_flagged_playoff_weeks_for_season(
+        facts, season, season_num=season_num
+    )
+    if flagged:
+        return flagged
 
     if len(weeks) < 2:
         return []
@@ -1143,6 +1348,7 @@ def get_league_game_stats(
         rows = list(facts)
 
     all_time_scope = season_num is None and week is None
+    season_totals_scope = season_num is not None and week is None
     all_scored_games: List[tuple] = []
     non_absent_players: set[str] = set()
     players_with_games: set[str] = set()
@@ -1166,6 +1372,10 @@ def get_league_game_stats(
                     wk = safe_int(f.get("week"), 0)
                     for g in games:
                         all_scored_games.append((g, player, team, slabel, wk))
+                elif season_totals_scope:
+                    wk = safe_int(f.get("week"), 0)
+                    for g in games:
+                        all_scored_games.append((g, player, team, wk))
                 else:
                     for g in games:
                         all_scored_games.append((g, player, team))
@@ -1189,6 +1399,19 @@ def get_league_game_stats(
                 "team": lg[2],
                 "season": lg[3],
                 "week": lg[4],
+            }
+        elif season_totals_scope:
+            high_game = {
+                "score": hg[0],
+                "player": hg[1],
+                "team": hg[2],
+                "week": hg[3],
+            }
+            low_game = {
+                "score": lg[0],
+                "player": lg[1],
+                "team": lg[2],
+                "week": lg[3],
             }
         else:
             high_game = {"score": hg[0], "player": hg[1], "team": hg[2]}

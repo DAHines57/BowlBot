@@ -1,6 +1,6 @@
 # Bowl League
 
-Web app for bowling league stats from **PostgreSQL**. League data is imported from a local **Excel v5 workbook** via `sync_db.py` (Google Sheets is no longer used at runtime).
+Web app for bowling league stats from **PostgreSQL**. Closed seasons are imported from a local **Excel v5 workbook** via `sync_db.py`; the **live season** is entered in the DB (see [docs/database/README.md](docs/database/README.md)).
 
 Pages use the same purple / amber styling as the old recap images.
 
@@ -27,7 +27,7 @@ Pages use the same purple / amber styling as the old recap images.
 
 6. `python main.py` → **http://127.0.0.1:3000** (`GET /health` → `"read_source": "database"`).
 
-After you update the workbook, run `python sync_db.py` again (or `POST /reload?key=...` if `RELOAD_SECRET` is set — that re-syncs from Excel).
+After you update a **frozen** season in the workbook, run `python sync_db.py`, then `POST /refresh?key=...` if the app is running. Set `LAST_EXCEL_IMPORTED_SEASON` so the current season is not overwritten from Excel.
 
 ## Local PostgreSQL (Docker)
 
@@ -78,7 +78,7 @@ See [docs/database/phase-1-schema-and-migrations.md](docs/database/phase-1-schem
 - **Optional PostgreSQL roadmap:** [docs/database/README.md](docs/database/README.md) (phased plan: schema → ingest → app reads → ops).
 - Start with gunicorn: `gunicorn main:app --bind 0.0.0.0:$PORT`
 - Set the same env vars as above.
-- Optional: `RELOAD_SECRET` — if set, reload data with `POST /reload?key=<secret>`.
+- Optional: `RELOAD_SECRET` — if set, refresh the in-process cache with `POST /refresh?key=<secret>` (`/reload` is an alias).
 
 ## Project layout
 

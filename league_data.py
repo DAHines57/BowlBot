@@ -20,7 +20,7 @@ class LeagueDataSource(ABC):
 
     @abstractmethod
     def reload_workbook(self) -> None:
-        """Clear cached DB facts (reload after sync)."""
+        """Clear cached DB facts so the next read loads from Postgres."""
 
     @abstractmethod
     def get_seasons(self) -> List[str]:

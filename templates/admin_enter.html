@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Enter scores — Week {{ entry.week }}</title>
+  <style>
+    :root { --bg: #12101a; --card: #1a1730; --border: #2a2050; --text: #e8e6ef; --muted: #9a96a8; --accent: #ffb86c; --mint: #50fa7b; --danger: #ff6b81; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 1.25rem 1rem 3rem; line-height: 1.45; }
+    .shell { max-width: 960px; margin: 0 auto; }
+    h1 { font-size: 1.35rem; margin: 0 0 0.35rem; color: var(--accent); }
+    .meta { color: var(--muted); font-size: 0.9rem; margin-bottom: 1rem; }
+    .nav { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-bottom: 1.25rem; }
+    .nav a { display: inline-block; padding: 0.55rem 0.9rem; background: var(--card); border: 1px solid var(--border); border-radius: 8px; color: var(--mint); text-decoration: none; font-weight: 600; font-size: 0.9rem; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 0.65rem; align-items: flex-end; margin-bottom: 1rem; padding: 1rem; background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
+    label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8rem; color: var(--muted); }
+    label.inline-row { flex-direction: row; align-items: center; gap: 0.5rem; color: var(--text); font-size: 0.9rem; }
+    select, input[type="number"] { background: #12101a; border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 0.45rem 0.55rem; font-size: 0.95rem; min-width: 5rem; }
+    .week-flags { margin-bottom: 1rem; padding: 0.65rem 1rem; background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
+    button { background: linear-gradient(135deg, #3d2a6b, #2d1b69); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0.9rem; font-weight: 600; cursor: pointer; font-size: 0.9rem; }
+    button.primary { background: linear-gradient(135deg, #3a5f3a, #2d4a35); border-color: #3d6b4a; }
+    button.danger { background: #4a2028; border-color: var(--danger); }
+    button.debug { background: #3a3548; border-color: #5a5470; color: var(--muted); font-size: 0.85rem; }
+    .notice { padding: 0.65rem 0.85rem; border-radius: 8px; background: rgba(255, 184, 108, 0.12); border: 1px solid rgba(255, 184, 108, 0.35); margin-bottom: 1rem; font-size: 0.88rem; }
+    .notice.complete { background: rgba(80, 250, 123, 0.1); border-color: rgba(80, 250, 123, 0.35); }
+    .notice.incomplete { background: rgba(255, 107, 129, 0.1); border-color: rgba(255, 107, 129, 0.4); }
+    .notice.not-started { background: rgba(154, 150, 168, 0.12); border-color: rgba(154, 150, 168, 0.35); }
+    .status-pill { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 0.15rem 0.45rem; border-radius: 4px; margin-left: 0.35rem; vertical-align: middle; }
+    .status-pill.complete { background: rgba(80, 250, 123, 0.2); color: var(--mint); }
+    .status-pill.incomplete { background: rgba(255, 107, 129, 0.2); color: var(--danger); }
+    .status-pill.not-started { background: rgba(154, 150, 168, 0.2); color: var(--muted); }
+    select.week-select option.complete { color: #50fa7b; }
+    select.week-select option.incomplete { color: #ff9eb0; }
+    select.week-select option.not-started { color: #9a96a8; }
+    tr.row-incomplete td:first-child { border-left: 3px solid var(--danger); }
+    tr.row-incomplete td input.game:placeholder-shown,
+    tr.row-incomplete td input.game[value=""] { border-color: rgba(255, 107, 129, 0.55); }
+    input.game:invalid { border-color: var(--danger); }
+    .notice.save-error { background: rgba(255, 107, 129, 0.12); border-color: rgba(255, 107, 129, 0.45); color: var(--text); }
+    .team-block { margin-bottom: 1.25rem; }
+    .team-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1.25rem; margin: 0.75rem 0 0.5rem; }
+    .team-bar .team-title { font-weight: 700; color: var(--accent); font-size: 1rem; margin: 0; }
+    .team-bar label { min-width: 12rem; }
+    .team-bar select { min-width: 10rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    th, td { padding: 0.45rem 0.35rem; border-bottom: 1px solid var(--border); text-align: center; }
+    th { color: var(--muted); font-weight: 600; font-size: 0.75rem; background: #2d1b69; }
+    th:first-child, td:first-child { text-align: left; padding-left: 0.65rem; }
+    td input[type="number"] { width: 3.2rem; text-align: center; padding: 0.35rem; border-radius: 4px; border: 1px solid var(--border); background: #12101a; color: var(--text); }
+    .flags label { flex-direction: row; align-items: center; gap: 0.35rem; font-size: 0.75rem; color: var(--text); justify-content: center; }
+    .actions { margin-top: 1.25rem; display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <nav class="nav">
+      <a href="{{ url_for('admin.admin_home') }}">Admin</a>
+      <a href="{{ url_for('admin.admin_season_form') }}">Season setup</a>
+      <a href="/">Home</a>
+    </nav>
+    <h1>Enter week scores</h1>
+    <p class="meta">
+      {{ entry.season }} · Week {{ entry.week }}{% if selected_team %} · {{ selected_team }}{% endif %}
+      {% if entry.completion %}
+      <span class="status-pill {{ entry.completion.status | replace('_', '-') }}">{{ entry.completion.status | replace('_', ' ') }}</span>
+      {% endif %}
+    </p>
+
+    <form class="toolbar" method="get" action="{{ url_for('admin.admin_enter_form') }}">
+      <label>Season
+        <select name="season" required>
+          {% for s in season_choices %}
+          <option value="{{ s }}" {% if s == entry.season %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Week
+        <select name="week" class="week-select" required>
+          {% for ws in week_statuses %}
+          <option value="{{ ws.week }}" class="{{ ws.status | replace('_', '-') }}"
+            {% if ws.week == entry.week %}selected{% endif %}>
+            Week {{ ws.week }} — {% if ws.status == 'complete' %}complete{% elif ws.status == 'incomplete' %}incomplete{% else %}not entered{% endif %}
+          </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Team
+        <select name="team">
+          <option value="">All teams</option>
+          {% for t in all_teams %}
+          <option value="{{ t }}" {% if t == selected_team %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit">Load</button>
+    </form>
+
+    {% if save_error %}
+    <p class="notice save-error">{{ save_error }}</p>
+    {% endif %}
+
+    {% if entry.completion %}
+    <p class="notice {{ entry.completion.status | replace('_', '-') }}">{{ entry.completion.summary }}{% if entry.templated and entry.rows %} Roster copied from a prior week.{% endif %}</p>
+    {% elif not entry.rows %}
+    <p class="notice">No players for this team/week. <a href="{{ url_for('admin.admin_season_form', season=entry.season) }}">Set up season roster</a> first.</p>
+    {% endif %}
+
+    {% if entry.rows %}
+    <form id="save-form" method="post" action="{{ url_for('admin.admin_week_post') }}">
+      <input type="hidden" name="payload" id="payload-field">
+      <input type="hidden" name="team" value="{{ selected_team }}">
+
+      <div class="week-flags">
+        <label class="inline-row">
+          <input type="checkbox" id="week-playoffs" {% if entry.week_playoffs %}checked{% endif %}>
+          Playoffs week (applies to everyone this week)
+        </label>
+      </div>
+
+      {% for team_name, team_rows in entry.teams_grouped %}
+      {% set team_opp = entry.team_opponents.get(team_name, '') %}
+      <div class="team-block" data-team="{{ team_name }}">
+        <div class="team-bar">
+          <span class="team-title">{{ team_name }}</span>
+          <label>Opponent
+            <select class="team-opponent">
+              <option value="">—</option>
+              {% for t in all_teams if t != team_name %}
+              <option value="{{ t }}" {% if team_opp == t %}selected{% endif %}>{{ t }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>G1</th><th>G2</th><th>G3</th><th>G4</th><th>G5</th>
+              <th>Absent</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in team_rows %}
+            <tr data-row data-team="{{ team_name }}" data-player="{{ row.player_display_name }}" data-substitute="{{ 'true' if row.substitute else 'false' }}"{% if row.missing_games %} class="row-incomplete" title="{{ row.missing_games }} game(s) missing"{% endif %}>
+              <td>{{ row.player_display_name }}</td>
+              {% for g in [row.game1, row.game2, row.game3, row.game4, row.game5] %}
+              <td class="game-cell"><input type="number" min="{{ game_score_min }}" max="{{ game_score_max }}" step="1" class="game" value="{{ g if g is not none else '' }}"></td>
+              {% endfor %}
+              <td class="flags"><label><input type="checkbox" class="absent" {% if row.absent %}checked{% endif %}></label></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endfor %}
+
+      <div class="actions">
+        {% if show_debug_tools %}
+        <button type="button" class="debug" id="debug-fill-scores" title="Testing only — does not save">Debug: random scores (150–220)</button>
+        {% endif %}
+        <button type="submit" class="primary">Save{% if selected_team %} {{ selected_team }}{% endif %}</button>
+      </div>
+    </form>
+
+    <form method="post" action="{{ url_for('admin.admin_week_delete_post') }}" style="margin-top:1rem" onsubmit="return confirm('Delete all scores for {{ entry.season }} week {{ entry.week }}?');">
+      <input type="hidden" name="season" value="{{ entry.season }}">
+      <input type="hidden" name="week" value="{{ entry.week }}">
+      <button type="submit" class="danger">Delete this week</button>
+    </form>
+    {% endif %}
+  </div>
+
+  <script>
+    (function () {
+      var form = document.getElementById("save-form");
+      if (!form) return;
+      var season = {{ entry.season | tojson }};
+      var week = {{ entry.week }};
+      var teamFilter = {{ selected_team | tojson }};
+      var ALL_TEAMS = {{ all_teams | tojson }};
+      var GAME_MIN = {{ game_score_min }};
+      var GAME_MAX = {{ game_score_max }};
+      var SCORE_HINT = "Enter a whole number from " + GAME_MIN + " to " + GAME_MAX + ", or leave blank.";
+      var syncingOpponents = false;
+
+      function validateGameInput(inp, tr) {
+        var v = inp.value.trim();
+        if (v === "") {
+          inp.setCustomValidity("");
+          return true;
+        }
+        var n = Number(v);
+        if (!Number.isInteger(n) || n < GAME_MIN || n > GAME_MAX) {
+          inp.setCustomValidity(SCORE_HINT);
+          return false;
+        }
+        inp.setCustomValidity("");
+        return true;
+      }
+
+      document.querySelectorAll("tr[data-row]").forEach(function (tr) {
+        tr.querySelectorAll("input.game").forEach(function (inp) {
+          inp.addEventListener("input", function () { validateGameInput(inp, tr); });
+          inp.addEventListener("blur", function () { validateGameInput(inp, tr); });
+        });
+      });
+
+      function randomDebugScore() {
+        return Math.floor(Math.random() * 71) + 150;
+      }
+
+      function findTeamBlock(teamName) {
+        var blocks = document.querySelectorAll(".team-block");
+        for (var i = 0; i < blocks.length; i++) {
+          if (blocks[i].getAttribute("data-team") === teamName) return blocks[i];
+        }
+        return null;
+      }
+
+      function collectPairedTeams() {
+        var paired = new Set();
+        document.querySelectorAll(".team-block").forEach(function (block) {
+          var team = block.getAttribute("data-team");
+          var sel = block.querySelector(".team-opponent");
+          var opp = sel && sel.value.trim();
+          if (team && opp) {
+            paired.add(team);
+            paired.add(opp);
+          }
+        });
+        return paired;
+      }
+
+      function refreshOpponentOptions() {
+        var paired = collectPairedTeams();
+        document.querySelectorAll(".team-block").forEach(function (block) {
+          var team = block.getAttribute("data-team");
+          var sel = block.querySelector(".team-opponent");
+          if (!sel || !team) return;
+          var current = sel.value.trim();
+          sel.innerHTML = "";
+          var empty = document.createElement("option");
+          empty.value = "";
+          empty.textContent = "—";
+          sel.appendChild(empty);
+          ALL_TEAMS.forEach(function (t) {
+            if (t === team) return;
+            if (paired.has(t) && t !== current) return;
+            var opt = document.createElement("option");
+            opt.value = t;
+            opt.textContent = t;
+            if (t === current) opt.selected = true;
+            sel.appendChild(opt);
+          });
+          if (current) sel.value = current;
+        });
+      }
+
+      function setOpponentSelect(teamName, opponentName, skipTeam) {
+        var block = findTeamBlock(teamName);
+        if (!block || teamName === skipTeam) return;
+        var sel = block.querySelector(".team-opponent");
+        if (!sel) return;
+        syncingOpponents = true;
+        sel.value = opponentName || "";
+        sel.setAttribute("data-prev-opponent", opponentName || "");
+        syncingOpponents = false;
+      }
+
+      document.querySelectorAll(".team-opponent").forEach(function (sel) {
+        sel.setAttribute("data-prev-opponent", sel.value.trim());
+        sel.addEventListener("change", function () {
+          if (syncingOpponents) return;
+          var block = sel.closest(".team-block");
+          if (!block) return;
+          var team = block.getAttribute("data-team");
+          var opponent = sel.value.trim();
+          var prev = sel.getAttribute("data-prev-opponent") || "";
+
+          if (prev && prev !== opponent) {
+            var prevBlock = findTeamBlock(prev);
+            if (prevBlock) {
+              var prevSel = prevBlock.querySelector(".team-opponent");
+              if (prevSel && prevSel.value.trim() === team) {
+                syncingOpponents = true;
+                prevSel.value = "";
+                prevSel.setAttribute("data-prev-opponent", "");
+                syncingOpponents = false;
+              }
+            }
+          }
+
+          if (opponent) {
+            setOpponentSelect(opponent, team, team);
+          }
+
+          sel.setAttribute("data-prev-opponent", opponent);
+          refreshOpponentOptions();
+        });
+      });
+      refreshOpponentOptions();
+
+      var debugFill = document.getElementById("debug-fill-scores");
+      if (debugFill) {
+        debugFill.addEventListener("click", function () {
+          document.querySelectorAll("tr[data-row]").forEach(function (tr) {
+            tr.querySelectorAll("input.game").forEach(function (inp) {
+              inp.value = String(randomDebugScore());
+            });
+            tr.classList.remove("row-incomplete");
+            tr.removeAttribute("title");
+          });
+        });
+      }
+
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var firstBad = null;
+        document.querySelectorAll("tr[data-row]").forEach(function (tr) {
+          tr.querySelectorAll("input.game").forEach(function (inp) {
+            if (!validateGameInput(inp, tr) && !firstBad) firstBad = inp;
+          });
+        });
+        if (firstBad) {
+          firstBad.reportValidity();
+          firstBad.focus();
+          return;
+        }
+        var weekPlayoffs = document.getElementById("week-playoffs").checked;
+        var teamOpponents = {};
+        document.querySelectorAll(".team-block").forEach(function (block) {
+          var team = block.getAttribute("data-team");
+          var sel = block.querySelector(".team-opponent");
+          if (team && sel) {
+            var v = sel.value.trim();
+            if (v) teamOpponents[team] = v;
+          }
+        });
+        Object.keys(teamOpponents).forEach(function (team) {
+          var opp = teamOpponents[team];
+          if (opp) teamOpponents[opp] = team;
+        });
+        var rows = [];
+        document.querySelectorAll("tr[data-row]").forEach(function (tr) {
+          var games = [];
+          tr.querySelectorAll("input.game").forEach(function (inp) {
+            var v = inp.value.trim();
+            games.push(v === "" ? null : parseInt(v, 10));
+          });
+          var team = tr.getAttribute("data-team");
+          rows.push({
+            team: team,
+            player_display_name: tr.getAttribute("data-player"),
+            opponent: teamOpponents[team] || null,
+            game1: games[0], game2: games[1], game3: games[2], game4: games[3], game5: games[4],
+            absent: tr.querySelector("input.absent").checked,
+            substitute: tr.getAttribute("data-substitute") === "true"
+          });
+        });
+        document.getElementById("payload-field").value = JSON.stringify({
+          season: season,
+          week: week,
+          playoffs: weekPlayoffs,
+          team_opponents: teamOpponents,
+          team: teamFilter || null,
+          rows: rows
+        });
+        form.submit();
+      });
+    })();
+  </script>
+</body>
+</html>

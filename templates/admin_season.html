@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Season setup</title>
+  <style>
+    :root { --bg: #12101a; --card: #1a1730; --border: #2a2050; --text: #e8e6ef; --muted: #9a96a8; --accent: #ffb86c; --danger: #ff6b81; --mint: #50fa7b; }
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 1.25rem 1rem 3rem; }
+    .shell { max-width: 900px; margin: 0 auto; }
+    h1 { color: var(--accent); margin: 0 0 0.5rem; }
+    .nav { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-bottom: 1.25rem; }
+    .nav a { display: inline-block; padding: 0.55rem 0.9rem; background: var(--card); border: 1px solid var(--border); border-radius: 8px; color: var(--mint); text-decoration: none; font-weight: 600; font-size: 0.9rem; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; margin-bottom: 1.25rem; }
+    h2 { font-size: 1rem; margin: 0 0 0.75rem; }
+    label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 0.25rem; }
+    input, select { width: 100%; padding: 0.45rem; border-radius: 6px; border: 1px solid var(--border); background: #12101a; color: var(--text); font: inherit; box-sizing: border-box; }
+    .row { display: flex; flex-wrap: wrap; gap: 0.65rem; align-items: flex-end; }
+    .row > label { flex: 1; min-width: 10rem; }
+    button { padding: 0.5rem 0.85rem; border-radius: 8px; border: 1px solid var(--border); background: #2d4a35; color: var(--text); font-weight: 600; cursor: pointer; font-size: 0.9rem; }
+    button.secondary { background: #2d1b69; }
+    button.danger { background: #4a2028; border-color: var(--danger); }
+    button.icon { padding: 0.25rem 0.5rem; font-size: 1rem; line-height: 1; background: transparent; border-color: var(--border); }
+    .team-card { border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; margin-bottom: 0.75rem; }
+    .team-card h3 { margin: 0 0 0.5rem; font-size: 0.95rem; }
+    .hint { color: var(--muted); font-size: 0.85rem; margin: 0 0 1rem; }
+    .players-label { margin-top: 0.65rem; margin-bottom: 0.35rem; }
+    .player-row { display: flex; gap: 0.4rem; align-items: center; margin-bottom: 0.4rem; }
+    .player-row select { flex: 1; min-width: 0; }
+    .team-meta { display: flex; flex-wrap: wrap; gap: 0.65rem; align-items: flex-end; margin-bottom: 0.5rem; }
+    .team-meta label { flex: 1; min-width: 10rem; margin-bottom: 0; }
+    label.color-label { flex: 0 0 auto; min-width: unset; }
+    input[type="color"] { width: 3rem; height: 2.35rem; padding: 0.15rem; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <h1>Season setup</h1>
+    <nav class="nav">
+      <a href="{{ url_for('admin.admin_home') }}">Admin</a>
+      <a href="{{ url_for('admin.admin_enter_form') }}">Enter scores</a>
+      <a href="/">Home</a>
+    </nav>
+
+    <div class="card">
+      <h2>Create new season</h2>
+      <form method="post">
+        <input type="hidden" name="action" value="create">
+        <div class="row">
+          <label>Season
+            <select name="new_season_number" required>
+              {% for n in new_season_options %}
+              <option value="{{ n }}">Season {{ n }}{% if n not in existing_season_numbers %} (new){% endif %}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>Clone from (optional)
+            <select name="clone_from">
+              <option value="">— none —</option>
+              {% for s in db_seasons %}
+              <option value="{{ s.number }}">{{ s.label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+        <p class="hint" style="margin-top:0.75rem">Only the next season numbers (after your highest existing). Creates week 1 roster (blank scores).</p>
+        <button type="submit" style="margin-top:0.75rem">Create season</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Edit season</h2>
+      <form method="get" class="row">
+        <label>Season
+          <select name="season" onchange="this.form.submit()">
+            <option value="">— pick season —</option>
+            {% for label in season_choices %}
+            <option value="{{ label }}" {% if season_number and label == 'Season ' ~ season_number %}selected{% elif roster and label == roster.label %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </form>
+
+      {% if roster %}
+      <p class="hint">For season start: swap players from the list, remove slots, rename teams, set colors. Adding new players or extra roster slots is disabled for now. Scored weeks are not removed when you save.</p>
+      <form method="post" id="roster-form">
+        <input type="hidden" name="action" value="save_roster">
+        <input type="hidden" name="season" value="{{ roster.label }}">
+        <div id="teams-editor">
+          {% for team in roster.teams %}
+          {% set tidx = loop.index0 %}
+          <div class="team-card" data-team-index="{{ tidx }}">
+            <h3>{{ team.name }}</h3>
+            <input type="hidden" name="teams[{{ tidx }}][id]" value="{{ team.id }}">
+            <div class="team-meta">
+              <label>Team name
+                <input type="text" name="teams[{{ tidx }}][name]" value="{{ team.name }}" required>
+              </label>
+              <label class="color-label">Color
+                <input type="color" name="teams[{{ tidx }}][color_hex]" value="{{ team.color_hex or '#808080' }}" title="Team color for standings images">
+              </label>
+            </div>
+            <div class="players-label">Players</div>
+            <div class="players-list" data-team-index="{{ tidx }}">
+              {% for player in team.players %}
+              <div class="player-row">
+                <select class="player-pick" name="teams[{{ tidx }}][player_pick][]" required>
+                  <option value="">— select —</option>
+                  {% if player and player not in all_players %}
+                  <option value="{{ player }}" selected>{{ player }}</option>
+                  {% endif %}
+                  {% for pname in all_players %}
+                  <option value="{{ pname }}" {% if pname == player %}selected{% endif %}>{{ pname }}</option>
+                  {% endfor %}
+                </select>
+                <button type="button" class="icon remove-player" title="Remove">×</button>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        <button type="button" id="add-team-btn" class="secondary" style="margin:0.5rem 0">+ Add team</button>
+        <button type="submit" style="margin-top:0.5rem">Save roster</button>
+      </form>
+
+      <form method="post" style="margin-top:1.5rem" onsubmit="return confirm('Delete entire {{ roster.label }} and all scores?');">
+        <input type="hidden" name="action" value="delete_season">
+        <input type="hidden" name="season" value="{{ roster.label }}">
+        <button type="submit" class="danger">Delete {{ roster.label }}</button>
+      </form>
+      {% elif season_number %}
+      <p class="hint">Season exists but has no roster yet. Add teams below (season start only).</p>
+      <form method="post">
+        <input type="hidden" name="action" value="save_roster">
+        <input type="hidden" name="season" value="Season {{ season_number }}">
+        <div id="teams-editor"></div>
+        <button type="button" id="add-team-btn" class="secondary">+ Add team</button>
+        <button type="submit" style="margin-top:0.75rem">Save roster</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <template id="player-row-template">
+    <div class="player-row">
+      <select class="player-pick" name="teams[__TIDX__][player_pick][]" required>
+        <option value="">— select —</option>
+      </select>
+      <button type="button" class="icon remove-player" title="Remove">×</button>
+    </div>
+  </template>
+
+  <template id="team-template">
+    <div class="team-card" data-team-index="__IDX__">
+      <h3>Team</h3>
+      <div class="team-meta">
+        <label>Team name
+          <input type="text" name="teams[__IDX__][name]" required>
+        </label>
+        <label class="color-label">Color
+          <input type="color" name="teams[__IDX__][color_hex]" value="#808080" title="Team color for standings images">
+        </label>
+      </div>
+      <div class="players-label">Players</div>
+      <div class="players-list" data-team-index="__IDX__"></div>
+    </div>
+  </template>
+
+  <script type="application/json" id="all-players-data">{{ all_players | tojson }}</script>
+  <script>
+    (function () {
+      var ALL_PLAYERS = JSON.parse(document.getElementById("all-players-data").textContent || "[]");
+      var editor = document.getElementById("teams-editor");
+      var addTeamBtn = document.getElementById("add-team-btn");
+      var teamTpl = document.getElementById("team-template").innerHTML;
+      var playerRowTpl = document.getElementById("player-row-template").innerHTML;
+
+      function fillPlayerSelect(sel, selected) {
+        sel.innerHTML = '<option value="">— select —</option>';
+        if (selected && ALL_PLAYERS.indexOf(selected) < 0) {
+          var legacy = document.createElement("option");
+          legacy.value = selected;
+          legacy.textContent = selected;
+          legacy.selected = true;
+          sel.appendChild(legacy);
+        }
+        ALL_PLAYERS.forEach(function (p) {
+          var opt = document.createElement("option");
+          opt.value = p;
+          opt.textContent = p;
+          if (p === selected) opt.selected = true;
+          sel.appendChild(opt);
+        });
+      }
+
+      function bindPlayerRow(row) {
+        row.querySelector(".remove-player").addEventListener("click", function () {
+          row.remove();
+        });
+      }
+
+      function addPlayerRow(teamIdx, listEl, selected) {
+        var html = playerRowTpl.replace(/__TIDX__/g, String(teamIdx));
+        listEl.insertAdjacentHTML("beforeend", html);
+        var row = listEl.lastElementChild;
+        fillPlayerSelect(row.querySelector(".player-pick"), selected || "");
+        bindPlayerRow(row);
+        return row;
+      }
+
+      function bindTeamCard(card) {
+        var teamIdx = card.getAttribute("data-team-index");
+        var listEl = card.querySelector(".players-list");
+        listEl.querySelectorAll(".player-row").forEach(bindPlayerRow);
+        if (!listEl.children.length) addPlayerRow(teamIdx, listEl, "");
+      }
+
+      function nextTeamIndex() {
+        var max = -1;
+        editor.querySelectorAll("[data-team-index]").forEach(function (c) {
+          var n = parseInt(c.getAttribute("data-team-index"), 10);
+          if (n > max) max = n;
+        });
+        return max + 1;
+      }
+
+      if (addTeamBtn) {
+        addTeamBtn.addEventListener("click", function () {
+          var idx = nextTeamIndex();
+          var html = teamTpl.replace(/__IDX__/g, String(idx));
+          editor.insertAdjacentHTML("beforeend", html);
+          var card = editor.lastElementChild;
+          bindTeamCard(card);
+        });
+      }
+
+      editor.querySelectorAll(".team-card").forEach(bindTeamCard);
+      if (addTeamBtn && !editor.children.length) addTeamBtn.click();
+    })();
+  </script>
+</body>
+</html>

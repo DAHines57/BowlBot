@@ -5,7 +5,8 @@
 ## Architecture
 
 ```
-Excel (v5)  →  sync_db.py  →  Postgres (player_weeks, matchup_overrides, …)
+Excel (v5)  →  sync_db.py  →  Postgres   (frozen seasons — see phase-6)
+Admin/API   →  player_week_writes  →  Postgres   (live season — phase-7+)
                                     ↓
                          db/facts_loader.py  →  stats/compute.py
                                     ↓
@@ -25,12 +26,13 @@ Weekly **W/L/T** for display:
 1. **`matchup_overrides`** when a row exists for `(season, week, team)`.
 2. Otherwise pin-by-game comparison in `stats/compute.py`.
 
-## Reload after sync
+## Refreshing data
 
 | Mechanism | Behavior |
 |-----------|----------|
-| `python sync_db.py` | Replace season rows in Postgres from Excel |
-| `POST /reload?key=…` | Runs `sync_database()` then clears `DbLeagueData` caches (requires `RELOAD_SECRET`) |
+| `python sync_db.py` | Import/repair **frozen** seasons from Excel → Postgres (skips DB-managed unless `--force`) |
+| `POST /refresh?key=…` | Re-read facts from Postgres into process cache (`RELOAD_SECRET`; `/reload` is an alias) |
+| DB write API | Phase 7–8 — upsert `player_weeks`, then `POST /refresh` or restart |
 
 ## Deliverables (complete)
 

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin</title>
+  <style>
+    :root { --bg: #12101a; --card: #1a1730; --border: #2a2050; --text: #e8e6ef; --muted: #9a96a8; --accent: #ffb86c; --danger: #ff6b81; --mint: #50fa7b; }
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 1.25rem 1rem 3rem; }
+    .shell { max-width: 720px; margin: 0 auto; }
+    h1 { color: var(--accent); margin: 0 0 1rem; }
+    .nav { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-bottom: 1.5rem; }
+    .nav a, button.link { display: inline-block; padding: 0.55rem 0.9rem; background: var(--card); border: 1px solid var(--border); border-radius: 8px; color: var(--mint); text-decoration: none; font-weight: 600; cursor: pointer; font-size: 0.9rem; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; margin-bottom: 1rem; }
+    h2 { font-size: 1rem; margin: 0 0 0.75rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th, td { padding: 0.4rem 0.35rem; border-bottom: 1px solid var(--border); text-align: left; }
+    th { color: var(--muted); }
+    .danger { color: var(--danger); }
+    form.inline { display: inline; }
+    button.danger { background: #4a2028; border: 1px solid var(--danger); color: #ffc0c8; padding: 0.25rem 0.5rem; border-radius: 6px; cursor: pointer; font-size: 0.8rem; }
+    label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 0.25rem; }
+    input, select { padding: 0.4rem; border-radius: 6px; border: 1px solid var(--border); background: #12101a; color: var(--text); }
+    .row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: flex-end; margin-top: 0.5rem; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <h1>Admin</h1>
+    <p style="color:var(--muted);font-size:0.9rem;margin:-0.5rem 0 1rem">Pick a task below.</p>
+    <nav class="nav">
+      <a href="{{ url_for('admin.admin_enter_form') }}">Enter scores</a>
+      <a href="{{ url_for('admin.admin_season_form') }}">Season setup</a>
+      <a href="/">Home</a>
+    </nav>
+
+    <div class="card">
+      <h2>Seasons in database</h2>
+      {% if db_seasons %}
+      <table>
+        <thead><tr><th>Season</th><th>Teams</th><th>Weeks</th><th></th></tr></thead>
+        <tbody>
+          {% for s in db_seasons %}
+          <tr>
+            <td>{{ s.label }}</td>
+            <td>{{ s.team_count }}</td>
+            <td>{{ s.week_count }}</td>
+            <td><a href="{{ url_for('admin.admin_season_form', season=s.label) }}">Edit</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="muted">No seasons yet. Create one under Season setup.</p>
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>

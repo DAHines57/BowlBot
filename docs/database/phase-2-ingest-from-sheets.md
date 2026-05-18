@@ -24,9 +24,8 @@ Recommendation for v1: **per-season replace** inside a transaction (delete facts
 
 ## Triggers
 
-- **Manual:** `python sync_db.py` (`--dry-run`, `--season N`).
-- **HTTP:** `POST /reload?key=...` runs `sync_database()` when `RELOAD_SECRET` is set.
-- **Scheduled:** Railway cron or GitHub Action hitting the sync endpoint with secret (if publicly deployed).
+- **Manual:** `python sync_db.py` (`--dry-run`, `--season N`, `--force` for DB-managed seasons).
+- **Scheduled:** Optional cron running `sync_db.py` on a host with the workbook (historical repair only).
 
 ## Deliverables
 
@@ -36,4 +35,4 @@ Recommendation for v1: **per-season replace** inside a transaction (delete facts
 
 ## Risks
 
-- **Stale cache:** After sync, call `DbLeagueData.reload_workbook()` (or restart the app) so fact caches refresh; `/reload` does both sync and cache clear.
+- **Stale cache:** After sync or DB writes, `POST /refresh` or restart the app so `DbLeagueData` reloads facts from Postgres.

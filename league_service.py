@@ -10,7 +10,8 @@ from image_generator import (
     build_all_weeks_summary_html,
     build_bracket_index_html,
     build_html,
-    build_leaders_html,
+    build_top_team_games_html,
+    build_top_team_weeks_html,
     build_matchups_html,
     build_player_detail_html,
     build_players_html,
@@ -19,6 +20,7 @@ from image_generator import (
     build_teams_html,
     champion_from_playoff_snapshots,
     build_top_games_html,
+    build_top_weeks_html,
     compute_bracket_rounds,
     inject_web_chrome,
 )
@@ -96,18 +98,14 @@ class LeagueService:
             "all_players": all_players,
         }
 
-    def reload_data(self) -> Tuple[bool, str]:
+    def refresh_data(self) -> Tuple[bool, str]:
+        """Reload in-memory facts and team colors from PostgreSQL (no Excel)."""
         try:
-            from db.sync import sync_database
-
-            result = sync_database()
             self.data.reload_workbook()
             from db.team_colors import refresh_team_colors_cache
 
             refresh_team_colors_cache()
-            return True, (
-                f"Synced {result['rows']} rows across {result['seasons']} season(s) from Excel."
-            )
+            return True, "Refreshed league data from database."
         except Exception as e:
             return False, str(e)
 
@@ -296,14 +294,33 @@ class LeagueService:
             build_teams_html(data, season, champion_team=champion), embed=embed
         ), ""
 
-    def leaders_page(self, season: str, *, embed: bool = False) -> Tuple[Optional[str], str]:
+    def top_team_games_page(self, season: str, n: int, worst: bool, *, embed: bool = False) -> Tuple[Optional[str], str]:
+        n = max(1, min(n, 50))
         if season == "all":
-            blob = self.data.get_all_time_stats()
+            stats = self.data.get_all_time_stats()
         else:
-            blob = self.data.get_league_stats(season)
-        if "error" in blob:
-            return None, blob["error"]
-        return inject_web_chrome(build_leaders_html(blob), embed=embed), ""
+            stats = self.data.get_league_stats(season)
+        if "error" in stats:
+            return None, stats["error"]
+        games = list(stats.get("top_team_games", []))
+        if worst:
+            games = list(reversed(games))
+        subtitle = stats.get("season", season)
+        return inject_web_chrome(build_top_team_games_html(games, subtitle, n), embed=embed), ""
+
+    def top_team_weeks_page(self, season: str, n: int, worst: bool, *, embed: bool = False) -> Tuple[Optional[str], str]:
+        n = max(1, min(n, 50))
+        if season == "all":
+            stats = self.data.get_all_time_stats()
+        else:
+            stats = self.data.get_league_stats(season)
+        if "error" in stats:
+            return None, stats["error"]
+        weeks = list(stats.get("top_team_weeks", []))
+        if worst:
+            weeks = list(reversed(weeks))
+        subtitle = stats.get("season", season)
+        return inject_web_chrome(build_top_team_weeks_html(weeks, subtitle, n), embed=embed), ""
 
     def team_weekly_page(self, team_name: str, season: str, *, embed: bool = False) -> Tuple[Optional[str], str]:
         if season == "all":
@@ -383,6 +400,20 @@ class LeagueService:
             games = list(reversed(games))
         subtitle = stats.get("season", season)
         return inject_web_chrome(build_top_games_html(games, subtitle, n), embed=embed), ""
+
+    def top_weeks_page(self, season: str, n: int, worst: bool, *, embed: bool = False) -> Tuple[Optional[str], str]:
+        n = max(1, min(n, 50))
+        if season == "all":
+            stats = self.data.get_all_time_stats()
+        else:
+            stats = self.data.get_league_stats(season)
+        if "error" in stats:
+            return None, stats["error"]
+        weeks = list(stats.get("top_weeks", []))
+        if worst:
+            weeks = list(reversed(weeks))
+        subtitle = stats.get("season", season)
+        return inject_web_chrome(build_top_weeks_html(weeks, subtitle, n), embed=embed), ""
 
     def find_player_names(self, search: str, season: str) -> List[str]:
         return self.data.find_player_names(search, season if season != "all" else None)
