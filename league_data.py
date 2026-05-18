@@ -62,6 +62,12 @@ class LeagueDataSource(ABC):
         pass
 
     @abstractmethod
+    def get_league_game_stats(
+        self, season: Optional[str] = None, *, all_time: bool = False
+    ) -> dict:
+        pass
+
+    @abstractmethod
     def get_week_matchups(self, week: int, season: Optional[str] = None) -> dict:
         pass
 
@@ -160,6 +166,24 @@ class DbLeagueData(LeagueDataSource):
             season_num=season_num,
         )
 
+    def get_player_game_history(
+        self,
+        player_name: str,
+        season: Optional[str] = None,
+        *,
+        limit: int = 30,
+    ) -> List[dict]:
+        season_num = None
+        if season not in (None, "", "all"):
+            season_num = compute.parse_season_number(season)
+        return compute.get_player_game_history(
+            self._facts_list(),
+            player_name,
+            season,
+            season_num=season_num,
+            limit=limit,
+        )
+
     def get_league_stats(self, season: Optional[str] = None) -> Dict:
         season_num = compute.parse_season_number(season)
         return compute.get_league_stats(
@@ -176,6 +200,24 @@ class DbLeagueData(LeagueDataSource):
         return compute.get_week_summary(
             self._facts_list(), week, season, season_num=season_num
         )
+
+    def get_league_game_stats(
+        self, season: Optional[str] = None, *, all_time: bool = False
+    ) -> dict:
+        facts = self._facts_list()
+        if all_time:
+            return compute.get_league_game_stats(facts, exclude_substitutes=True)
+        if season is None:
+            season = self.get_current_season()
+        season_num = compute.parse_season_number(season)
+        return compute.get_league_game_stats(facts, season_num=season_num)
+
+    def get_player_par(self, season: Optional[str] = None) -> Dict[str, int]:
+        facts = self._facts_list()
+        if season in (None, "", "all"):
+            return compute.compute_player_par(facts, season=None)
+        season_num = compute.parse_season_number(season)
+        return compute.compute_player_par(facts, season=season, season_num=season_num)
 
     def get_week_matchups(self, week: int, season: Optional[str] = None) -> dict:
         if season is None:

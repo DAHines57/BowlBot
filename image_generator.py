@@ -172,6 +172,10 @@ thead th.sortable-th .sort-ind {
   display: inline-block; font-size: 9px; margin-left: 4px; min-width: 0.65em; opacity: 0.78;
   vertical-align: middle;
 }
+thead th.right.sortable-th .sort-ind {
+  margin-left: 0;
+  margin-right: 4px;
+}
 tbody tr { border-bottom: 1px solid #2a2050; }
 tbody tr:nth-child(even) { background: #1a1730; }
 tbody tr.absent { opacity: 0.45; }
@@ -183,6 +187,7 @@ tbody td.right { text-align: right; }
 .rank { color: #555; width: 24px; }
 .player-col { font-weight: bold; color: #fff; }
 .team-col { color: #888; font-size: 12px; }
+.sub-col { color: #888; font-size: 12px; }
 .absent-badge {
     display: inline-block;
     background: #2e1a1a;
@@ -338,42 +343,7 @@ _SUMMARY_INNER_FR = """  <div class="header">
     <div class="subtitle">{season} &nbsp;·&nbsp; Week {week}</div>
   </div>
 
-  <div class="highlights">
-    <div class="highlight-card high">
-      <div class="label">🏆 High Game</div>
-      <div class="score">{high_score}</div>
-      <div class="player-name">{high_player}</div>
-      <div class="team-name">{high_team}</div>
-    </div>
-    <div class="highlight-card low">
-      <div class="label">📉 Low Game</div>
-      <div class="score">{low_score}</div>
-      <div class="player-name">{low_player}</div>
-      <div class="team-name">{low_team}</div>
-    </div>
-  </div>
-
-  <div class="section">
-    <div class="section-title">League Stats</div>
-    <div class="stats-grid">
-      <div class="stat">
-        <div class="stat-value">{league_avg}</div>
-        <div class="stat-label">League Avg</div>
-      </div>
-      <div class="stat">
-        <div class="stat-value">{total_players}</div>
-        <div class="stat-label">Players</div>
-      </div>
-      <div class="stat">
-        <div class="stat-value">{games_200_plus}</div>
-        <div class="stat-label">200+ Games</div>
-      </div>
-      <div class="stat">
-        <div class="stat-value">{total_games}</div>
-        <div class="stat-label">Total Games</div>
-      </div>
-    </div>
-  </div>
+  {league_summary_blocks}
 
   <div class="section">
     <div class="section-title">Leaderboard</div>
@@ -381,11 +351,12 @@ _SUMMARY_INNER_FR = """  <div class="header">
     <table class="sortable-table" data-has-rank-col="1">
       <thead>
         <tr>
-          <th class="right sortable-th" data-sort-col="0" data-sort-type="number">#<span class="sort-ind" aria-hidden="true"></span></th>
+          <th class="right sortable-th" data-sort-col="0" data-sort-type="number"><span class="sort-ind" aria-hidden="true"></span>#</th>
           <th class="sortable-th" data-sort-col="1" data-sort-type="string">Player<span class="sort-ind" aria-hidden="true"></span></th>
           <th class="sortable-th" data-sort-col="2" data-sort-type="string">Team<span class="sort-ind" aria-hidden="true"></span></th>
-          <th class="right sortable-th" data-sort-col="3" data-sort-type="number">Wk Avg<span class="sort-ind" aria-hidden="true"></span></th>
-          <th class="right sortable-th" data-sort-col="4" data-sort-type="number">High<span class="sort-ind" aria-hidden="true"></span></th>
+          <th class="right sortable-th" data-sort-col="3" data-sort-type="number"><span class="sort-ind" aria-hidden="true"></span>Wk Avg</th>
+          <th class="right sortable-th" data-sort-col="4" data-sort-type="number"><span class="sort-ind" aria-hidden="true"></span>High</th>
+          <th class="right sortable-th" data-sort-col="5" data-sort-type="number"><span class="sort-ind" aria-hidden="true"></span>Low</th>
         </tr>
       </thead>
       <tbody>
@@ -404,6 +375,78 @@ def _short_name(full_name: str) -> str:
     return full_name
 
 
+def _highlight_game_context_html(game: dict) -> str:
+    """Season and week line for all-time high/low cards."""
+    season = game.get("season")
+    week = game.get("week")
+    if not season or week is None:
+        return ""
+    try:
+        week_n = int(week)
+    except (TypeError, ValueError):
+        return ""
+    if week_n <= 0:
+        return ""
+    label = f"{html_module.escape(str(season))} · Week {week_n}"
+    return f'<div class="game-context">{label}</div>'
+
+
+def _build_league_summary_blocks(data: dict) -> str:
+    """High/low game cards and league stats row (weekly summary style)."""
+    high = data.get("high_game") or {}
+    low = data.get("low_game") or {}
+    high_score = high.get("score", "—")
+    low_score = low.get("score", "—")
+    high_player = (
+        _short_name(high.get("player", "—")) if high.get("player") else "—"
+    )
+    low_player = (
+        _short_name(low.get("player", "—")) if low.get("player") else "—"
+    )
+    high_team = high.get("team", "") or ""
+    low_team = low.get("team", "") or ""
+    league_avg = data.get("league_avg", "—")
+    return f"""
+  <div class="highlights">
+    <div class="highlight-card high">
+      <div class="label">🏆 High Game</div>
+      <div class="score">{high_score}</div>
+      <div class="player-name">{html_module.escape(high_player)}</div>
+      <div class="team-name"><span style="{_team_color_style(high_team)}">{html_module.escape(high_team)}</span></div>
+      {_highlight_game_context_html(high)}
+    </div>
+    <div class="highlight-card low">
+      <div class="label">📉 Low Game</div>
+      <div class="score">{low_score}</div>
+      <div class="player-name">{html_module.escape(low_player)}</div>
+      <div class="team-name"><span style="{_team_color_style(low_team)}">{html_module.escape(low_team)}</span></div>
+      {_highlight_game_context_html(low)}
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">League Stats</div>
+    <div class="stats-grid">
+      <div class="stat">
+        <div class="stat-value">{league_avg}</div>
+        <div class="stat-label">League Avg</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value">{data.get("total_players", 0)}</div>
+        <div class="stat-label">Players</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value">{data.get("games_200_plus", 0)}</div>
+        <div class="stat-label">200+ Games</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value">{data.get("total_games", 0)}</div>
+        <div class="stat-label">Total Games</div>
+      </div>
+    </div>
+  </div>"""
+
+
 def _week_summary_player_rows(data: dict) -> str:
     rows = []
     rank = 0
@@ -419,11 +462,13 @@ def _week_summary_player_rows(data: dict) -> str:
         row_class = 'class="absent"' if absent else ""
         avg_str = f"{p['avg']:.1f}" if p["avg"] else "—"
         high_str = str(p["high"]) if p["high"] else "—"
+        low_str = str(p["low"]) if p.get("low") else "—"
 
         team_style = _team_color_style(p["team"])
         rank_sort = rank if not absent else 99999
         avg_sort = p["avg"] if p.get("avg") else -1
         high_sort = p["high"] if p.get("high") else -1
+        low_sort = p["low"] if p.get("low") else -1
         orig_rank = (
             f' data-orig-rank="{html_module.escape(rank_str, quote=True)}"'
             if not absent
@@ -436,27 +481,17 @@ def _week_summary_player_rows(data: dict) -> str:
           <td class="team-col" data-sort="{html_module.escape(p["team"].lower(), quote=True)}" style="{team_style}">{p['team']}</td>
           <td class="right" data-sort="{avg_sort}">{avg_str}</td>
           <td class="right" data-sort="{high_sort}">{high_str}</td>
+          <td class="right sub-col" data-sort="{low_sort}">{low_str}</td>
         </tr>""")
     return "".join(rows)
 
 
 def _build_week_summary_inner(data: dict) -> str:
-    high = data.get("high_game") or {}
-    low = data.get("low_game") or {}
     return _SUMMARY_INNER_FR.format(
         season=data.get("season", ""),
         week=data.get("week", ""),
-        high_score=high.get("score", "—"),
-        high_player=_short_name(high.get("player", "—")) if high.get("player") else "—",
-        high_team=f'<span style="{_team_color_style(high.get("team", ""))}">{high.get("team", "")}</span>',
-        low_score=low.get("score", "—"),
-        low_player=_short_name(low.get("player", "—")) if low.get("player") else "—",
-        low_team=f'<span style="{_team_color_style(low.get("team", ""))}">{low.get("team", "")}</span>',
+        league_summary_blocks=_build_league_summary_blocks(data),
         player_rows=_week_summary_player_rows(data),
-        league_avg=data.get("league_avg", "—"),
-        total_players=data.get("total_players", 0),
-        games_200_plus=data.get("games_200_plus", 0),
-        total_games=data.get("total_games", 0),
     )
 
 
@@ -992,6 +1027,10 @@ thead th.sortable-th .sort-ind {
   display: inline-block; font-size: 9px; margin-left: 4px; min-width: 0.65em; opacity: 0.78;
   vertical-align: middle;
 }
+thead th.right.sortable-th .sort-ind {
+  margin-left: 0;
+  margin-right: 4px;
+}
 tbody tr { border-bottom: 1px solid #2a2050; }
 tbody tr:nth-child(even) { background: #1a1730; }
 tbody td { padding: 7px 10px; color: #ddd; }
@@ -1051,6 +1090,97 @@ html {
 }
 """
 
+_HIGHLIGHTS_CSS = """
+.highlights {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+    width: 100%;
+}
+.highlight-card {
+    flex: 1;
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+}
+.highlight-card.high { background: #1a2e1a; border: 1px solid #50fa7b; }
+.highlight-card.low  { background: #2e1a1a; border: 1px solid #ff6b81; }
+.highlight-card .label {
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+}
+.highlight-card.high .label { color: #50fa7b; }
+.highlight-card.low  .label { color: #ff6b81; }
+.highlight-card .score {
+    font-size: 42px;
+    font-weight: bold;
+    line-height: 1;
+}
+.highlight-card.high .score { color: #50fa7b; }
+.highlight-card.low  .score { color: #ff6b81; }
+.highlight-card .player-name {
+    font-size: 15px;
+    font-weight: bold;
+    color: #fff;
+    margin-top: 6px;
+}
+.highlight-card .team-name {
+    font-size: 12px;
+    color: #888;
+    margin-top: 2px;
+}
+.highlight-card .game-context {
+    font-size: 11px;
+    color: #666;
+    margin-top: 4px;
+    letter-spacing: 0.02em;
+}
+.stats-grid {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+}
+.stat {
+    flex: 1;
+    min-width: 0;
+    background: #1a1730;
+    border: 1px solid #2a2050;
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+}
+.stat .stat-value {
+    font-size: 26px;
+    font-weight: bold;
+    color: #ffb86c;
+}
+.stat .stat-label {
+    font-size: 11px;
+    color: #666;
+    margin-top: 4px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+@media (max-width: 700px) {
+    .highlights { flex-direction: column; }
+}
+@media (max-width: 520px) {
+    .highlights { flex-direction: column; }
+    .highlight-card .score { font-size: 36px; }
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+    .stat { flex: none; padding: 10px 8px; }
+    .stat .stat-value { font-size: 22px; }
+    .stat .stat-label { font-size: 10px; letter-spacing: 0.04em; }
+}
+"""
+
 _PLAYER_DETAIL_CSS_EXTRA = """
 .player-detail-team { font-size: 15px; font-weight: 600; color: #fff; line-height: 1.45; }
 .player-stat-rows { border: 1px solid #2a2050; border-radius: 2px; overflow: hidden; }
@@ -1071,7 +1201,218 @@ _PLAYER_DETAIL_CSS_EXTRA = """
     margin: 0; padding: 12px; color: #888; font-size: 13px; line-height: 1.5;
     background: #16132a; border: 1px solid #2a2050; border-radius: 2px;
 }
+.player-chart-wrap {
+    position: relative;
+    overflow: visible;
+    background: #16132a;
+    border: 1px solid #2a2050;
+    border-radius: 6px;
+    padding: 10px 8px 6px 8px;
+}
+.player-chart-tip {
+    position: absolute;
+    z-index: 5;
+    pointer-events: none;
+    transform: translateY(calc(-100% - 12px));
+    min-width: 128px;
+    max-width: calc(100% - 16px);
+    box-sizing: border-box;
+    padding: 9px 12px 10px 12px;
+    background: linear-gradient(180deg, #2a2448 0%, #1a1730 100%);
+    border: 1px solid #6a5f9e;
+    border-radius: 8px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+    text-align: center;
+    line-height: 1.35;
+}
+.player-chart-tip[hidden] { display: none !important; }
+.player-chart-tip-score {
+    font-size: 1.45rem;
+    font-weight: 800;
+    color: #ffb86c;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+}
+.player-chart-tip-meta {
+    margin-top: 3px;
+    font-size: 10px;
+    color: #9a94b0;
+    letter-spacing: 0.03em;
+}
+.player-chart-tip-vs {
+    display: inline-block;
+    margin-top: 5px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+.player-chart-tip-vs--up {
+    color: #7bf5a8;
+    background: rgba(80, 250, 123, 0.14);
+    border: 1px solid rgba(80, 250, 123, 0.35);
+}
+.player-chart-tip-vs--down {
+    color: #ff9aaa;
+    background: rgba(255, 107, 129, 0.12);
+    border: 1px solid rgba(255, 107, 129, 0.32);
+}
+.player-chart-point { cursor: pointer; }
+.player-chart-point:focus { outline: none; }
+.player-chart-point:focus-visible .player-chart-dot {
+    stroke: #ffb86c;
+    stroke-width: 2;
+}
+.player-chart-point--active .player-chart-dot {
+    fill: #7bf5a8;
+    stroke: #ffb86c;
+    stroke-width: 2;
+    transform: scale(1.45);
+    transform-box: fill-box;
+    transform-origin: center;
+}
+.player-chart-hit { fill: transparent; stroke: none; pointer-events: all; }
+.player-chart-caption {
+    margin: 0 0 8px 0;
+    font-size: 11px;
+    color: #8b849c;
+    line-height: 1.4;
+}
+.player-chart-caption strong { color: #ffb86c; font-weight: 700; }
+.player-chart {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+}
+.player-chart-grid { stroke: #2a2445; stroke-width: 1; }
+.player-chart-axis { fill: #6d6785; font-size: 9px; font-family: inherit; }
+.player-chart-line { fill: none; stroke: #ffb86c; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.player-chart-avg {
+    stroke: #7c6ec4; stroke-width: 1.25; stroke-dasharray: 5 4; opacity: 0.9;
+}
+.player-chart-league-avg {
+    stroke: #6ec4e8; stroke-width: 1.25; stroke-dasharray: 3 4; opacity: 0.85;
+}
+.player-chart-dot { fill: #50fa7b; stroke: #0d0c14; stroke-width: 1; pointer-events: none; }
 """
+
+_PLAYER_CHART_TIP_SCRIPT = r"""<script>
+(function () {
+  document.querySelectorAll("[data-player-chart]").forEach(function (wrap) {
+    var tip = wrap.querySelector(".player-chart-tip");
+    var avg = parseFloat(wrap.getAttribute("data-chart-avg") || "0");
+    if (!tip) return;
+    var active = null;
+
+    function hide() {
+      tip.setAttribute("hidden", "");
+      if (active) active.classList.remove("player-chart-point--active");
+      active = null;
+    }
+
+    function place(g) {
+      var wr = wrap.getBoundingClientRect();
+      var gr = g.getBoundingClientRect();
+      var cx = gr.left - wr.left + gr.width / 2;
+      var top = gr.top - wr.top;
+      var pad = 8;
+      tip.style.top = top + "px";
+      tip.style.transform = "translateY(calc(-100% - 12px))";
+      var maxW = Math.max(128, wr.width - pad * 2);
+      tip.style.maxWidth = maxW + "px";
+      var tipW = tip.offsetWidth;
+      var left = cx - tipW / 2;
+      if (left < pad) {
+        left = pad;
+      }
+      if (left + tipW > wr.width - pad) {
+        left = Math.max(pad, wr.width - pad - tipW);
+      }
+      tip.style.left = left + "px";
+    }
+
+    function show(g) {
+      var score = parseInt(g.getAttribute("data-score"), 10);
+      if (isNaN(score)) return;
+      if (active) active.classList.remove("player-chart-point--active");
+      active = g;
+      g.classList.add("player-chart-point--active");
+      var vs = score - avg;
+      var vsStr = (vs >= 0 ? "+" : "") + vs.toFixed(1) + " vs avg";
+      var vsCls =
+        vs >= 0 ? "player-chart-tip-vs--up" : "player-chart-tip-vs--down";
+      var season = g.getAttribute("data-season") || "";
+      var week = g.getAttribute("data-week") || "";
+      var game = g.getAttribute("data-game") || "";
+      var idx = g.getAttribute("data-index") || "";
+      tip.innerHTML =
+        '<div class="player-chart-tip-score">' +
+        score +
+        "</div>" +
+        '<div class="player-chart-tip-meta">' +
+        (season ? season + " \u00b7 " : "") +
+        "Week " +
+        week +
+        " \u00b7 Game " +
+        game +
+        (idx ? " \u00b7 #" + idx : "") +
+        "</div>" +
+        '<span class="player-chart-tip-vs ' +
+        vsCls +
+        '">' +
+        vsStr +
+        "</span>";
+      tip.removeAttribute("hidden");
+      place(g);
+    }
+
+    wrap.querySelectorAll(".player-chart-point").forEach(function (g) {
+      g.addEventListener("mouseenter", function () {
+        show(g);
+      });
+      g.addEventListener("mouseleave", function () {
+        hide();
+      });
+      g.addEventListener("pointerdown", function (e) {
+        if (e.pointerType === "touch") show(g);
+      });
+      g.addEventListener("focusin", function () {
+        show(g);
+      });
+      g.addEventListener("focusout", function (e) {
+        if (!g.contains(e.relatedTarget)) hide();
+      });
+    });
+
+    document.addEventListener(
+      "pointerdown",
+      function (e) {
+        if (!active) return;
+        if (wrap.contains(e.target)) return;
+        hide();
+      },
+      true
+    );
+
+    wrap.addEventListener(
+      "scroll",
+      function () {
+        if (active) place(active);
+      },
+      true
+    );
+    window.addEventListener(
+      "resize",
+      function () {
+        if (active) place(active);
+      },
+      { passive: true }
+    );
+  });
+})();
+</script>"""
 
 
 _LIST_SORT_SCRIPT = r"""<script>
@@ -1475,6 +1816,24 @@ _BRACKET_PAN_SCRIPT = r"""<script>
     }
   }
 
+  function setZoomAt(wrap, z, clientX, clientY) {
+    var viewport = wrap.querySelector(".bracket-zoom-viewport");
+    if (!viewport) return;
+    var oldZ = wrap._bracketZoom || 1;
+    z = clamp(z);
+    if (Math.abs(z - oldZ) < 0.0001) return;
+    var rect = viewport.getBoundingClientRect();
+    var ins = viewportInsets(viewport);
+    var localX = clientX - rect.left - ins.l;
+    var localY = clientY - rect.top - ins.t;
+    var ratio = z / oldZ;
+    var sl = viewport.scrollLeft;
+    var st = viewport.scrollTop;
+    setZoom(wrap, z, { center: false });
+    viewport.scrollLeft = (sl + localX) * ratio - localX;
+    viewport.scrollTop = (st + localY) * ratio - localY;
+  }
+
   function fitZoom(wrap) {
     var viewport = wrap.querySelector(".bracket-zoom-viewport");
     if (!viewport) return;
@@ -1535,6 +1894,44 @@ _BRACKET_PAN_SCRIPT = r"""<script>
     var scroll0 = 0;
     var scroll0Y = 0;
     var pid = null;
+    var pointers = new Map();
+    var pinching = false;
+    var pinchStartDist = 0;
+    var pinchStartZoom = 1;
+
+    function pinchDistance() {
+      var pts = Array.from(pointers.values());
+      if (pts.length < 2) return 0;
+      var dx = pts[1].x - pts[0].x;
+      var dy = pts[1].y - pts[0].y;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function pinchCenter() {
+      var pts = Array.from(pointers.values());
+      return {
+        x: (pts[0].x + pts[1].x) / 2,
+        y: (pts[0].y + pts[1].y) / 2,
+      };
+    }
+
+    function beginPinch() {
+      pendingTap = null;
+      endDrag();
+      pinching = true;
+      moved = true;
+      wrap._bracketFitMode = false;
+      pinchStartDist = pinchDistance();
+      pinchStartZoom = wrap._bracketZoom || 1;
+      wrap.classList.add("bracket-wrap--pinching");
+    }
+
+    function endPinch() {
+      if (!pinching) return;
+      pinching = false;
+      pinchStartDist = 0;
+      wrap.classList.remove("bracket-wrap--pinching");
+    }
 
     function endDrag() {
       if (!dragging) return;
@@ -1551,6 +1948,11 @@ _BRACKET_PAN_SCRIPT = r"""<script>
       function (e) {
         if (e.target.closest(".bracket-zoom-controls")) return;
         if (e.pointerType === "mouse" && e.button !== 0) return;
+        pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (pointers.size >= 2) {
+          beginPinch();
+          return;
+        }
         var match = matchOuterFrom(e.target);
         if (match) {
           pendingTap = {
@@ -1580,6 +1982,23 @@ _BRACKET_PAN_SCRIPT = r"""<script>
     viewport.addEventListener(
       "pointermove",
       function (e) {
+        if (pointers.has(e.pointerId)) {
+          pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        }
+        if (pinching && pointers.size >= 2) {
+          var dist = pinchDistance();
+          if (pinchStartDist > 8 && dist > 0) {
+            var center = pinchCenter();
+            setZoomAt(
+              wrap,
+              pinchStartZoom * (dist / pinchStartDist),
+              center.x,
+              center.y
+            );
+          }
+          e.preventDefault();
+          return;
+        }
         if (pendingTap && e.pointerId === pendingTap.pid) {
           var dx0 = e.clientX - pendingTap.x;
           var dy0 = e.clientY - pendingTap.y;
@@ -1614,6 +2033,14 @@ _BRACKET_PAN_SCRIPT = r"""<script>
     );
 
     function finishPointer(e) {
+      var wasPinching = pinching;
+      pointers.delete(e.pointerId);
+      if (pinching && pointers.size < 2) endPinch();
+      if (wasPinching) {
+        pendingTap = null;
+        endDrag();
+        return;
+      }
       if (pendingTap && e.pointerId === pendingTap.pid) {
         togglePopTap(pendingTap.outer);
         pendingTap = null;
@@ -1630,6 +2057,8 @@ _BRACKET_PAN_SCRIPT = r"""<script>
 
     viewport.addEventListener("pointerup", finishPointer);
     viewport.addEventListener("pointercancel", function (e) {
+      pointers.delete(e.pointerId);
+      if (pinching && pointers.size < 2) endPinch();
       pendingTap = null;
       endDrag();
     });
@@ -1693,6 +2122,143 @@ def _render_list_page(
     )
 
 
+def _player_game_chart_html(
+    points: List[dict],
+    *,
+    chart_scope: str = "",
+    league_avg: Optional[float] = None,
+) -> str:
+    """SVG line chart of individual game scores (oldest → newest, left to right)."""
+    if not points:
+        return '<p class="player-empty">No games to chart for this scope.</p>'
+
+    scores = [int(p["score"]) for p in points]
+    n = len(scores)
+    avg = sum(scores) / n
+    league_ref = float(league_avg) if league_avg is not None else 0.0
+    show_league = league_ref > 0
+    scope_esc = html_module.escape(chart_scope) if chart_scope else ""
+    scope_note = f" · {scope_esc}" if scope_esc else ""
+
+    w, h = 420, 200
+    ml, mr, mt, mb = 38, 10, 14, 26
+    plot_w = w - ml - mr
+    plot_h = h - mt - mb
+
+    y_vals = list(scores)
+    if show_league:
+        y_vals.append(league_ref)
+    y_lo = max(0, min(y_vals) - 25)
+    y_hi = min(300, max(y_vals) + 25)
+    if y_hi - y_lo < 50:
+        y_hi = min(300, y_lo + 50)
+
+    def x_at(i: int) -> float:
+        if n == 1:
+            return ml + plot_w / 2
+        return ml + (i / (n - 1)) * plot_w
+
+    def y_at(score: float) -> float:
+        span = y_hi - y_lo
+        if span <= 0:
+            return mt + plot_h / 2
+        return mt + plot_h - ((score - y_lo) / span) * plot_h
+
+    y_ticks = [y_lo, int(round(avg)), y_hi]
+    grid_lines = []
+    for yt in y_ticks:
+        gy = y_at(float(yt))
+        grid_lines.append(
+            f'<line class="player-chart-grid" x1="{ml}" y1="{gy:.1f}" '
+            f'x2="{w - mr}" y2="{gy:.1f}"/>'
+        )
+        grid_lines.append(
+            f'<text class="player-chart-axis" x="{ml - 6}" y="{gy + 3:.1f}" '
+            f'text-anchor="end">{yt}</text>'
+        )
+
+    poly_pts = " ".join(f"{x_at(i):.1f},{y_at(s):.1f}" for i, s in enumerate(scores))
+    ay = y_at(avg)
+    avg_line = (
+        f'<line class="player-chart-avg" x1="{ml}" y1="{ay:.1f}" '
+        f'x2="{w - mr}" y2="{ay:.1f}"/>'
+    )
+    league_line = ""
+    if show_league:
+        ly = y_at(league_ref)
+        league_line = (
+            f'<line class="player-chart-league-avg" x1="{ml}" y1="{ly:.1f}" '
+            f'x2="{w - mr}" y2="{ly:.1f}"/>'
+        )
+
+    dots: List[str] = []
+    for i, (pt, score) in enumerate(zip(points, scores)):
+        sl = str(pt.get("season_label") or "")
+        wk = pt.get("week", "")
+        g = pt.get("game", "")
+        sl_attr = html_module.escape(sl, quote=True)
+        aria = html_module.escape(f"Game {g}, week {wk}, {score} pins")
+        cx, cy = x_at(i), y_at(score)
+        dots.append(
+            f'<g class="player-chart-point" tabindex="0" role="graphics-symbol" '
+            f'aria-label="{aria}" data-score="{score}" data-season="{sl_attr}" '
+            f'data-week="{wk}" data-game="{g}" data-index="{i + 1}">'
+            f'<circle class="player-chart-hit" cx="{cx:.1f}" cy="{cy:.1f}" r="14"/>'
+            f'<circle class="player-chart-dot" cx="{cx:.1f}" cy="{cy:.1f}" r="3.5"/>'
+            f"</g>"
+        )
+
+    x_labels: List[str] = []
+    if n >= 1:
+        x_labels.append(
+            f'<text class="player-chart-axis" x="{x_at(0):.1f}" y="{h - 6}" text-anchor="middle">1</text>'
+        )
+    if n >= 10:
+        x_labels.append(
+            f'<text class="player-chart-axis" x="{x_at(9):.1f}" y="{h - 6}" text-anchor="middle">10</text>'
+        )
+    if n >= 20:
+        x_labels.append(
+            f'<text class="player-chart-axis" x="{x_at(19):.1f}" y="{h - 6}" text-anchor="middle">20</text>'
+        )
+    if n >= 2:
+        x_labels.append(
+            f'<text class="player-chart-axis" x="{x_at(n - 1):.1f}" y="{h - 6}" '
+            f'text-anchor="middle">{n}</text>'
+        )
+
+    league_note = (
+        f' · league avg <strong>{league_ref:.1f}</strong>'
+        if show_league
+        else ""
+    )
+    caption = (
+        f'<p class="player-chart-caption">Last <strong>{n}</strong> game'
+        f'{"s" if n != 1 else ""}{scope_note}'
+        f' · player avg <strong>{avg:.1f}</strong>'
+        f"{league_note}</p>"
+    )
+    svg = (
+        f'<svg class="player-chart" viewBox="0 0 {w} {h}" role="img" '
+        f'aria-label="Last {n} game scores">'
+        + "".join(grid_lines)
+        + league_line
+        + avg_line
+        + f'<polyline class="player-chart-line" points="{poly_pts}"/>'
+        + "".join(dots)
+        + "".join(x_labels)
+        + "</svg>"
+    )
+    return (
+        caption
+        + f'<div class="player-chart-wrap" data-player-chart data-chart-avg="{avg:.2f}">'
+        + '<div class="player-chart-tip" hidden></div>'
+        + svg
+        + "</div>"
+        + _PLAYER_CHART_TIP_SCRIPT
+    )
+
+
 def build_player_detail_html(
     *,
     page_title: str,
@@ -1701,6 +2267,9 @@ def build_player_detail_html(
     stats_title: str,
     stat_rows: Optional[List[Tuple[str, str, str]]] = None,
     empty_message: Optional[str] = None,
+    game_history: Optional[List[dict]] = None,
+    chart_scope: str = "",
+    league_avg: Optional[float] = None,
 ) -> str:
     """Single-player lookup: same header/section styling as list pages (players, teams, leaders)."""
     sub_esc = html_module.escape(subtitle)
@@ -1739,6 +2308,10 @@ def build_player_detail_html(
       <div class="section-title">{html_module.escape(stats_title)}</div>
       {stats_body}
     </div>
+    <div class="section">
+      <div class="section-title">Recent games</div>
+      {_player_game_chart_html(game_history or [], chart_scope=chart_scope, league_avg=league_avg)}
+    </div>
     """
     css = _LIST_CSS + _PLAYER_DETAIL_CSS_EXTRA
     doc = _render_list_page(css=css, title="👤 PLAYER", subtitle=sub_esc, sections=sections)
@@ -1768,11 +2341,25 @@ def _header_sort_type(h: dict) -> str:
         "total",
         "record",
         "w-l",
+        "absences",
     ):
         return "number"
-    if any(x in lab for x in ("avg", "high", "low", "score", "pin", "for", "agn")):
+    if any(
+        x in lab
+        for x in ("avg", "high", "low", "score", "pin", "for", "agn", "std", "absen")
+    ):
         return "number"
     return "string"
+
+
+def _sortable_th_content(label: str, *, right: bool = False) -> str:
+    """Header label + sort indicator. Numeric (right) columns put the indicator first so
+    right-aligned headers line up with right-aligned values (indicator after label would
+    shift the label left)."""
+    ind = '<span class="sort-ind" aria-hidden="true"></span>'
+    if right:
+        return f"{ind}{label}"
+    return f"{label}{ind}"
 
 
 def _cell_data_sort_value(c: dict) -> str:
@@ -1794,8 +2381,8 @@ def _cell_data_sort_value(c: dict) -> str:
     return str(v).lower()
 
 
-def _list_section(title: str, headers: List[dict], rows: List[List[dict]]) -> str:
-    """Titled table section with client-side sort (asc / desc / default) on headers."""
+def _render_sortable_table(headers: List[dict], rows: List[List[dict]]) -> str:
+    """Sortable table inside a table-scroll wrapper."""
     rank_track = bool(headers) and str(headers[0].get("label", "")).strip() in ("#", "Seed")
     table_attr = ' class="sortable-table" data-has-rank-col="1"' if rank_track else ' class="sortable-table"'
 
@@ -1806,10 +2393,9 @@ def _list_section(title: str, headers: List[dict], rows: List[List[dict]]) -> st
             cls_parts.append("right")
         cls_parts.append("sortable-th")
         st = html_module.escape(_header_sort_type(h))
-        ind = '<span class="sort-ind" aria-hidden="true"></span>'
         th_parts.append(
             f'<th class="{" ".join(cls_parts)}" data-sort-col="{i}" data-sort-type="{st}">'
-            f'{h["label"]}{ind}</th>'
+            f'{_sortable_th_content(h["label"], right=bool(h.get("right")))}</th>'
         )
     th = "".join(th_parts)
 
@@ -1828,22 +2414,220 @@ def _list_section(title: str, headers: List[dict], rows: List[List[dict]]) -> st
     trs = "".join(
         "<tr>" + "".join(_td(c, j) for j, c in enumerate(row)) + "</tr>" for row in rows
     )
+    return (
+        f'<div class="table-scroll">'
+        f"<table{table_attr}><thead><tr>{th}</tr></thead><tbody>{trs}</tbody></table>"
+        f"</div>"
+    )
+
+
+def _list_section(title: str, headers: List[dict], rows: List[List[dict]]) -> str:
+    """Titled table section with client-side sort (asc / desc / default) on headers."""
     return f"""
     <div class="section">
       <div class="section-title">{title}</div>
-      <div class="table-scroll">
-      <table{table_attr}><thead><tr>{th}</tr></thead><tbody>{trs}</tbody></table>
-      </div>
+      {_render_sortable_table(headers, rows)}
     </div>"""
 
 
-# ---------------------------------------------------------------------------
-# Players season leaderboard
-# ---------------------------------------------------------------------------
+_PLAYERS_STATS_TOGGLE_CSS = """
+.players-stats-section .section-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px 14px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid #2a2050;
+    padding-bottom: 6px;
+}
+.players-stats-section .section-head .section-title {
+    margin-bottom: 0;
+    border-bottom: none;
+    padding-bottom: 0;
+}
+.players-stats-toggle {
+    font: inherit;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid #4a4068;
+    background: #1e1a32;
+    color: #c4b8e8;
+    cursor: pointer;
+}
+.players-stats-toggle:hover {
+    border-color: #7c6ec4;
+    color: #fff;
+}
+.players-stats-toggle[aria-pressed="true"] {
+    border-color: #7c6ec4;
+    background: #2d1b69;
+    color: #ffb86c;
+}
+.players-stats-panel[hidden] { display: none !important; }
+.players-stats-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+}
+.players-par-help {
+    font: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid #3d5a4a;
+    background: #1a2e24;
+    color: #7bf5a8;
+    cursor: pointer;
+}
+.players-par-help:hover {
+    border-color: #50fa7b;
+    color: #fff;
+}
+.players-par-help[hidden] { display: none !important; }
+.players-par-dialog {
+    margin: auto;
+    max-width: min(420px, calc(100vw - 32px));
+    padding: 0;
+    border: 1px solid #6a5f9e;
+    border-radius: 10px;
+    background: linear-gradient(180deg, #2a2448 0%, #1a1730 100%);
+    color: #ddd;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+}
+.players-par-dialog::backdrop {
+    background: rgba(8, 6, 14, 0.72);
+}
+.players-par-dialog-inner {
+    padding: 18px 20px 16px;
+}
+.players-par-dialog h2 {
+    margin: 0 0 10px;
+    font-size: 15px;
+    font-weight: 700;
+    color: #ffb86c;
+    letter-spacing: 0.04em;
+}
+.players-par-dialog p {
+    margin: 0 0 10px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: #c8c2dc;
+}
+.players-par-dialog p:last-of-type { margin-bottom: 14px; }
+.players-par-dialog-close {
+    font: inherit;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 8px 14px;
+    border-radius: 6px;
+    border: 1px solid #4a4068;
+    background: #1e1a32;
+    color: #c4b8e8;
+    cursor: pointer;
+}
+.players-par-dialog-close:hover {
+    border-color: #7c6ec4;
+    color: #fff;
+}
+"""
 
-def build_players_html(data: dict, season: str, ascending: bool = False) -> str:
-    count_label = "Games" if season in ("All Time",) or "All Time" in season else "Weeks"
-    headers = [
+_PAR_HELP_DIALOG_BODY = """
+        <h2>What is PAR?</h2>
+        <p><strong>PAR</strong> (pins above replacement) is a running total of how many pins
+        you have scored <em>above</em> the league average for each game you bowled.</p>
+        <p>Think of it as &ldquo;extra credit&rdquo; on every game: if you shot 210 and the
+        league bar that week was 190, you earned +20 PAR for that game. Miss the bar and
+        PAR goes down for that game.</p>
+        <p><strong>Early in the season</strong> (weeks 1&ndash;3), we compare your games to
+        last season&rsquo;s league average&mdash;a fair baseline before this year&rsquo;s
+        averages settle in.</p>
+        <p><strong>From week 4 on</strong>, each game is compared to this season&rsquo;s
+        average through that week (year-to-date), so the bar moves with how the league is
+        bowling right now.</p>
+        <p>Your PAR total adds up every game that way across your career. Higher PAR means
+        you have consistently outscored the league over time.</p>
+        <p>Sort by <strong>PAR</strong> and <strong>weeks</strong> (or <strong>games</strong> on
+        all-time) together&mdash;players with fewer weeks need fewer total pins to stay
+        competitive.</p>
+"""
+
+_PLAYERS_STATS_TOGGLE_SCRIPT = (
+    "<script>\n"
+    "(function () {\n"
+    '  document.querySelectorAll(".players-stats-section").forEach(function (sec) {\n'
+    '    var btn = sec.querySelector(".players-stats-toggle");\n'
+    '    var helpBtn = sec.querySelector(".players-par-help");\n'
+    '    var dialog = sec.querySelector(".players-par-dialog");\n'
+    '    var main = sec.querySelector(\'[data-panel="main"]\');\n'
+    '    var other = sec.querySelector(\'[data-panel="other"]\');\n'
+    "    if (!btn || !main || !other) return;\n"
+    "    function setView(onOther) {\n"
+    "      other.hidden = !onOther;\n"
+    "      main.hidden = onOther;\n"
+    '      btn.setAttribute("aria-pressed", onOther ? "true" : "false");\n'
+    '      btn.textContent = onOther ? "Main stats" : "Other stats";\n'
+    "      if (helpBtn) helpBtn.hidden = !onOther;\n"
+    "      if (dialog && dialog.open && !onOther) dialog.close();\n"
+    "    }\n"
+    '    btn.addEventListener("click", function () {\n'
+    "      setView(other.hidden);\n"
+    "    });\n"
+    "    if (helpBtn && dialog) {\n"
+    '      helpBtn.addEventListener("click", function () {\n'
+    "        if (typeof dialog.showModal === \"function\") dialog.showModal();\n"
+    "      });\n"
+    '      dialog.querySelector(".players-par-dialog-close").addEventListener("click", function () {\n'
+    "        dialog.close();\n"
+    "      });\n"
+    "    }\n"
+    "  });\n"
+    "})();\n"
+    "</script>"
+)
+
+
+def _player_identity_cells(i: int, name: str, team: str) -> List[dict]:
+    return [
+        {"val": i, "cls": "right rank"},
+        {"val": _short_name(name), "cls": "name-col", "sort": name.lower()},
+        {
+            "val": team,
+            "cls": "sub-col",
+            "style": _team_color_style(team),
+            "sort": team.lower(),
+        },
+    ]
+
+
+def _format_par(value: int) -> str:
+    n = int(value)
+    if n > 0:
+        return f"+{n}"
+    return str(n)
+
+
+def build_players_html(
+    data: dict,
+    season: str,
+    ascending: bool = False,
+    *,
+    summary: Optional[dict] = None,
+) -> str:
+    all_time = season in ("All Time",) or "All Time" in season
+    count_label = "Games" if all_time else "Weeks"
+    show_par = True
+    main_headers = [
         {"label": "#", "right": True},
         {"label": "Player"},
         {"label": "Team"},
@@ -1852,26 +2636,107 @@ def build_players_html(data: dict, season: str, ascending: bool = False) -> str:
         {"label": "Low", "right": True},
         {"label": count_label, "right": True},
     ]
-    rows = []
-    sorted_players = sorted(data.items(), key=lambda x: x[1].get("average", 0), reverse=not ascending)
+    other_headers = [
+        {"label": "#", "right": True},
+        {"label": "Player"},
+        {"label": "Team"},
+        {"label": count_label, "right": True, "sort_type": "number"},
+        {"label": "Std dev", "right": True, "sort_type": "number"},
+    ]
+    if show_par:
+        other_headers.append(
+            {"label": "PAR", "right": True, "sort_type": "number"},
+        )
+    other_headers.append(
+        {"label": "Absences", "right": True, "sort_type": "number"},
+    )
+    main_rows: List[List[dict]] = []
+    other_rows: List[List[dict]] = []
+    sorted_players = sorted(
+        data.items(), key=lambda x: x[1].get("average", 0), reverse=not ascending
+    )
     for i, (name, stats) in enumerate(sorted_players, 1):
         avg = stats.get("average", 0)
         high = stats.get("highest_game", 0)
         low = stats.get("lowest_game", 0)
         weeks = stats.get("weeks_played", 0)
+        absences = stats.get("weeks_absent", 0)
+        std_dev = stats.get("std_dev", 0)
+        par = int(stats.get("par", 0))
         team = stats.get("team", "")
-        rows.append([
-            {"val": i,                 "cls": "right rank"},
-            {"val": _short_name(name), "cls": "name-col", "sort": name.lower()},
-            {"val": team,              "cls": "sub-col", "style": _team_color_style(team), "sort": team.lower()},
-            {"val": f"{avg:.1f}",      "cls": "right gold"},
-            {"val": high,              "cls": "right green"},
-            {"val": low,               "cls": "right sub-col"},
-            {"val": weeks,             "cls": "right sub-col"},
-        ])
-    section = _list_section("Season Averages", headers, rows)
+        ident = _player_identity_cells(i, name, team)
+        main_rows.append(
+            ident
+            + [
+                {"val": f"{avg:.1f}", "cls": "right gold"},
+                {"val": high, "cls": "right green"},
+                {"val": low, "cls": "right sub-col"},
+                {"val": weeks, "cls": "right sub-col"},
+            ]
+        )
+        other_cells = [
+            {"val": weeks, "cls": "right sub-col", "sort": weeks},
+            {"val": f"{std_dev:.1f}", "cls": "right gold", "sort": std_dev},
+        ]
+        if show_par:
+            other_cells.append(
+                {"val": _format_par(par), "cls": "right gold", "sort": par},
+            )
+        other_cells.append(
+            {"val": absences, "cls": "right sub-col", "sort": absences},
+        )
+        other_rows.append(ident + other_cells)
+    par_help_btn = """
+          <button type="button" class="players-par-help" hidden>
+            What is PAR?
+          </button>"""
+    par_dialog = (
+        """
+        <dialog class="players-par-dialog">
+          <div class="players-par-dialog-inner">"""
+        + _PAR_HELP_DIALOG_BODY
+        + """
+            <button type="button" class="players-par-dialog-close">Got it</button>
+          </div>
+        </dialog>"""
+    )
+    summary_blocks = (
+        _build_league_summary_blocks(summary) if summary else ""
+    )
+    section = (
+        summary_blocks
+        + f"""
+    <div class="section players-stats-section">
+      <div class="section-head">
+        <div class="section-title">Season Averages</div>
+        <div class="players-stats-actions">{par_help_btn}
+          <button type="button" class="players-stats-toggle" aria-pressed="false">
+            Other stats
+          </button>
+        </div>
+      </div>
+      <div class="players-stats-panel" data-panel="main">
+        """
+        + _render_sortable_table(main_headers, main_rows)
+        + """
+      </div>
+      <div class="players-stats-panel" data-panel="other" hidden>
+        """
+        + _render_sortable_table(other_headers, other_rows)
+        + par_dialog
+        + """
+      </div>
+    </div>"""
+    )
+    css = _LIST_CSS + _PLAYERS_STATS_TOGGLE_CSS
+    if summary:
+        css += _HIGHLIGHTS_CSS
     return _render_list_page(
-        css=_LIST_CSS, title="🎳 PLAYERS", subtitle=season, sections=section
+        css=css,
+        title="🎳 PLAYERS",
+        subtitle=season,
+        sections=section,
+        extra_script=_PLAYERS_STATS_TOGGLE_SCRIPT,
     )
 
 
@@ -1916,14 +2781,14 @@ def _teams_standings_section(
     ncols = len(headers)
     th_parts: List[str] = []
     for i, h in enumerate(headers):
-        cls_parts: List[str] = ["sortable-th"]
+        cls_parts: List[str] = []
         if h.get("right"):
             cls_parts.append("right")
+        cls_parts.append("sortable-th")
         st = html_module.escape(_header_sort_type(h))
-        ind = '<span class="sort-ind" aria-hidden="true"></span>'
         th_parts.append(
             f'<th class="{" ".join(cls_parts)}" data-sort-col="{i}" data-sort-type="{st}">'
-            f'{h["label"]}{ind}</th>'
+            f'{_sortable_th_content(h["label"], right=bool(h.get("right")))}</th>'
         )
     th = "".join(th_parts)
 
@@ -2234,7 +3099,7 @@ def _elimination_section_html(rows: List[Tuple[str, str, str, str, str, int]]) -
         '<th class="sortable-th" data-sort-col="0" data-sort-type="string">'
         'Round<span class="sort-ind" aria-hidden="true"></span></th>'
         '<th class="right sortable-th" data-sort-col="1" data-sort-type="number">'
-        'Week<span class="sort-ind" aria-hidden="true"></span></th>'
+        f'{_sortable_th_content("Week", right=True)}</th>'
         '<th class="sortable-th" data-sort-col="2" data-sort-type="string">'
         'Team out<span class="sort-ind" aria-hidden="true"></span></th>'
         '<th class="sortable-th" data-sort-col="3" data-sort-type="string">'
@@ -2242,7 +3107,7 @@ def _elimination_section_html(rows: List[Tuple[str, str, str, str, str, int]]) -
         '<th class="sortable-th" data-sort-col="4" data-sort-type="string">'
         'Lost to<span class="sort-ind" aria-hidden="true"></span></th>'
         '<th class="right sortable-th" data-sort-col="5" data-sort-type="number">'
-        'Pins (L–W)<span class="sort-ind" aria-hidden="true"></span></th>'
+        f'{_sortable_th_content("Pins (L–W)", right=True)}</th>'
         "</tr></thead>"
     )
     return (
@@ -2405,11 +3270,13 @@ body { overflow-y: auto; min-width: 0; }
   box-sizing: border-box;
   padding: 14px 12px 10px 18px;
 }
-.bracket-wrap.bracket-wrap--dragging .bracket-zoom-viewport {
+.bracket-wrap.bracket-wrap--dragging .bracket-zoom-viewport,
+.bracket-wrap.bracket-wrap--pinching .bracket-zoom-viewport {
   cursor: grabbing;
   user-select: none;
 }
-.bracket-wrap.bracket-wrap--dragging .bracket-zoom-viewport * {
+.bracket-wrap.bracket-wrap--dragging .bracket-zoom-viewport *,
+.bracket-wrap.bracket-wrap--pinching .bracket-zoom-viewport * {
   user-select: none;
 }
 .bracket-zoom-spacer {

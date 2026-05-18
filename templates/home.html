@@ -1052,6 +1052,7 @@
   <script type="application/json" id="initial-latest-data">{{ latest_week | tojson }}</script>
   <script>
     (function () {
+      var STORAGE_KEY = "bowlbot-home-v1";
       var lastPreview = null;
       var replayTimer = null;
       var narrowMq = window.matchMedia("(max-width: 899px)");
@@ -1139,6 +1140,38 @@
 
       function getWeek() {
         return document.getElementById("week_sel").value;
+      }
+
+      function readStoredHome() {
+        try {
+          var raw = sessionStorage.getItem(STORAGE_KEY);
+          if (!raw) return null;
+          return JSON.parse(raw);
+        } catch (err) {
+          return null;
+        }
+      }
+
+      function writeStoredHome(data) {
+        try {
+          if (!data) sessionStorage.removeItem(STORAGE_KEY);
+          else sessionStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        } catch (err) { /* storage blocked */ }
+      }
+
+      function persistHomeState() {
+        writeStoredHome({
+          season: getSeason(),
+          week: getWeek(),
+          preview: lastPreview,
+        });
+      }
+
+      function clearStoredPreview() {
+        var stored = readStoredHome();
+        if (!stored) return;
+        stored.preview = null;
+        writeStoredHome(stored);
       }
 
       function syncContextSummary() {
@@ -1285,7 +1318,10 @@
         if (strong) strong.textContent = "Not available with All seasons";
         if (hint) hint.textContent = message;
         setPlaceholder(true);
-        if (!options.noStore) lastPreview = null;
+        if (!options.noStore) {
+          lastPreview = null;
+          clearStoredPreview();
+        }
         if (narrowMq.matches) closeNav();
       }
 
@@ -1306,6 +1342,7 @@
             title: title || "Scores",
             scope: options.scope || inferScope(base.pathname + base.search),
           };
+          persistHomeState();
         }
         var isPlayoffs = base.pathname === "/bracket" || base.pathname === "/playoffs";
         panel.classList.toggle("embed-panel--playoffs", isPlayoffs);
@@ -1427,6 +1464,7 @@
 
       document.getElementById("embed-close").addEventListener("click", function () {
         lastPreview = null;
+        clearStoredPreview();
         document.getElementById("embed-panel").classList.remove("embed-panel--playoffs");
         document.querySelector(".shell").classList.remove("shell--playoffs");
         document.getElementById("embed-frame").src = "about:blank";
@@ -1449,11 +1487,15 @@
         rebuildLookupSelects();
         updateContextUI();
         syncContextSummary();
+        persistHomeState();
         scheduleReplay();
       });
       document.getElementById("week_sel").addEventListener("change", function () {
         syncContextSummary();
-        scheduleReplay();
+        persistHomeState();
+        if (lastPreview && lastPreview.scope === "this_week") {
+          scheduleReplay();
+        }
       });
 
       function go(path, title) {
@@ -1542,13 +1584,41 @@
       window.go = go;
       window.goSeasonTotals = goSeasonTotals;
 
+      function restoreStoredPreview(stored) {
+        if (!stored || !stored.preview || !stored.preview.href) return false;
+        lastPreview = stored.preview;
+        if (lastPreview.scope === "this_week") {
+          replayThisWeek();
+          return true;
+        }
+        if (lastPreview.scope === "season_totals") {
+          replaySeasonTotals();
+          return true;
+        }
+        showPanel(lastPreview.href, lastPreview.title, {
+          skipScroll: true,
+          scope: lastPreview.scope,
+        });
+        return true;
+      }
+
       function initWeeksAndAutoOpen() {
         syncPanelDetails();
-        rebuildWeekSelect(String(INITIAL_LATEST));
+        var stored = readStoredHome();
+        if (stored && stored.season) {
+          var seasonSel = document.getElementById("season_sel");
+          if ([].some.call(seasonSel.options, function (op) { return op.value === stored.season; })) {
+            seasonSel.value = stored.season;
+          }
+        }
+        var weekPreserve = stored && stored.week ? stored.week : String(INITIAL_LATEST);
+        rebuildWeekSelect(weekPreserve);
         rebuildLookupSelects();
         syncContextSummary();
         updateContextUI();
-        showPanel("/week/summary?" + qsThisSeason(), "Weekly summary", { skipScroll: true, scope: "this_week" });
+        if (!restoreStoredPreview(stored)) {
+          showPanel("/week/summary?" + qsThisSeason(), "Weekly summary", { skipScroll: true, scope: "this_week" });
+        }
       }
 
       if (document.readyState === "loading") {

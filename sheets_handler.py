@@ -360,6 +360,23 @@ class ExcelHandler(SheetHandler):
             self._facts_for_season(season), week, season, season_num=season_num,
         )
 
+    def get_league_game_stats(
+        self, season: Optional[str] = None, *, all_time: bool = False
+    ) -> dict:
+        if all_time:
+            return compute.get_league_game_stats(
+                self._all_facts(), exclude_substitutes=True
+            )
+        if season is None:
+            season = self._get_current_season()
+        season_num = self._get_season_number(season)
+        season_sheet = f"Season {season_num}"
+        if season_sheet not in self.workbook.sheetnames:
+            return {}
+        return compute.get_league_game_stats(
+            self._facts_for_season(season), season_num=season_num
+        )
+
     def get_week_matchups(self, week: int, season: Optional[str] = None) -> dict:
         """Return team matchup results for a specific week."""
         if season is None:

@@ -10,6 +10,7 @@ The app serves league stats from **PostgreSQL** (`db/facts_loader.py` + `stats/c
 | 2 | Ingest / sync from Excel → DB | Done — [phase-2](phase-2-ingest-from-sheets.md) |
 | 3 | App reads from DB | Done — [phase-3](phase-3-app-integration.md) |
 | 4 | Production, ops | [phase-4](phase-4-production-and-ops.md) |
+| 5 | Player PAR (Other stats) | Done — [phase-5](phase-5-player-par.md) |
 
 ## Environment variables
 

@@ -239,6 +239,8 @@ class LeagueService:
                     "highest_game": p.get("highest_game", 0),
                     "lowest_game": p.get("lowest_game", 0),
                     "weeks_played": p.get("games", 0),
+                    "weeks_absent": p.get("absences", 0),
+                    "std_dev": p.get("std_dev", 0),
                 }
                 for p in stats.get("player_averages", [])
             }
@@ -250,7 +252,21 @@ class LeagueService:
             subtitle = season
         if not pdata:
             return None, "No players found."
-        return inject_web_chrome(build_players_html(pdata, subtitle), embed=embed), ""
+        par_map = self.data.get_player_par(
+            "all" if season == "all" else subtitle
+        )
+        for name, stats in pdata.items():
+            stats["par"] = par_map.get(name, 0)
+        if season == "all":
+            summary = self.data.get_league_game_stats(all_time=True)
+        else:
+            summary = self.data.get_league_game_stats(season)
+        return (
+            inject_web_chrome(
+                build_players_html(pdata, subtitle, summary=summary), embed=embed
+            ),
+            "",
+        )
 
     def _playoff_snapshots_for_season(
         self, season: str
@@ -319,7 +335,7 @@ class LeagueService:
                     "team": p.get("team", ""),
                     "average": p.get("avg", 0),
                     "highest_game": p.get("high", 0),
-                    "lowest_game": min(p.get("games", [0]) or [0]),
+                    "lowest_game": p.get("low", min(p.get("games", [0]) or [0])),
                     "weeks_played": 1,
                 }
                 for p in active
@@ -336,6 +352,8 @@ class LeagueService:
                     "highest_game": p.get("highest_game", 0),
                     "lowest_game": p.get("lowest_game", 0),
                     "weeks_played": p.get("games", 0),
+                    "weeks_absent": p.get("absences", 0),
+                    "std_dev": p.get("std_dev", 0),
                 }
                 for p in avgs
             }
@@ -403,6 +421,8 @@ class LeagueService:
                 ("Lowest game", str(safe_int(match.get("lowest_game", 0))), "muted"),
                 ("Games", str(safe_int(match.get("games", 0))), "muted"),
             ]
+            game_history = self.data.get_player_game_history(name, season=None, limit=30)
+            league_summary = self.data.get_league_game_stats(all_time=True)
             return {
                 "page_title": name,
                 "subtitle": f"{name} · All Time",
@@ -410,6 +430,9 @@ class LeagueService:
                 "stats_title": "Career stats",
                 "stat_rows": stat_rows,
                 "empty_message": None,
+                "game_history": game_history,
+                "chart_scope": "all time",
+                "league_avg": league_summary.get("league_avg"),
             }, ""
 
         if season != "all":
@@ -443,6 +466,8 @@ class LeagueService:
             empty_message = "No scores for this scope."
         scope = season if season != "all" else ""
         subtitle = f"{player} · {scope}" if scope else player
+        game_history = self.data.get_player_game_history(player, season, limit=30)
+        league_summary = self.data.get_league_game_stats(season)
         return {
             "page_title": player,
             "subtitle": subtitle,
@@ -450,4 +475,7 @@ class LeagueService:
             "stats_title": "Season stats",
             "stat_rows": stat_rows,
             "empty_message": empty_message,
+            "game_history": game_history,
+            "chart_scope": scope or season,
+            "league_avg": league_summary.get("league_avg"),
         }, ""

@@ -1,7 +1,7 @@
 """Aggregate league stats from player-week fact rows."""
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from stats.facts import (
     filter_facts,
@@ -671,14 +671,17 @@ def get_all_time_stats(facts: List[dict]) -> Dict:
             for g in week_games:
                 all_individual_games.append((player, team, label, g))
 
-            if not is_absent and player:
+            if player:
                 if player not in player_totals:
-                    player_totals[player] = {"team": team, "games": []}
-                player_totals[player]["games"].extend(week_games)
-                if week_total > 0:
-                    all_player_weeks.append(
-                        (player, team, label, week_total, len(week_games))
-                    )
+                    player_totals[player] = {"team": team, "games": [], "absences": 0}
+                if is_absent:
+                    player_totals[player]["absences"] += 1
+                elif week_games:
+                    player_totals[player]["games"].extend(week_games)
+                    if week_total > 0:
+                        all_player_weeks.append(
+                            (player, team, label, week_total, len(week_games))
+                        )
 
             if week > 0 and week_total > 0:
                 key = (team, label)
@@ -719,6 +722,7 @@ def get_all_time_stats(facts: List[dict]) -> Dict:
                 "highest_game": max(d["games"]),
                 "lowest_game": min(d["games"]),
                 "games": len(d["games"]),
+                "absences": d.get("absences", 0),
             }
             for p, d in player_totals.items()
             if d["games"]
@@ -867,6 +871,164 @@ def get_player_scores(
     return results
 
 
+def get_player_game_history(
+    facts: List[dict],
+    player_name: str,
+    season: Optional[str] = None,
+    *,
+    season_num: Optional[int] = None,
+    limit: int = 30,
+) -> List[dict]:
+    """Chronological game scores for one player (newest `limit` games)."""
+    if not player_name or not str(player_name).strip():
+        return []
+    if season_num is None and season not in (None, "", "all"):
+        season_num = parse_season_number(season)
+
+    rows = (
+        filter_facts(facts, season_num=season_num)
+        if season_num is not None
+        else list(facts)
+    )
+
+    games: List[dict] = []
+    for f in rows:
+        if f.get("substitute") or f.get("absent"):
+            continue
+        player = str(f.get("player_display_name") or "").strip()
+        if not player or not name_matches_team(player_name, player):
+            continue
+        sn = safe_int(f.get("season_number"), 0)
+        wk = safe_int(f.get("week"), 0)
+        slabel = str(f.get("season_label") or f"S{sn}")
+        for gi, score in enumerate(games_list(f), start=1):
+            games.append(
+                {
+                    "score": int(round(score)),
+                    "week": wk,
+                    "game": gi,
+                    "season_number": sn,
+                    "season_label": slabel,
+                }
+            )
+
+    games.sort(key=lambda g: (g["season_number"], g["week"], g["game"]))
+    cap = max(1, int(limit))
+    return games[-cap:]
+
+
+PAR_EARLY_WEEK_CUTOFF = 4
+
+
+def _par_player_game_scores(f: dict) -> List[float]:
+    """Game scores that count toward a player's PAR (matches get_player_scores)."""
+    if f.get("absent"):
+        return []
+    return games_list(f)
+
+
+def _par_league_baseline_game_scores(f: dict) -> List[float]:
+    """Game scores in the league baseline pool (regulars only)."""
+    if f.get("substitute") or f.get("absent"):
+        return []
+    return games_list(f)
+
+
+def build_par_baselines(
+    facts: List[dict],
+) -> Tuple[Dict[int, float], Dict[int, Dict[int, float]]]:
+    """Full-season and YTD league averages per season number."""
+    by_season_week: Dict[int, Dict[int, List[float]]] = {}
+    for f in facts:
+        sn = safe_int(f.get("season_number"), 0)
+        if sn <= 0:
+            continue
+        wk = safe_int(f.get("week"), 0)
+        for score in _par_league_baseline_game_scores(f):
+            by_season_week.setdefault(sn, {}).setdefault(wk, []).append(score)
+
+    full_avg: Dict[int, float] = {}
+    ytd_avg: Dict[int, Dict[int, float]] = {}
+    for sn, weeks_map in by_season_week.items():
+        all_scores: List[float] = []
+        for wk in sorted(weeks_map.keys()):
+            all_scores.extend(weeks_map[wk])
+        if all_scores:
+            full_avg[sn] = sum(all_scores) / len(all_scores)
+
+        running: List[float] = []
+        ytd: Dict[int, float] = {}
+        for wk in sorted(weeks_map.keys()):
+            running.extend(weeks_map[wk])
+            ytd[wk] = sum(running) / len(running)
+        ytd_avg[sn] = ytd
+
+    return full_avg, ytd_avg
+
+
+def par_baseline_for_game(
+    season_num: int,
+    week: int,
+    full_avg: Dict[int, float],
+    ytd_avg: Dict[int, Dict[int, float]],
+) -> float:
+    """Baseline pin level for PAR (see docs/database/phase-5-player-par.md)."""
+    if week < PAR_EARLY_WEEK_CUTOFF:
+        prior = full_avg.get(season_num - 1)
+        if prior is not None:
+            return prior
+        ytd = ytd_avg.get(season_num, {}).get(week)
+        if ytd is not None:
+            return ytd
+        return full_avg.get(season_num, 0.0)
+
+    ytd = ytd_avg.get(season_num, {}).get(week)
+    if ytd is not None:
+        return ytd
+    return full_avg.get(season_num, 0.0)
+
+
+def compute_player_par(
+    facts: List[dict],
+    season: Optional[str] = None,
+    *,
+    season_num: Optional[int] = None,
+) -> Dict[str, int]:
+    """Total PAR per player for one season or career (sum of seasonal PAR)."""
+    if season_num is None and season not in (None, "", "all"):
+        season_num = parse_season_number(season)
+
+    full_avg, ytd_avg = build_par_baselines(facts)
+    par_totals: Dict[str, int] = {}
+
+    def accumulate(rows: Iterable[dict]) -> None:
+        for f in rows:
+            player = str(f.get("player_display_name") or "").strip()
+            if not player:
+                continue
+            sn = safe_int(f.get("season_number"), 0)
+            wk = safe_int(f.get("week"), 0)
+            if sn <= 0:
+                continue
+            baseline = par_baseline_for_game(sn, wk, full_avg, ytd_avg)
+            for score in _par_player_game_scores(f):
+                par_totals[player] = par_totals.get(player, 0) + int(round(score - baseline))
+
+    if season_num is not None:
+        accumulate(filter_facts(facts, season_num=season_num))
+    else:
+        by_season: Dict[int, List[dict]] = {}
+        for f in facts:
+            sn = f.get("season_number")
+            if sn is None:
+                continue
+            by_season.setdefault(int(sn), []).append(f)
+        for sn in sorted(by_season.keys()):
+            accumulate(by_season[sn])
+
+    return par_totals
+
+
 def get_latest_week(
     facts: List[dict],
     season: Optional[str] = None,
@@ -963,6 +1125,93 @@ def list_playoff_weeks_for_season(
     return sorted(playoff_rev)
 
 
+def get_league_game_stats(
+    facts: List[dict],
+    *,
+    season_num: Optional[int] = None,
+    week: Optional[int] = None,
+    exclude_substitutes: bool = False,
+) -> dict:
+    """Aggregate high/low game and league totals for a week, season, or all facts."""
+    if season_num is not None:
+        rows = (
+            filter_facts(facts, season_num=season_num, week=week)
+            if week is not None
+            else filter_facts(facts, season_num=season_num)
+        )
+    else:
+        rows = list(facts)
+
+    all_time_scope = season_num is None and week is None
+    all_scored_games: List[tuple] = []
+    non_absent_players: set[str] = set()
+    players_with_games: set[str] = set()
+
+    for f in rows:
+        if exclude_substitutes and f.get("substitute"):
+            continue
+        player = str(f.get("player_display_name") or "").strip()
+        if not player:
+            continue
+        team = str(f.get("team") or "Unknown").strip()
+        is_absent = bool(f.get("absent"))
+        games = [int(g) for g in games_list(f)]
+        if not is_absent:
+            non_absent_players.add(player)
+            if games:
+                players_with_games.add(player)
+                if all_time_scope:
+                    sn = safe_int(f.get("season_number"), 0)
+                    slabel = str(f.get("season_label") or season_label(sn))
+                    wk = safe_int(f.get("week"), 0)
+                    for g in games:
+                        all_scored_games.append((g, player, team, slabel, wk))
+                else:
+                    for g in games:
+                        all_scored_games.append((g, player, team))
+
+    high_game = low_game = None
+    if all_scored_games:
+        all_scored_games.sort(key=lambda x: x[0])
+        lg = all_scored_games[0]
+        hg = all_scored_games[-1]
+        if all_time_scope:
+            high_game = {
+                "score": hg[0],
+                "player": hg[1],
+                "team": hg[2],
+                "season": hg[3],
+                "week": hg[4],
+            }
+            low_game = {
+                "score": lg[0],
+                "player": lg[1],
+                "team": lg[2],
+                "season": lg[3],
+                "week": lg[4],
+            }
+        else:
+            high_game = {"score": hg[0], "player": hg[1], "team": hg[2]}
+            low_game = {"score": lg[0], "player": lg[1], "team": lg[2]}
+
+    scores_only = [g[0] for g in all_scored_games]
+    if week is not None:
+        total_players = len(non_absent_players)
+    else:
+        total_players = len(players_with_games)
+
+    return {
+        "high_game": high_game,
+        "low_game": low_game,
+        "league_avg": round(sum(scores_only) / len(scores_only), 1)
+        if scores_only
+        else 0,
+        "total_players": total_players,
+        "games_200_plus": len([g for g in scores_only if g >= 200]),
+        "total_games": len(scores_only),
+    }
+
+
 def get_week_summary(
     facts: List[dict],
     week: int,
@@ -980,7 +1229,6 @@ def get_week_summary(
         return {"error": f"Season '{season}' not found"}
 
     players = []
-    all_scored_games: List[tuple] = []
 
     for f in rows:
         player = str(f.get("player_display_name") or "").strip()
@@ -990,42 +1238,25 @@ def get_week_summary(
         is_absent = bool(f.get("absent"))
         games = [int(g) for g in games_list(f)]
 
-        entry = {
-            "name": player,
-            "team": team,
-            "games": games,
-            "avg": round(sum(games) / len(games), 1) if games else 0,
-            "high": max(games) if games else 0,
-            "absent": is_absent,
-        }
-        players.append(entry)
-        if not is_absent:
-            for g in games:
-                all_scored_games.append((g, player, team))
+        players.append(
+            {
+                "name": player,
+                "team": team,
+                "games": games,
+                "avg": round(sum(games) / len(games), 1) if games else 0,
+                "high": max(games) if games else 0,
+                "low": min(games) if games else 0,
+                "absent": is_absent,
+            }
+        )
 
     players.sort(key=lambda x: x["avg"], reverse=True)
-
-    high_game = low_game = None
-    if all_scored_games:
-        all_scored_games.sort(key=lambda x: x[0])
-        lg = all_scored_games[0]
-        hg = all_scored_games[-1]
-        high_game = {"score": hg[0], "player": hg[1], "team": hg[2]}
-        low_game = {"score": lg[0], "player": lg[1], "team": lg[2]}
-
-    scores_only = [g for g, _, _ in all_scored_games]
+    stats = get_league_game_stats(facts, season_num=season_num, week=week)
     return {
         "season": season,
         "week": week,
         "players": players,
-        "high_game": high_game,
-        "low_game": low_game,
-        "league_avg": round(sum(scores_only) / len(scores_only), 1)
-        if scores_only
-        else 0,
-        "total_players": len([p for p in players if not p["absent"]]),
-        "games_200_plus": len([g for g in scores_only if g >= 200]),
-        "total_games": len(scores_only),
+        **stats,
     }
 
 
