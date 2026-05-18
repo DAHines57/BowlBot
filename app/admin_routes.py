@@ -21,6 +21,8 @@ from db.season_admin import (
 )
 from db.session import get_session
 from league_admin import (
+    GAME_SCORE_MAX,
+    GAME_SCORE_MIN,
     default_entry_target,
     default_entry_week,
     get_week_entry,
@@ -225,6 +227,9 @@ def admin_enter_form():
         week_statuses=week_statuses,
         selected_team=team or "",
         show_debug_tools=show_debug_tools,
+        game_score_min=GAME_SCORE_MIN,
+        game_score_max=GAME_SCORE_MAX,
+        save_error=(request.args.get("error") or "").strip() or None,
     )
 
 
@@ -282,7 +287,13 @@ def admin_week_post():
 
     rows, err = parse_week_rows_payload(body)
     if err:
-        return jsonify({"error": err}), 400
+        if request.is_json or request.headers.get("Accept") == "application/json":
+            return jsonify({"error": err}), 400
+        team = (body.get("team") or request.form.get("team") or "").strip()
+        q = f"?season={quote(season)}&week={week}&error={quote(err)}"
+        if team:
+            q += f"&team={quote(team)}"
+        return redirect(f"/admin/enter{q}")
 
     ok, msg = save_week_entry(
         svc.data,
@@ -467,15 +478,10 @@ def _team_indices_from_form() -> list[int]:
 
 def _players_for_team_index(team_idx: int) -> list[str]:
     picks = request.form.getlist(f"teams[{team_idx}][player_pick][]")
-    news = request.form.getlist(f"teams[{team_idx}][player_new][]")
     players: list[str] = []
-    for i, pick in enumerate(picks):
+    for pick in picks:
         pick = (pick or "").strip()
-        if pick == "__new__":
-            name = (news[i] if i < len(news) else "").strip()
-            if name:
-                players.append(name)
-        elif pick:
+        if pick:
             players.append(pick)
     if players:
         return players
@@ -484,12 +490,19 @@ def _players_for_team_index(team_idx: int) -> list[str]:
 
 
 def _parse_teams_form() -> list[dict]:
-    """Parse teams[N][name] and player picks from the roster form."""
+    """Parse teams[N][name], id, color_hex, and player picks from the roster form."""
     teams = []
     for idx in _team_indices_from_form():
         name = (request.form.get(f"teams[{idx}][name]") or "").strip()
         if not name:
             continue
         players = _players_for_team_index(idx)
-        teams.append({"name": name, "players": players})
+        entry: dict = {"name": name, "players": players}
+        raw_id = (request.form.get(f"teams[{idx}][id]") or "").strip()
+        if raw_id:
+            entry["id"] = raw_id
+        raw_color = request.form.get(f"teams[{idx}][color_hex]")
+        if raw_color is not None:
+            entry["color_hex"] = raw_color.strip()
+        teams.append(entry)
     return teams

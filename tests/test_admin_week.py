@@ -9,6 +9,7 @@ from league_admin import (
     list_public_seasons,
     list_public_weeks_for_season,
     list_season_week_completion,
+    parse_game_score,
     parse_week_rows_payload,
     _template_week_rows,
     fact_to_entry_row,
@@ -62,11 +63,42 @@ class _FakeData:
         return compute.list_weeks_for_season(self._facts, season=season)
 
 
+def test_parse_game_score():
+    assert parse_game_score(None) == (None, None)
+    assert parse_game_score("") == (None, None)
+    assert parse_game_score(200) == (200.0, None)
+    assert parse_game_score("210")[0] == 210.0
+    assert parse_game_score(0)[1] is not None
+    assert parse_game_score(301)[1] is not None
+    assert parse_game_score("abc")[1] is not None
+    assert parse_game_score(180.5)[1] is not None
+
+
 def test_parse_week_rows_payload():
     rows, err = parse_week_rows_payload(
         {
             "playoffs": True,
             "team_opponents": {"Team A": "Team B"},
+            "rows": [
+                {
+                    "team": "Team A",
+                    "player_display_name": "Bob",
+                    "absent": True,
+                }
+            ],
+        }
+    )
+    assert err is None
+    assert rows[0]["team"] == "Team A"
+    assert rows[0]["absent"] is True
+    assert rows[0]["game1"] is None
+    assert rows[0]["playoffs"] is True
+    assert rows[0]["opponent"] == "Team B"
+
+
+def test_parse_week_rows_payload_absent_with_scores():
+    rows, err = parse_week_rows_payload(
+        {
             "rows": [
                 {
                     "team": "Team A",
@@ -78,11 +110,24 @@ def test_parse_week_rows_payload():
         }
     )
     assert err is None
-    assert rows[0]["team"] == "Team A"
     assert rows[0]["absent"] is True
     assert rows[0]["game1"] == 180.0
-    assert rows[0]["playoffs"] is True
-    assert rows[0]["opponent"] == "Team B"
+
+
+def test_parse_week_rows_payload_rejects_invalid_score():
+    _, err = parse_week_rows_payload(
+        {
+            "rows": [
+                {
+                    "team": "Team A",
+                    "player_display_name": "Alice",
+                    "game1": 0,
+                }
+            ],
+        }
+    )
+    assert err is not None
+    assert "game1" in err
 
 
 def test_parse_week_rows_payload_mirrors_opponents():
@@ -385,3 +430,61 @@ def test_admin_week_post_saves(app, monkeypatch):
         )
         assert rv.status_code == 200
         assert saved["rows"][0]["game1"] == 201.0
+
+
+def test_admin_week_post_rejects_invalid_score(app, monkeypatch):
+    monkeypatch.setattr("app.admin_routes.save_week_entry", lambda *a, **k: (True, "ok"))
+
+    class _Svc:
+        def resolve_season(self, raw):
+            return str(raw)
+
+        def refresh_data(self):
+            return True, "ok"
+
+    app.config["LEAGUE_SERVICE"] = _Svc()
+
+    with app.test_client() as client:
+        client.post("/admin/unlock", data={"pin": "4242"})
+        rv = client.post(
+            "/admin/week",
+            json={
+                "season": "Season 10",
+                "week": 1,
+                "rows": [
+                    {
+                        "team": "Team A",
+                        "player_display_name": "Alice",
+                        "game1": 999,
+                    }
+                ],
+            },
+            content_type="application/json",
+        )
+        assert rv.status_code == 400
+        assert "error" in rv.get_json()
+
+
+def test_admin_week_post_form_validation_redirects(app, monkeypatch):
+    monkeypatch.setattr("app.admin_routes.save_week_entry", lambda *a, **k: (True, "ok"))
+
+    class _Svc:
+        def resolve_season(self, raw):
+            return str(raw)
+
+        def refresh_data(self):
+            return True, "ok"
+
+    app.config["LEAGUE_SERVICE"] = _Svc()
+
+    with app.test_client() as client:
+        client.post("/admin/unlock", data={"pin": "4242"})
+        rv = client.post(
+            "/admin/week",
+            data={
+                "payload": '{"season": "Season 10", "week": 1, "rows": [{"team": "Team A", "player_display_name": "Alice", "game1": 0}]}'
+            },
+            follow_redirects=False,
+        )
+        assert rv.status_code == 302
+        assert "error=" in rv.headers["Location"]

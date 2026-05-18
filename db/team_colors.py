@@ -16,6 +16,27 @@ logger = logging.getLogger(__name__)
 _CACHE: Dict[str, str] = {}
 
 
+def normalize_color_hex(value: Optional[str]) -> Optional[str]:
+    """Return ``#RRGGBB`` or None if empty/invalid."""
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    if not s.startswith("#"):
+        s = f"#{s}"
+    digits = s[1:]
+    if len(digits) == 3:
+        digits = "".join(ch * 2 for ch in digits)
+    if len(digits) != 6:
+        return None
+    try:
+        int(digits, 16)
+    except ValueError:
+        return None
+    return f"#{digits.upper()}"
+
+
 def load_team_color_map(session: Optional[Session] = None) -> Dict[str, str]:
     """Build team name -> #hex; newer seasons override older for the same name."""
     own = session is None

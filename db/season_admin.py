@@ -9,7 +9,59 @@ from sqlalchemy.orm import Session, joinedload
 from db.models import MatchupOverride, Player, PlayerWeek, Season, Team
 from db.player_week_writes import save_week_rows
 from db.sync import _get_or_create_player, _get_or_create_season
-from stats.facts import canonical_team_name
+from db.team_colors import normalize_color_hex
+from stats.facts import canonical_team_name, name_matches_team
+
+
+def _parse_team_id(raw: Any) -> Optional[int]:
+    if raw is None or raw == "":
+        return None
+    try:
+        tid = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return tid if tid > 0 else None
+
+
+def _player_week_has_entry_data(pw: PlayerWeek) -> bool:
+    """True if this row has scores or other data worth keeping when off the roster."""
+    if pw.absent or pw.substitute or pw.playoffs:
+        return True
+    if pw.opponent:
+        return True
+    if pw.week_average is not None:
+        return True
+    return any(
+        g is not None for g in (pw.game1, pw.game2, pw.game3, pw.game4, pw.game5)
+    )
+
+
+def rename_team_references(
+    session: Session,
+    season_id: int,
+    season_number: int,
+    old_name: str,
+    new_name: str,
+) -> None:
+    """Update denormalized team name strings after a retroactive rename."""
+    new_canon = canonical_team_name(new_name, season_num=season_number)
+    if canonical_team_name(old_name, season_num=season_number) == new_canon:
+        return
+
+    for pw in session.scalars(
+        select(PlayerWeek).where(PlayerWeek.season_id == season_id)
+    ).all():
+        if pw.opponent and name_matches_team(pw.opponent, old_name):
+            pw.opponent = new_canon
+
+    for mo in session.scalars(
+        select(MatchupOverride).where(MatchupOverride.season_id == season_id)
+    ).all():
+        if name_matches_team(mo.team, old_name):
+            mo.team = new_canon
+        if name_matches_team(mo.opponent, old_name):
+            mo.opponent = new_canon
+    session.flush()
 
 
 def list_all_player_names(session: Session) -> List[str]:
@@ -78,7 +130,14 @@ def get_season_roster(session: Session, season_number: int) -> Optional[dict]:
             .order_by(PlayerWeek.player_display_name)
         ).all()
         players = [r.player_display_name for r in rows]
-        teams_out.append({"name": team.name, "players": players})
+        teams_out.append(
+            {
+                "id": team.id,
+                "name": team.name,
+                "players": players,
+                "color_hex": normalize_color_hex(team.color_hex),
+            }
+        )
 
     return {
         "season_number": season.number,
@@ -110,6 +169,7 @@ def create_season(
                     {
                         "name": t["name"],
                         "players": list(t["players"]),
+                        "color_hex": t.get("color_hex"),
                     }
                 )
             save_season_roster(session, season_number, cloned, roster_week=1)
@@ -128,17 +188,43 @@ def save_season_roster(
     if season is None:
         raise ValueError(f"Season {season_number} not found.")
 
-    wanted: set[tuple[str, str]] = set()
-    save_rows: List[dict] = []
+    submitted_ids: set[int] = set()
     for team_data in teams:
         team_name = canonical_team_name(
             str(team_data.get("name") or "").strip(), season_num=season_number
         )
         if not team_name:
             continue
+        color = normalize_color_hex(team_data.get("color_hex"))
+        team_id = _parse_team_id(team_data.get("id"))
+        if team_id is None:
+            continue
+        team = session.get(Team, team_id)
+        if team is None or team.season_id != season.id:
+            raise ValueError(f"Invalid team id {team_id} for season {season_number}.")
+        submitted_ids.add(team_id)
+        if canonical_team_name(team.name, season_num=season_number) != team_name:
+            rename_team_references(
+                session, season.id, season_number, team.name, team_name
+            )
+            team.name = team_name
+        team.color_hex = color
+    session.flush()
+
+    wanted: set[tuple[str, str]] = set()
+    save_rows: List[dict] = []
+    wanted_teams: set[str] = set()
+    for team_data in teams:
+        team_name = canonical_team_name(
+            str(team_data.get("name") or "").strip(), season_num=season_number
+        )
+        if not team_name:
+            continue
+        wanted_teams.add(team_name)
         players = team_data.get("players") or []
         if isinstance(players, str):
             players = [p.strip() for p in players.splitlines() if p.strip()]
+
         for player in players:
             pname = str(player).strip()
             if not pname:
@@ -161,7 +247,26 @@ def save_season_roster(
             )
 
     if save_rows:
-        save_week_rows(session, season_number, roster_week, save_rows, sheet_key=season.label)
+        save_week_rows(
+            session,
+            season_number,
+            roster_week,
+            save_rows,
+            sheet_key=season.label,
+            preserve_scores=True,
+        )
+
+    for team_data in teams:
+        team_name = canonical_team_name(
+            str(team_data.get("name") or "").strip(), season_num=season_number
+        )
+        if not team_name or _parse_team_id(team_data.get("id")) is not None:
+            continue
+        team = session.scalar(
+            select(Team).where(Team.season_id == season.id, Team.name == team_name)
+        )
+        if team is not None:
+            team.color_hex = normalize_color_hex(team_data.get("color_hex"))
 
     roster_rows = session.scalars(
         select(PlayerWeek)
@@ -174,12 +279,16 @@ def save_season_roster(
     for pw in roster_rows:
         team_name = pw.team.name if pw.team else ""
         key = (team_name, pw.player_display_name)
-        if key not in wanted:
-            session.delete(pw)
+        if key in wanted:
+            continue
+        if _player_week_has_entry_data(pw):
+            continue
+        session.delete(pw)
 
-    wanted_teams = {t for t, _ in wanted}
     db_teams = session.scalars(select(Team).where(Team.season_id == season.id)).all()
     for team in db_teams:
+        if team.id in submitted_ids:
+            continue
         if team.name in wanted_teams:
             continue
         has_rows = session.scalar(

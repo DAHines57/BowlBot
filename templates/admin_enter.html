@@ -36,6 +36,8 @@
     tr.row-incomplete td:first-child { border-left: 3px solid var(--danger); }
     tr.row-incomplete td input.game:placeholder-shown,
     tr.row-incomplete td input.game[value=""] { border-color: rgba(255, 107, 129, 0.55); }
+    input.game:invalid { border-color: var(--danger); }
+    .notice.save-error { background: rgba(255, 107, 129, 0.12); border-color: rgba(255, 107, 129, 0.45); color: var(--text); }
     .team-block { margin-bottom: 1.25rem; }
     .team-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1.25rem; margin: 0.75rem 0 0.5rem; }
     .team-bar .team-title { font-weight: 700; color: var(--accent); font-size: 1rem; margin: 0; }
@@ -94,6 +96,10 @@
       <button type="submit">Load</button>
     </form>
 
+    {% if save_error %}
+    <p class="notice save-error">{{ save_error }}</p>
+    {% endif %}
+
     {% if entry.completion %}
     <p class="notice {{ entry.completion.status | replace('_', '-') }}">{{ entry.completion.summary }}{% if entry.templated and entry.rows %} Roster copied from a prior week.{% endif %}</p>
     {% elif not entry.rows %}
@@ -131,18 +137,17 @@
             <tr>
               <th>Player</th>
               <th>G1</th><th>G2</th><th>G3</th><th>G4</th><th>G5</th>
-              <th>Absent</th><th>Sub</th>
+              <th>Absent</th>
             </tr>
           </thead>
           <tbody>
             {% for row in team_rows %}
-            <tr data-row data-team="{{ team_name }}" data-player="{{ row.player_display_name }}"{% if row.missing_games %} class="row-incomplete" title="{{ row.missing_games }} game(s) missing"{% endif %}>
+            <tr data-row data-team="{{ team_name }}" data-player="{{ row.player_display_name }}" data-substitute="{{ 'true' if row.substitute else 'false' }}"{% if row.missing_games %} class="row-incomplete" title="{{ row.missing_games }} game(s) missing"{% endif %}>
               <td>{{ row.player_display_name }}</td>
               {% for g in [row.game1, row.game2, row.game3, row.game4, row.game5] %}
-              <td><input type="number" min="0" max="300" step="1" class="game" value="{{ g if g is not none else '' }}"></td>
+              <td class="game-cell"><input type="number" min="{{ game_score_min }}" max="{{ game_score_max }}" step="1" class="game" value="{{ g if g is not none else '' }}"></td>
               {% endfor %}
               <td class="flags"><label><input type="checkbox" class="absent" {% if row.absent %}checked{% endif %}></label></td>
-              <td class="flags"><label><input type="checkbox" class="substitute" {% if row.substitute %}checked{% endif %}></label></td>
             </tr>
             {% endfor %}
           </tbody>
@@ -174,7 +179,32 @@
       var week = {{ entry.week }};
       var teamFilter = {{ selected_team | tojson }};
       var ALL_TEAMS = {{ all_teams | tojson }};
+      var GAME_MIN = {{ game_score_min }};
+      var GAME_MAX = {{ game_score_max }};
+      var SCORE_HINT = "Enter a whole number from " + GAME_MIN + " to " + GAME_MAX + ", or leave blank.";
       var syncingOpponents = false;
+
+      function validateGameInput(inp, tr) {
+        var v = inp.value.trim();
+        if (v === "") {
+          inp.setCustomValidity("");
+          return true;
+        }
+        var n = Number(v);
+        if (!Number.isInteger(n) || n < GAME_MIN || n > GAME_MAX) {
+          inp.setCustomValidity(SCORE_HINT);
+          return false;
+        }
+        inp.setCustomValidity("");
+        return true;
+      }
+
+      document.querySelectorAll("tr[data-row]").forEach(function (tr) {
+        tr.querySelectorAll("input.game").forEach(function (inp) {
+          inp.addEventListener("input", function () { validateGameInput(inp, tr); });
+          inp.addEventListener("blur", function () { validateGameInput(inp, tr); });
+        });
+      });
 
       function randomDebugScore() {
         return Math.floor(Math.random() * 71) + 150;
@@ -275,8 +305,6 @@
       if (debugFill) {
         debugFill.addEventListener("click", function () {
           document.querySelectorAll("tr[data-row]").forEach(function (tr) {
-            if (tr.querySelector("input.absent").checked) return;
-            if (tr.querySelector("input.substitute").checked) return;
             tr.querySelectorAll("input.game").forEach(function (inp) {
               inp.value = String(randomDebugScore());
             });
@@ -288,6 +316,17 @@
 
       form.addEventListener("submit", function (e) {
         e.preventDefault();
+        var firstBad = null;
+        document.querySelectorAll("tr[data-row]").forEach(function (tr) {
+          tr.querySelectorAll("input.game").forEach(function (inp) {
+            if (!validateGameInput(inp, tr) && !firstBad) firstBad = inp;
+          });
+        });
+        if (firstBad) {
+          firstBad.reportValidity();
+          firstBad.focus();
+          return;
+        }
         var weekPlayoffs = document.getElementById("week-playoffs").checked;
         var teamOpponents = {};
         document.querySelectorAll(".team-block").forEach(function (block) {
@@ -316,7 +355,7 @@
             opponent: teamOpponents[team] || null,
             game1: games[0], game2: games[1], game3: games[2], game4: games[3], game5: games[4],
             absent: tr.querySelector("input.absent").checked,
-            substitute: tr.querySelector("input.substitute").checked
+            substitute: tr.getAttribute("data-substitute") === "true"
           });
         });
         document.getElementById("payload-field").value = JSON.stringify({

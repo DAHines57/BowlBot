@@ -33,8 +33,14 @@ def test_get_league_game_stats_season_totals():
         "score": 266,
         "player": "Alice",
         "team": "Team A",
+        "week": 1,
     }
-    assert stats["low_game"] == {"score": 93, "player": "Bob", "team": "Team B"}
+    assert stats["low_game"] == {
+        "score": 93,
+        "player": "Bob",
+        "team": "Team B",
+        "week": 1,
+    }
     assert stats["league_avg"] == 157.4
     assert stats["total_players"] == 2
     assert stats["games_200_plus"] == 2
@@ -141,6 +147,34 @@ def test_get_week_summary_uses_same_league_stats():
     assert week["total_players"] == 2
 
 
+def test_build_players_html_season_shows_week_on_highlights():
+    html = build_players_html(
+        {"Alice": {"team": "A", "average": 200, "highest_game": 220, "lowest_game": 180, "weeks_played": 3, "weeks_absent": 0, "std_dev": 1}},
+        "Season 9",
+        summary={
+            "high_game": {
+                "score": 266,
+                "player": "Rafa A.",
+                "team": "The Replacements",
+                "week": 5,
+            },
+            "low_game": {
+                "score": 93,
+                "player": "Erik C.",
+                "team": "Loaded Bowlers",
+                "week": 2,
+            },
+            "league_avg": 173.3,
+            "total_players": 25,
+            "games_200_plus": 16,
+            "total_games": 100,
+        },
+    )
+    assert "Week 5" in html
+    assert "Week 2" in html
+    assert "Season 9 · Week" not in html
+
+
 def test_build_players_html_shows_league_summary_blocks():
     html = build_players_html(
         {"Alice": {"team": "A", "average": 200, "highest_game": 220, "lowest_game": 180, "weeks_played": 3, "weeks_absent": 0, "std_dev": 1}},
@@ -159,3 +193,13 @@ def test_build_players_html_shows_league_summary_blocks():
     assert "LEAGUE STATS" in html or "League Stats" in html
     assert "173.3" in html
     assert "200+ GAMES" in html or "200+ Games" in html
+
+
+def test_get_league_game_stats_season_totals_includes_week():
+    facts = [
+        _fact("Alice", 5, games=(279, 200, 200, 200)),
+        _fact("Bob", 2, games=(91, 100, 100, 100), team="Team B"),
+    ]
+    stats = get_league_game_stats(facts, season_num=9)
+    assert stats["high_game"]["week"] == 5
+    assert stats["low_game"]["week"] == 2

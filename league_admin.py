@@ -9,14 +9,52 @@ from db.session import get_session
 from league_data import LeagueDataSource
 from stats import compute
 from stats.facts import games_slots, filter_facts
-from utils import safe_float, safe_int
+from utils import safe_int
+
+GAME_SCORE_MIN = 1
+GAME_SCORE_MAX = 300
+_GAME_SCORE_ERROR = (
+    f"Score must be a whole number from {GAME_SCORE_MIN} to {GAME_SCORE_MAX}, or leave blank."
+)
 
 
-def _optional_game(value: Any) -> Optional[float]:
-    if value is None or value == "":
-        return None
-    score = safe_float(value)
-    return score if score > 0 else None
+def _is_empty_game_value(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str) and not value.strip():
+        return True
+    return False
+
+
+def parse_game_score(value: Any) -> Tuple[Optional[float], Optional[str]]:
+    """Return (score, None) or (None, error message). Empty input is valid (no score)."""
+    if _is_empty_game_value(value):
+        return None, None
+    if isinstance(value, bool):
+        return None, _GAME_SCORE_ERROR
+    try:
+        if isinstance(value, int):
+            n = value
+        elif isinstance(value, float):
+            if not value.is_integer():
+                return None, _GAME_SCORE_ERROR
+            n = int(value)
+        elif isinstance(value, str):
+            s = value.strip()
+            if "." in s:
+                f = float(s)
+                if not f.is_integer():
+                    return None, _GAME_SCORE_ERROR
+                n = int(f)
+            else:
+                n = int(s)
+        else:
+            return None, _GAME_SCORE_ERROR
+    except (ValueError, TypeError, OverflowError):
+        return None, _GAME_SCORE_ERROR
+    if n < GAME_SCORE_MIN or n > GAME_SCORE_MAX:
+        return None, _GAME_SCORE_ERROR
+    return float(n), None
 
 
 def _bool_field(value: Any) -> bool:
@@ -467,18 +505,28 @@ def parse_week_rows_payload(body: dict) -> Tuple[Optional[List[dict]], Optional[
             opponent = team_opponents[team]
         else:
             opponent = None
+        absent = _bool_field(raw.get("absent"))
+        substitute = _bool_field(raw.get("substitute"))
+        label = f"rows[{i}] ({player})"
+        games: dict[str, Optional[float]] = {}
+        for gn in range(1, 6):
+            key = f"game{gn}"
+            score, score_err = parse_game_score(raw.get(key))
+            if score_err:
+                return None, f"{label} {key}: {score_err}"
+            games[key] = score
         parsed.append(
             {
                 "team": team,
                 "player_display_name": player,
                 "opponent": opponent,
-                "game1": _optional_game(raw.get("game1")),
-                "game2": _optional_game(raw.get("game2")),
-                "game3": _optional_game(raw.get("game3")),
-                "game4": _optional_game(raw.get("game4")),
-                "game5": _optional_game(raw.get("game5")),
-                "absent": _bool_field(raw.get("absent")),
-                "substitute": _bool_field(raw.get("substitute")),
+                "game1": games["game1"],
+                "game2": games["game2"],
+                "game3": games["game3"],
+                "game4": games["game4"],
+                "game5": games["game5"],
+                "absent": absent,
+                "substitute": substitute,
                 "playoffs": week_playoffs,
             }
         )

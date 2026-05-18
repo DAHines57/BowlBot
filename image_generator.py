@@ -8,6 +8,7 @@ import re
 import html as html_module
 from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple, Union, cast
 
+from stats.compute import sort_teams_by_standings
 from placement_bracket import (
     BYE_LOSER,
     SlotWL,
@@ -376,10 +377,10 @@ def _short_name(full_name: str) -> str:
 
 
 def _highlight_game_context_html(game: dict) -> str:
-    """Season and week line for all-time high/low cards."""
+    """Season and/or week line for high/low game cards."""
     season = game.get("season")
     week = game.get("week")
-    if not season or week is None:
+    if week is None:
         return ""
     try:
         week_n = int(week)
@@ -387,7 +388,10 @@ def _highlight_game_context_html(game: dict) -> str:
         return ""
     if week_n <= 0:
         return ""
-    label = f"{html_module.escape(str(season))} · Week {week_n}"
+    if season:
+        label = f"{html_module.escape(str(season))} · Week {week_n}"
+    else:
+        label = f"Week {week_n}"
     return f'<div class="game-context">{label}</div>'
 
 
@@ -2792,23 +2796,63 @@ def _team_name_cell_expandable(name: str, champion_team: Optional[str] = None) -
     return chevron + _team_name_cell_html(name, champion_team)
 
 
-def _team_roster_detail_html(players: Dict[str, float]) -> str:
+def _team_roster_breakdown_sort_key(item: Tuple[str, Any]) -> tuple:
+    pname, info = item
+    if isinstance(info, dict):
+        if info.get("absent"):
+            return (2, 0.0, pname.lower())
+        val = info.get("value")
+        if val is None:
+            return (1, 0.0, pname.lower())
+        return (0, -float(val), pname.lower())
+    return (0, -float(info), pname.lower())
+
+
+def _team_roster_detail_html(players: Dict[str, Any]) -> str:
     if not players:
         return '<p class="team-roster-empty">No player averages for this team.</p>'
+    sample = next(iter(players.values()))
+    if isinstance(sample, dict):
+        items = []
+        for pname, info in sorted(players.items(), key=_team_roster_breakdown_sort_key):
+            label = html_module.escape(_short_name(pname))
+            absent = bool(info.get("absent"))
+            tag = ' <span class="player-tag">ABS</span>' if absent else ""
+            if absent:
+                item_cls = "team-roster-item team-roster-item--absent"
+                if info.get("value") is not None:
+                    val_html = (
+                        f'<span class="team-roster-avg">{float(info["value"]):.1f}</span>'
+                    )
+                else:
+                    val_html = '<span class="team-roster-avg team-roster-avg--empty">—</span>'
+            elif info.get("value") is None:
+                val_html = '<span class="team-roster-avg team-roster-avg--empty">—</span>'
+                item_cls = "team-roster-item"
+            else:
+                val_html = f'<span class="team-roster-avg">{float(info["value"]):.1f}</span>'
+                item_cls = "team-roster-item"
+            items.append(
+                f'<li class="{item_cls}">'
+                f'<span class="team-roster-name">{label}{tag}</span>'
+                f"{val_html}"
+                "</li>"
+            )
+        return f'<ul class="team-roster-list">{"".join(items)}</ul>'
     items = []
-    for pname, avg in sorted(players.items(), key=lambda x: (-x[1], x[0].lower())):
+    for pname, avg in sorted(players.items(), key=lambda x: (-float(x[1]), x[0].lower())):
         label = html_module.escape(_short_name(pname))
         items.append(
             '<li class="team-roster-item">'
             f'<span class="team-roster-name">{label}</span>'
-            f'<span class="team-roster-avg">{avg:.1f}</span>'
+            f'<span class="team-roster-avg">{float(avg):.1f}</span>'
             "</li>"
         )
     return f'<ul class="team-roster-list">{"".join(items)}</ul>'
 
 
 def _teams_standings_section(
-    title: str, headers: List[dict], team_rows: List[Tuple[List[dict], Dict[str, float]]]
+    title: str, headers: List[dict], team_rows: List[Tuple[List[dict], Dict[str, Any]]]
 ) -> str:
     """Standings table with expandable per-team player rosters."""
     ncols = len(headers)
@@ -2913,6 +2957,16 @@ _TEAMS_STANDINGS_CSS = """
     flex-shrink: 0;
 }
 .team-roster-empty { margin: 0; color: #888; font-size: 12px; }
+.team-roster-item--absent { opacity: 0.55; }
+.team-roster-avg--empty { color: #555; font-weight: 500; }
+.player-tag {
+    font-size: 8px;
+    font-weight: bold;
+    letter-spacing: 0.05em;
+    color: #ff6b81;
+    margin-left: 4px;
+    vertical-align: middle;
+}
 """
 
 _TEAMS_EXPAND_SCRIPT = r"""<script>
@@ -2953,7 +3007,7 @@ def build_teams_html(
         {"label": "Total Pins", "right": True},
     ]
     team_rows: List[Tuple[List[dict], Dict[str, float]]] = []
-    sorted_teams = sorted(data.items(), key=lambda x: x[1].get("avg_per_game", 0), reverse=True)
+    sorted_teams = sort_teams_by_standings(data)
     for i, (name, stats) in enumerate(sorted_teams, 1):
         w = stats.get("wins", 0)
         l = stats.get("losses", 0)
@@ -2970,7 +3024,11 @@ def build_teams_html(
                 "style": _team_color_style(name),
                 "sort": name.lower(),
             },
-            {"val": record, "cls": "record", "sort": w * 10000 + l * 100 + t},
+            {
+                "val": record,
+                "cls": "record",
+                "sort": w * 1_000_000 - l * 1_000 - t,
+            },
             {"val": f"{avg:.1f}", "cls": "right gold"},
             {"val": f"{pins:,}", "cls": "right sub-col", "sort": pins},
         ]
@@ -5970,64 +6028,91 @@ body.page-playoffs .container {
 
 
 # ---------------------------------------------------------------------------
-# League leaders
+# Top team games / weeks
 # ---------------------------------------------------------------------------
 
-def build_leaders_html(data: dict) -> str:
-    season = data.get("season", "")
-
-    # Top player weeks
-    pw_headers = [
-        {"label": "#", "right": True},
-        {"label": "Player"},
-        {"label": "Wk", "right": True},
-        {"label": "Games", "right": True},
-        {"label": "Avg", "right": True},
-    ]
-    pw_rows = []
-    for i, week_data in enumerate(data.get("top_player_weeks", []), 1):
-        if len(week_data) == 5:
-            player, team, week, total, num_games = week_data
-        else:
-            player, team, week, total = week_data; num_games = 4
-        week_avg = total / num_games if num_games else 0
-        pw_rows.append([
-            {"val": i,                   "cls": "right rank"},
-            {"val": _short_name(player), "cls": "name-col", "sort": player.lower()},
-            {"val": week,                "cls": "right sub-col"},
-            {"val": num_games,           "cls": "right sub-col"},
-            {"val": f"{week_avg:.1f}",   "cls": "right gold"},
-        ])
-
-    # Top team weeks
-    tw_headers = [
+def build_top_team_games_html(games: list, season: str, n: int) -> str:
+    """games: (team, week, game_num, score[, players]) tuples, pre-sorted."""
+    headers = [
         {"label": "#", "right": True},
         {"label": "Team"},
         {"label": "Wk", "right": True},
-        {"label": "Total", "right": True},
-        {"label": "Games", "right": True},
-        {"label": "Avg", "right": True},
+        {"label": "Game", "right": True},
+        {"label": "Score", "right": True},
     ]
-    tw_rows = []
-    for i, entry in enumerate(data.get("top_team_totals", []), 1):
-        team, week, total, games = entry if len(entry) == 4 else (*entry, None)
-        avg = round(total / games, 1) if games else "—"
-        avg_sort = round(total / games, 1) if games else -1.0
-        tw_rows.append([
-            {"val": i,            "cls": "right rank"},
-            {"val": team,         "cls": "name-col", "style": _team_color_style(team), "sort": team.lower()},
-            {"val": week,         "cls": "right sub-col"},
-            {"val": int(total),   "cls": "right green"},
-            {"val": games or "—", "cls": "right sub-col", "sort": -1 if games is None else games},
-            {"val": avg,          "cls": "right gold", "sort": avg_sort},
-        ])
-
-    sections = (
-        _list_section("Top Player Weeks", pw_headers, pw_rows)
-        + _list_section("Top Team Weeks", tw_headers, tw_rows)
-    )
+    team_rows: List[Tuple[List[dict], Dict[str, Any]]] = []
+    for i, entry in enumerate(games[:n], 1):
+        if len(entry) >= 5:
+            team, week, game_num, score, players = entry[:5]
+        else:
+            team, week, game_num, score = entry[:4]
+            players = {}
+        team_rows.append((
+            [
+                {"val": i, "cls": "right rank"},
+                {
+                    "val": _team_name_cell_expandable(team),
+                    "cls": "name-col",
+                    "style": _team_color_style(team),
+                    "sort": team.lower(),
+                },
+                {"val": week, "cls": "right sub-col"},
+                {"val": game_num, "cls": "right sub-col"},
+                {"val": int(score), "cls": "right gold"},
+            ],
+            players if isinstance(players, dict) else {},
+        ))
+    section = _teams_standings_section(f"Top {n} Team Games", headers, team_rows)
     return _render_list_page(
-        css=_LIST_CSS, title="🏅 LEADERS", subtitle=season, sections=sections
+        css=_LIST_CSS + _TEAMS_STANDINGS_CSS,
+        title="🎳 TOP TEAM GAMES",
+        subtitle=season,
+        sections=section,
+        extra_script=_TEAMS_EXPAND_SCRIPT,
+    )
+
+
+def build_top_team_weeks_html(weeks: list, season: str, n: int) -> str:
+    """weeks: (team, week, total, num_games[, players]) tuples, pre-sorted."""
+    headers = [
+        {"label": "#", "right": True},
+        {"label": "Team"},
+        {"label": "Wk", "right": True},
+        {"label": "Avg", "right": True},
+        {"label": "Games", "right": True},
+        {"label": "Total", "right": True},
+    ]
+    team_rows: List[Tuple[List[dict], Dict[str, Any]]] = []
+    for i, entry in enumerate(weeks[:n], 1):
+        if len(entry) >= 5:
+            team, week, total, num_games, players = entry[:5]
+        else:
+            team, week, total, num_games = entry[:4]
+            players = {}
+        week_avg = total / num_games if num_games else 0
+        team_rows.append((
+            [
+                {"val": i, "cls": "right rank"},
+                {
+                    "val": _team_name_cell_expandable(team),
+                    "cls": "name-col",
+                    "style": _team_color_style(team),
+                    "sort": team.lower(),
+                },
+                {"val": week, "cls": "right sub-col"},
+                {"val": f"{week_avg:.1f}", "cls": "right gold", "sort": week_avg},
+                {"val": num_games, "cls": "right sub-col"},
+                {"val": int(total), "cls": "right sub-col", "sort": total},
+            ],
+            players if isinstance(players, dict) else {},
+        ))
+    section = _teams_standings_section(f"Top {n} Team Weeks", headers, team_rows)
+    return _render_list_page(
+        css=_LIST_CSS + _TEAMS_STANDINGS_CSS,
+        title="🎳 TOP TEAM WEEKS",
+        subtitle=season,
+        sections=section,
+        extra_script=_TEAMS_EXPAND_SCRIPT,
     )
 
 
@@ -6100,6 +6185,41 @@ def build_top_games_html(games: list, season: str, n: int) -> str:
     section = _list_section(f"Top {n} Individual Games", headers, rows)
     return _render_list_page(
         css=_LIST_CSS, title="🎳 TOP SCORES", subtitle=season, sections=section
+    )
+
+
+def build_top_weeks_html(weeks: list, season: str, n: int) -> str:
+    """Build page for top N player weekly totals.
+    weeks: list of (player, team, week, total, num_games) tuples, pre-sorted."""
+    headers = [
+        {"label": "#", "right": True},
+        {"label": "Player"},
+        {"label": "Team"},
+        {"label": "Wk", "right": True},
+        {"label": "Avg", "right": True},
+        {"label": "Games", "right": True},
+        {"label": "Total", "right": True},
+    ]
+    rows = []
+    for i, week_data in enumerate(weeks[:n], 1):
+        if len(week_data) == 5:
+            player, team, week, total, num_games = week_data
+        else:
+            player, team, week, total = week_data
+            num_games = 0
+        week_avg = total / num_games if num_games else 0
+        rows.append([
+            {"val": i,                   "cls": "right rank"},
+            {"val": _short_name(player), "cls": "name-col", "sort": player.lower()},
+            {"val": team,                "cls": "sub-col", "style": _team_color_style(team), "sort": team.lower()},
+            {"val": week,                "cls": "right sub-col"},
+            {"val": f"{week_avg:.1f}",   "cls": "right gold", "sort": week_avg},
+            {"val": num_games,           "cls": "right sub-col"},
+            {"val": int(total),          "cls": "right sub-col", "sort": total},
+        ])
+    section = _list_section(f"Top {n} Player Weeks", headers, rows)
+    return _render_list_page(
+        css=_LIST_CSS, title="🎳 TOP WEEKS", subtitle=season, sections=section
     )
 
 

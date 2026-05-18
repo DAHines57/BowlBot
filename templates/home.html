@@ -530,9 +530,6 @@
       .embed-frame-wrap {
         overflow-x: hidden;
       }
-      footer {
-        display: none;
-      }
     }
 
     @media (min-width: 900px) {
@@ -691,23 +688,6 @@
     .btn--ghost:hover {
       border-color: #7bffc9;
       color: #e8fff4;
-    }
-
-    footer {
-      margin-top: 1.75rem;
-      padding-top: 1.15rem;
-      border-top: 1px solid var(--border);
-      font-size: 0.76rem;
-      color: var(--muted);
-      line-height: 1.6;
-    }
-
-    code {
-      background: var(--bg-elevated);
-      padding: 0.12rem 0.4rem;
-      border-radius: 4px;
-      font-size: 0.85em;
-      border: 1px solid var(--border);
     }
 
     .stack-v {
@@ -985,9 +965,11 @@
               <div class="btn-grid cols-2">
                 <a class="btn btn--spark" href="#" onclick="goSeasonTotals('/players', 'All players'); return false;">All players</a>
                 <a class="btn btn--spark btn-season-only" href="#" onclick="goSeasonTotals('/teams', 'Team standings'); return false;">Team standings</a>
-                <a class="btn btn--spark" href="#" style="grid-column: 1 / -1;" onclick="goSeasonTotals('/leaders', 'League leaders'); return false;">League leaders</a>
+                <a class="btn btn--ghost btn--spark" href="#" onclick="goSeasonTotals('/top/games', 'Best single games'); return false;">Best single games</a>
+                <a class="btn btn--ghost btn--spark" href="#" onclick="goSeasonTotals('/top/team-games', 'Best team games'); return false;">Best team games</a>
+                <a class="btn btn--ghost btn--spark" href="#" onclick="goSeasonTotals('/top/weeks', 'Best single weeks'); return false;">Best single weeks</a>
+                <a class="btn btn--ghost btn--spark" href="#" onclick="goSeasonTotals('/top/team-weeks', 'Best team weeks'); return false;">Best team weeks</a>
                 <a id="btn-playoffs" class="btn btn--ghost btn--spark" href="#" style="grid-column: 1 / -1;" hidden onclick="goSeasonTotals('/bracket', 'Playoffs'); return false;">Playoffs (bracket &amp; scores)</a>
-                <a class="btn btn--ghost btn--spark" href="#" style="grid-column: 1 / -1;" onclick="goSeasonTotals('/top/games', 'Best single games'); return false;">Best single games (top 50)</a>
               </div>
             </div>
               </div>
@@ -1041,10 +1023,6 @@
       </div>
     </div>
 
-    <footer>
-      Local: <code>python main.py</code> → <code>http://127.0.0.1:3000</code><br>
-      Admin: <code>/admin?pin=…</code> · Refresh cache: <code>POST /refresh?key=…</code> · Excel import: <code>python sync_db.py</code>.
-    </footer>
   </div>
 
   <script type="application/json" id="weeks-data">{{ weeks_by_season | tojson }}</script>
@@ -1428,7 +1406,7 @@
           showPanel(path + "?season=" + encodeURIComponent(seasonW), title, { skipScroll: true, noStore: true, scope: "season_totals" });
           return;
         }
-        if (path === "/top/games") {
+        if (path === "/top/games" || path === "/top/weeks" || path === "/top/team-games" || path === "/top/team-weeks") {
           var seasonTop = getSeason();
           var spTop = new URLSearchParams();
           spTop.set("season", seasonTop);
@@ -1571,7 +1549,7 @@
           );
           return;
         }
-        if (path === "/top/games") {
+        if (path === "/top/games" || path === "/top/weeks" || path === "/top/team-games" || path === "/top/team-weeks") {
           var sp = new URLSearchParams(qsSeasonTotals());
           sp.set("n", "50");
           showPanel(path + "?" + sp.toString(), title || "Scores", { scope: "season_totals" });

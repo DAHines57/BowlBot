@@ -182,17 +182,6 @@ def teams():
     return Response(html, mimetype="text/html; charset=utf-8")
 
 
-@bp.route("/leaders")
-def leaders():
-    svc = _svc()
-    if not svc:
-        return _no_svc()
-    html, err = svc.leaders_page(_season_arg(), embed=_embed_flag())
-    if err:
-        return render_template("error.html", message=err), 400
-    return Response(html, mimetype="text/html; charset=utf-8")
-
-
 @bp.route("/team/<path:team_name>/weekly")
 def team_weekly(team_name: str):
     svc = _svc()
@@ -226,6 +215,45 @@ def top_games():
     n = request.args.get("n", default=50, type=int)
     worst = request.args.get("worst", default=0, type=int) == 1
     html, err = svc.top_games_page(_season_arg(), n, worst, embed=_embed_flag())
+    if err:
+        return render_template("error.html", message=err), 400
+    return Response(html, mimetype="text/html; charset=utf-8")
+
+
+@bp.route("/top/weeks")
+def top_weeks():
+    svc = _svc()
+    if not svc:
+        return _no_svc()
+    n = request.args.get("n", default=50, type=int)
+    worst = request.args.get("worst", default=0, type=int) == 1
+    html, err = svc.top_weeks_page(_season_arg(), n, worst, embed=_embed_flag())
+    if err:
+        return render_template("error.html", message=err), 400
+    return Response(html, mimetype="text/html; charset=utf-8")
+
+
+@bp.route("/top/team-games")
+def top_team_games():
+    svc = _svc()
+    if not svc:
+        return _no_svc()
+    n = request.args.get("n", default=50, type=int)
+    worst = request.args.get("worst", default=0, type=int) == 1
+    html, err = svc.top_team_games_page(_season_arg(), n, worst, embed=_embed_flag())
+    if err:
+        return render_template("error.html", message=err), 400
+    return Response(html, mimetype="text/html; charset=utf-8")
+
+
+@bp.route("/top/team-weeks")
+def top_team_weeks():
+    svc = _svc()
+    if not svc:
+        return _no_svc()
+    n = request.args.get("n", default=50, type=int)
+    worst = request.args.get("worst", default=0, type=int) == 1
+    html, err = svc.top_team_weeks_page(_season_arg(), n, worst, embed=_embed_flag())
     if err:
         return render_template("error.html", message=err), 400
     return Response(html, mimetype="text/html; charset=utf-8")

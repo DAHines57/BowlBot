@@ -19,20 +19,33 @@ class _FakeForm:
             yield k
 
 
-def test_players_from_pick_and_new(monkeypatch):
+def test_players_from_pick_only(monkeypatch):
+    from app import admin_routes
+
+    fake = _FakeForm(
+        {"teams[0][name]": "Pins"},
+        {"teams[0][player_pick][]": ["Alice", "Bob"]},
+    )
+    monkeypatch.setattr(admin_routes, "request", type("R", (), {"form": fake})())
+    assert _players_for_team_index(0) == ["Alice", "Bob"]
+
+
+def test_parse_teams_form_id_and_color(monkeypatch):
     from app import admin_routes
 
     fake = _FakeForm(
         {
             "teams[0][name]": "Pins",
+            "teams[0][id]": "42",
+            "teams[0][color_hex]": "#AABBCC",
         },
-        {
-            "teams[0][player_pick][]": ["Alice", "__new__"],
-            "teams[0][player_new][]": ["", "Zoe New"],
-        },
+        {"teams[0][player_pick][]": ["Alice"]},
     )
     monkeypatch.setattr(admin_routes, "request", type("R", (), {"form": fake})())
-    assert _players_for_team_index(0) == ["Alice", "Zoe New"]
+    teams = _parse_teams_form()
+    assert teams[0]["id"] == "42"
+    assert teams[0]["color_hex"] == "#AABBCC"
+    assert teams[0]["players"] == ["Alice"]
 
 
 def test_parse_teams_form_with_picks(monkeypatch):
@@ -45,12 +58,11 @@ def test_parse_teams_form_with_picks(monkeypatch):
         },
         {
             "teams[0][player_pick][]": ["Alice"],
-            "teams[1][player_pick][]": ["__new__"],
-            "teams[1][player_new][]": ["Brand New"],
+            "teams[1][player_pick][]": ["Carl"],
         },
     )
     monkeypatch.setattr(admin_routes, "request", type("R", (), {"form": fake})())
     teams = _parse_teams_form()
     assert len(teams) == 2
     assert teams[0]["players"] == ["Alice"]
-    assert teams[1]["players"] == ["Brand New"]
+    assert teams[1]["players"] == ["Carl"]

@@ -85,6 +85,7 @@ def upsert_player_week(
     sheet_key: Optional[str] = None,
     player_cache: Optional[dict[str, int]] = None,
     roster: Optional[List[str]] = None,
+    preserve_scores: bool = False,
 ) -> PlayerWeek:
     """Insert or update one player_week row. Caller commits the session."""
     label = sheet_key or f"Season {season_number}"
@@ -133,6 +134,9 @@ def upsert_player_week(
         return pw
 
     existing.player_id = player_id
+    if preserve_scores:
+        session.flush()
+        return existing
     existing.game1 = normalized["game1"]
     existing.game2 = normalized["game2"]
     existing.game3 = normalized["game3"]
@@ -195,6 +199,7 @@ def save_week_rows(
     rows: List[dict[str, Any]],
     *,
     sheet_key: Optional[str] = None,
+    preserve_scores: bool = False,
 ) -> int:
     """Upsert all rows for one week. Returns count written."""
     roster = sorted(
@@ -216,6 +221,7 @@ def save_week_rows(
             sheet_key=sheet_key,
             player_cache=player_cache,
             roster=roster,
+            preserve_scores=preserve_scores,
         )
         count += 1
     return count
