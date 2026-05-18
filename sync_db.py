@@ -19,6 +19,11 @@ def main() -> int:
         help="Only sync one season (e.g. 13 or 'Season 13')",
     )
     parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite DB-managed seasons from Excel (see LAST_EXCEL_IMPORTED_SEASON)",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -32,14 +37,20 @@ def main() -> int:
     )
 
     try:
-        result = sync_database(dry_run=args.dry_run, season_filter=args.season)
+        result = sync_database(
+            dry_run=args.dry_run,
+            season_filter=args.season,
+            force=args.force,
+        )
     except Exception as exc:
         logging.error("%s", exc)
         return 1
 
     mode = "dry-run" if result["dry_run"] else "sync"
+    skipped = result.get("skipped_seasons") or []
+    skip_note = f", skipped {len(skipped)} DB-managed" if skipped else ""
     print(
-        f"{mode}: {result['rows']} rows, {result['seasons']} season(s), "
+        f"{mode}: {result['rows']} rows, {result['seasons']} season(s){skip_note}, "
         f"{result['seconds']:.1f}s"
     )
     return 0

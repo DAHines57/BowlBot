@@ -986,7 +986,7 @@
                 <a class="btn btn--spark" href="#" onclick="goSeasonTotals('/players', 'All players'); return false;">All players</a>
                 <a class="btn btn--spark btn-season-only" href="#" onclick="goSeasonTotals('/teams', 'Team standings'); return false;">Team standings</a>
                 <a class="btn btn--spark" href="#" style="grid-column: 1 / -1;" onclick="goSeasonTotals('/leaders', 'League leaders'); return false;">League leaders</a>
-                <a class="btn btn--ghost btn--spark btn-season-only" href="#" style="grid-column: 1 / -1;" onclick="goSeasonTotals('/bracket', 'Playoffs'); return false;">Playoffs (bracket &amp; scores)</a>
+                <a id="btn-playoffs" class="btn btn--ghost btn--spark" href="#" style="grid-column: 1 / -1;" hidden onclick="goSeasonTotals('/bracket', 'Playoffs'); return false;">Playoffs (bracket &amp; scores)</a>
                 <a class="btn btn--ghost btn--spark" href="#" style="grid-column: 1 / -1;" onclick="goSeasonTotals('/top/games', 'Best single games'); return false;">Best single games (top 50)</a>
               </div>
             </div>
@@ -1043,11 +1043,12 @@
 
     <footer>
       Local: <code>python main.py</code> → <code>http://127.0.0.1:3000</code><br>
-      Reload sheet: <code>POST /reload?key=…</code> if <code>RELOAD_SECRET</code> is set.
+      Admin: <code>/admin?pin=…</code> · Refresh cache: <code>POST /refresh?key=…</code> · Excel import: <code>python sync_db.py</code>.
     </footer>
   </div>
 
   <script type="application/json" id="weeks-data">{{ weeks_by_season | tojson }}</script>
+  <script type="application/json" id="playoff-weeks-data">{{ playoff_weeks_by_season | tojson }}</script>
   <script type="application/json" id="lookup-catalog-data">{{ lookup_catalog | tojson }}</script>
   <script type="application/json" id="initial-latest-data">{{ latest_week | tojson }}</script>
   <script>
@@ -1131,6 +1132,7 @@
       bindMobileNav();
 
       var WEEKS = JSON.parse(document.getElementById("weeks-data").textContent);
+      var PLAYOFF_WEEKS = JSON.parse(document.getElementById("playoff-weeks-data").textContent);
       var LOOKUP = JSON.parse(document.getElementById("lookup-catalog-data").textContent);
       var INITIAL_LATEST = JSON.parse(document.getElementById("initial-latest-data").textContent);
 
@@ -1140,6 +1142,12 @@
 
       function getWeek() {
         return document.getElementById("week_sel").value;
+      }
+
+      function seasonHasPlayoffs(season) {
+        if (!season || season === "all") return false;
+        var list = PLAYOFF_WEEKS[season] || [];
+        return list.length > 0;
       }
 
       function readStoredHome() {
@@ -1297,7 +1305,12 @@
           return "Team standings need a specific season, not All seasons. Choose a season above.";
         }
         if (p === "/bracket" || p === "/playoffs") {
-          return "Playoffs need a specific season, not All seasons. Choose a season above.";
+          if (getSeason() === "all") {
+            return "Playoffs need a specific season, not All seasons. Choose a season above.";
+          }
+          if (!seasonHasPlayoffs(getSeason())) {
+            return "No playoff weeks recorded for this season yet.";
+          }
         }
         return null;
       }
@@ -1520,28 +1533,40 @@
         }
       }
 
+      function updatePlayoffsButton() {
+        var btn = document.getElementById("btn-playoffs");
+        if (!btn) return;
+        var show = getSeason() !== "all" && seasonHasPlayoffs(getSeason());
+        btn.hidden = !show;
+        setBtnUnavailable(btn, !show);
+      }
+
       function updateContextUI() {
         var all = getSeason() === "all";
         document.querySelectorAll(".btn-season-only, .btn-this-week").forEach(function (el) {
           setBtnUnavailable(el, all);
         });
+        updatePlayoffsButton();
         document.getElementById("week_field").classList.toggle("is-disabled", all);
-        if (all && lastPreview) {
-          var prev = new URL(lastPreview.href, window.location.origin);
-          var blocked = embedBlockedMessage(prev.pathname, prev.search);
-          if (blocked) {
-            showEmbedInvalid(blocked, lastPreview.title, { skipScroll: true, noStore: true });
-          }
+        var prev = lastPreview && new URL(lastPreview.href, window.location.origin);
+        var blocked = prev && embedBlockedMessage(prev.pathname, prev.search);
+        if (blocked) {
+          showEmbedInvalid(blocked, lastPreview.title, { skipScroll: true, noStore: true });
         }
       }
 
       function goSeasonTotals(path, title) {
         var s = getSeason();
-        if ((path === "/teams" || path === "/bracket") && s === "all") {
+        if (path === "/bracket" || path === "/playoffs") {
+          var blocked = embedBlockedMessage(path, "");
+          if (blocked) {
+            showEmbedInvalid(blocked, title || "Playoffs");
+            return;
+          }
+        }
+        if (path === "/teams" && s === "all") {
           showEmbedInvalid(
-            path === "/teams"
-              ? "Team standings need a specific season, not All seasons. Choose a season above."
-              : "Playoffs need a specific season, not All seasons. Choose a season above.",
+            "Team standings need a specific season, not All seasons. Choose a season above.",
             title || "Scores"
           );
           return;

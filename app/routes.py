@@ -4,6 +4,13 @@ from __future__ import annotations
 import os
 from flask import Blueprint, Response, current_app, render_template, request
 
+from league_admin import (
+    list_public_seasons,
+    list_public_weeks_for_season,
+    playoff_weeks_by_season,
+    public_latest_week,
+)
+
 bp = Blueprint("site", __name__)
 
 
@@ -44,17 +51,30 @@ def home():
             "error.html",
             message="Database not ready. Set DATABASE_URL, run docker compose up -d, then python sync_db.py.",
         ), 503
-    seasons = svc.seasons_sorted()
-    cur = svc.data.get_current_season()
-    latest_wk = svc.data.get_latest_week(cur) if cur else 1
-    weeks_by_season = {s: svc.data.list_weeks_for_season(s) for s in seasons}
+    seasons = list_public_seasons(svc.data)
+    cur = seasons[0] if seasons else svc.data.get_current_season()
+    latest_wk = public_latest_week(svc.data, cur) if cur else 1
+    weeks_by_season = {s: list_public_weeks_for_season(svc.data, s) for s in seasons}
+    playoff_weeks = playoff_weeks_by_season(svc.data, seasons)
+    catalog = svc.lookup_catalog()
+    public_set = set(seasons)
+    catalog = {
+        **catalog,
+        "players_by_season": {
+            k: v for k, v in (catalog.get("players_by_season") or {}).items() if k in public_set
+        },
+        "teams_by_season": {
+            k: v for k, v in (catalog.get("teams_by_season") or {}).items() if k in public_set
+        },
+    }
     return render_template(
         "home.html",
         seasons=seasons,
         current_season=cur,
         latest_week=latest_wk,
         weeks_by_season=weeks_by_season,
-        lookup_catalog=svc.lookup_catalog(),
+        playoff_weeks_by_season=playoff_weeks,
+        lookup_catalog=catalog,
     )
 
 
@@ -248,16 +268,27 @@ def player_named(name: str):
     return Response(html, mimetype="text/html; charset=utf-8")
 
 
-@bp.route("/reload", methods=["POST"])
-def reload_sheet():
+def _refresh_cache_response():
     secret = os.environ.get("RELOAD_SECRET", "").strip()
     if secret and request.args.get("key") != secret:
         return Response("Forbidden", status=403)
     svc = _svc()
     if not svc:
         return _no_svc()
-    ok, msg = svc.reload_data()
+    ok, msg = svc.refresh_data()
     return Response(msg, status=200 if ok else 500)
+
+
+@bp.route("/refresh", methods=["POST"])
+def refresh_cache():
+    """Clear in-process caches and re-read facts from Postgres."""
+    return _refresh_cache_response()
+
+
+@bp.route("/reload", methods=["POST"])
+def reload_compat():
+    """Alias for /refresh (no longer reads Excel)."""
+    return _refresh_cache_response()
 
 
 def _no_svc():

@@ -2557,9 +2557,10 @@ _PAR_HELP_DIALOG_BODY = """
         bowling right now.</p>
         <p>Your PAR total adds up every game that way across your career. Higher PAR means
         you have consistently outscored the league over time.</p>
-        <p>Sort by <strong>PAR</strong> and <strong>weeks</strong> (or <strong>games</strong> on
-        all-time) together&mdash;players with fewer weeks need fewer total pins to stay
-        competitive.</p>
+        <p><strong>PAR/G</strong> is your total PAR divided by games bowled&mdash;a per-game rate
+        so you can compare players who have bowled different amounts.</p>
+        <p>Sort by <strong>PAR</strong>, <strong>PAR/G</strong>, and <strong>games</strong> to see
+        volume vs efficiency.</p>
 """
 
 _PLAYERS_STATS_TOGGLE_SCRIPT = (
@@ -2617,6 +2618,26 @@ def _format_par(value: int) -> str:
     return str(n)
 
 
+def _player_par_game_count(stats: dict, all_time: bool) -> int:
+    """Games counted in PAR (same pool as cumulative PAR)."""
+    if all_time:
+        return int(stats.get("weeks_played", 0))
+    scores = stats.get("scores")
+    if scores is not None:
+        return len(scores)
+    return int(stats.get("games_played", 0) or stats.get("games", 0))
+
+
+def _format_par_per_game(par: int, games: int) -> tuple:
+    """Display and numeric sort key for PAR per game."""
+    if games <= 0:
+        return "—", 0.0
+    per = int(par) / games
+    if per > 0:
+        return f"+{per:.1f}", per
+    return f"{per:.1f}", per
+
+
 def build_players_html(
     data: dict,
     season: str,
@@ -2640,12 +2661,15 @@ def build_players_html(
         {"label": "#", "right": True},
         {"label": "Player"},
         {"label": "Team"},
-        {"label": count_label, "right": True, "sort_type": "number"},
+        {"label": "Games", "right": True, "sort_type": "number"},
         {"label": "Std dev", "right": True, "sort_type": "number"},
     ]
     if show_par:
-        other_headers.append(
-            {"label": "PAR", "right": True, "sort_type": "number"},
+        other_headers.extend(
+            [
+                {"label": "PAR", "right": True, "sort_type": "number"},
+                {"label": "PAR/G", "right": True, "sort_type": "number"},
+            ]
         )
     other_headers.append(
         {"label": "Absences", "right": True, "sort_type": "number"},
@@ -2663,6 +2687,8 @@ def build_players_html(
         absences = stats.get("weeks_absent", 0)
         std_dev = stats.get("std_dev", 0)
         par = int(stats.get("par", 0))
+        games = _player_par_game_count(stats, all_time)
+        par_per_game, par_per_game_sort = _format_par_per_game(par, games)
         team = stats.get("team", "")
         ident = _player_identity_cells(i, name, team)
         main_rows.append(
@@ -2675,12 +2701,19 @@ def build_players_html(
             ]
         )
         other_cells = [
-            {"val": weeks, "cls": "right sub-col", "sort": weeks},
+            {"val": games, "cls": "right sub-col", "sort": games},
             {"val": f"{std_dev:.1f}", "cls": "right gold", "sort": std_dev},
         ]
         if show_par:
-            other_cells.append(
-                {"val": _format_par(par), "cls": "right gold", "sort": par},
+            other_cells.extend(
+                [
+                    {"val": _format_par(par), "cls": "right gold", "sort": par},
+                    {
+                        "val": par_per_game,
+                        "cls": "right gold",
+                        "sort": par_per_game_sort,
+                    },
+                ]
             )
         other_cells.append(
             {"val": absences, "cls": "right sub-col", "sort": absences},

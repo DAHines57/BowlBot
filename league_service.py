@@ -96,18 +96,14 @@ class LeagueService:
             "all_players": all_players,
         }
 
-    def reload_data(self) -> Tuple[bool, str]:
+    def refresh_data(self) -> Tuple[bool, str]:
+        """Reload in-memory facts and team colors from PostgreSQL (no Excel)."""
         try:
-            from db.sync import sync_database
-
-            result = sync_database()
             self.data.reload_workbook()
             from db.team_colors import refresh_team_colors_cache
 
             refresh_team_colors_cache()
-            return True, (
-                f"Synced {result['rows']} rows across {result['seasons']} season(s) from Excel."
-            )
+            return True, "Refreshed league data from database."
         except Exception as e:
             return False, str(e)
 

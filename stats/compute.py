@@ -1066,6 +1066,25 @@ def list_weeks_for_season(
     return sorted(found)
 
 
+def list_flagged_playoff_weeks_for_season(
+    facts: List[dict],
+    season: Optional[str] = None,
+    *,
+    season_num: Optional[int] = None,
+) -> List[int]:
+    """Week numbers with playoffs=True on at least one row (no roster heuristics)."""
+    if season_num is None:
+        season_num = parse_season_number(season)
+    if season_num is None:
+        return []
+    found: set[int] = set()
+    for f in filter_facts(facts, season_num=season_num):
+        w = safe_int(f.get("week"), 0)
+        if w > 0 and f.get("playoffs"):
+            found.add(w)
+    return sorted(found)
+
+
 def list_playoff_weeks_for_season(
     facts: List[dict],
     season: Optional[str] = None,
@@ -1094,13 +1113,11 @@ def list_playoff_weeks_for_season(
     if season_num is None:
         return []
 
-    from_flag: set = set()
-    for f in filter_facts(facts, season_num=season_num):
-        w = safe_int(f.get("week"), 0)
-        if w > 0 and f.get("playoffs"):
-            from_flag.add(w)
-    if from_flag:
-        return sorted(from_flag)
+    flagged = list_flagged_playoff_weeks_for_season(
+        facts, season, season_num=season_num
+    )
+    if flagged:
+        return flagged
 
     if len(weeks) < 2:
         return []

@@ -71,7 +71,8 @@ def test_build_players_html_main_view_hides_other_stats():
     assert "Absences" not in main_chunk
     assert "Std dev" not in main_chunk
     other_chunk = html[other_pos:]
-    assert "Weeks" in other_chunk
+    assert "Games" in other_chunk
+    assert "Weeks" in main_chunk
 
 
 def test_build_players_html_absences_column_sorts_as_number():
@@ -93,10 +94,10 @@ def test_build_players_html_absences_column_sorts_as_number():
     other_chunk = html[other_pos:]
     assert (
         'data-sort-col="3" data-sort-type="number">'
-        '<span class="sort-ind" aria-hidden="true"></span>Weeks'
+        '<span class="sort-ind" aria-hidden="true"></span>Games'
     ) in other_chunk
     assert (
-        'data-sort-col="6" data-sort-type="number">'
+        'data-sort-col="7" data-sort-type="number">'
         '<span class="sort-ind" aria-hidden="true"></span>Absences'
     ) in other_chunk
 

@@ -9,6 +9,7 @@ from typing import Optional
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from db.data_ownership import is_season_excel_importable
 from db.excluded_seasons import is_season_excluded
 from db.excel_colors import build_season_color_maps
 from db.models import Player, PlayerWeek, Season, Team
@@ -120,6 +121,7 @@ def sync_database(
     *,
     dry_run: bool = False,
     season_filter: Optional[str] = None,
+    force: bool = False,
 ) -> dict:
     handler = get_handler_from_env()
     if not isinstance(handler, ExcelHandler):
@@ -138,13 +140,20 @@ def sync_database(
         f" (filter={season_filter!r})" if season_filter else "",
     )
 
+    skipped_db_managed: list[str] = []
     if dry_run:
         for sheet_key in sorted(by_season, key=lambda k: by_season[k][0]["season_number"]):
-            logger.info("  %s: %s rows", sheet_key, len(by_season[sheet_key]))
+            season_num = by_season[sheet_key][0]["season_number"]
+            if not is_season_excel_importable(season_num, force=force):
+                skipped_db_managed.append(sheet_key)
+                logger.info("  %s: skipped (DB-managed season)", sheet_key)
+            else:
+                logger.info("  %s: %s rows", sheet_key, len(by_season[sheet_key]))
         return {
             "dry_run": True,
             "seasons": len(by_season),
             "rows": total_rows,
+            "skipped_seasons": skipped_db_managed,
             "seconds": time.perf_counter() - started,
         }
 
@@ -163,6 +172,14 @@ def sync_database(
             season_num = rows[0]["season_number"]
             if is_season_excluded(season_num):
                 logger.info("Skipping excluded season %s (%s)", sheet_key, season_num)
+                continue
+            if not is_season_excel_importable(season_num, force=force):
+                skipped_db_managed.append(sheet_key)
+                logger.info(
+                    "Skipping DB-managed season %s (%s); use sync --force to overwrite from Excel",
+                    sheet_key,
+                    season_num,
+                )
                 continue
             season = _get_or_create_season(
                 session, sheet_key, season_num
@@ -186,9 +203,16 @@ def sync_database(
 
     elapsed = time.perf_counter() - started
     logger.info("Sync complete: %s rows in %.1fs", written, elapsed)
+    if skipped_db_managed:
+        logger.info(
+            "Skipped %s DB-managed season(s): %s",
+            len(skipped_db_managed),
+            ", ".join(skipped_db_managed),
+        )
     return {
         "dry_run": False,
         "seasons": len(by_season),
         "rows": written,
+        "skipped_seasons": skipped_db_managed,
         "seconds": elapsed,
     }

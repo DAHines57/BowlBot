@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin</title>
+  <style>
+    :root { --bg: #12101a; --card: #1a1730; --border: #2a2050; --text: #e8e6ef; --muted: #9a96a8; --accent: #ffb86c; --danger: #ff6b81; --mint: #50fa7b; }
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; max-width: 22rem; width: 100%; }
+    h1 { margin: 0 0 0.5rem; font-size: 1.25rem; color: var(--accent); }
+    p { color: var(--muted); font-size: 0.9rem; margin: 0 0 1rem; }
+    input { width: 100%; font-size: 1rem; padding: 0.6rem; border-radius: 8px; border: 1px solid var(--border); background: #12101a; color: var(--text); }
+    button { margin-top: 0.75rem; width: 100%; padding: 0.55rem; border-radius: 8px; border: none; background: #2d4a35; color: var(--text); font-weight: 700; cursor: pointer; }
+    .err { color: var(--danger); font-size: 0.85rem; margin-bottom: 0.75rem; }
+    a { color: var(--mint); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Admin</h1>
+    {% if pin_required %}
+    <p>Enter your admin password to continue.</p>
+    {% if error %}<p class="err">Incorrect password.</p>{% endif %}
+  <form method="post" action="/admin/unlock">
+    <input type="hidden" name="next" value="{{ next_path }}">
+    <input type="password" name="pin" autocomplete="off" autocapitalize="off" spellcheck="false" autofocus required>
+    <button type="submit">Continue</button>
+  </form>
+    {% else %}
+    <p>No PIN configured. <a href="/admin">Open admin</a></p>
+    {% endif %}
+    <p style="margin-top:1rem"><a href="/">← Home</a></p>
+  </div>
+</body>
+</html>

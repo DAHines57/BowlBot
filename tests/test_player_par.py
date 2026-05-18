@@ -1,6 +1,11 @@
 """Player PAR (Pins Above Replacement) computation and UI."""
 
-from image_generator import build_players_html, _format_par
+from image_generator import (
+    build_players_html,
+    _format_par,
+    _format_par_per_game,
+    _player_par_game_count,
+)
 from stats.compute import (
     build_par_baselines,
     compute_player_par,
@@ -123,6 +128,18 @@ def test_format_par_displays_sign():
     assert _format_par(-15) == "-15"
 
 
+def test_format_par_per_game():
+    assert _format_par_per_game(55, 10) == ("+5.5", 5.5)
+    assert _format_par_per_game(0, 8) == ("0.0", 0.0)
+    assert _format_par_per_game(-12, 4) == ("-3.0", -3.0)
+    assert _format_par_per_game(10, 0) == ("—", 0.0)
+
+
+def test_player_par_game_count():
+    assert _player_par_game_count({"weeks_played": 48}, True) == 48
+    assert _player_par_game_count({"scores": [200, 210, 190]}, False) == 3
+
+
 def test_build_players_html_other_stats_shows_par():
     html = build_players_html(
         {
@@ -131,7 +148,7 @@ def test_build_players_html_other_stats_shows_par():
                 "average": 200,
                 "highest_game": 220,
                 "lowest_game": 180,
-                "weeks_played": 3,
+                "weeks_played": 10,
                 "weeks_absent": 0,
                 "std_dev": 12.5,
                 "par": 55,
@@ -149,7 +166,12 @@ def test_build_players_html_other_stats_shows_par():
         'data-sort-col="5" data-sort-type="number">'
         '<span class="sort-ind" aria-hidden="true"></span>PAR'
     ) in other_chunk
+    assert (
+        'data-sort-col="6" data-sort-type="number">'
+        '<span class="sort-ind" aria-hidden="true"></span>PAR/G'
+    ) in other_chunk
     assert "+55" in other_chunk
+    assert "+5.5" in other_chunk
     assert "What is PAR?" in html
     assert "All seasons" not in html
 
@@ -166,6 +188,7 @@ def test_build_players_html_season_view_shows_par():
                 "weeks_absent": 0,
                 "std_dev": 12.5,
                 "par": 12,
+                "scores": [200] * 8,
             }
         },
         "Season 9",
@@ -174,11 +197,17 @@ def test_build_players_html_season_view_shows_par():
     other_chunk = html[other_pos:]
     assert (
         'data-sort-col="3" data-sort-type="number">'
-        '<span class="sort-ind" aria-hidden="true"></span>Weeks'
+        '<span class="sort-ind" aria-hidden="true"></span>Games'
     ) in other_chunk
     assert (
         'data-sort-col="5" data-sort-type="number">'
         '<span class="sort-ind" aria-hidden="true"></span>PAR'
     ) in other_chunk
+    assert (
+        'data-sort-col="6" data-sort-type="number">'
+        '<span class="sort-ind" aria-hidden="true"></span>PAR/G'
+    ) in other_chunk
     assert "+12" in other_chunk
+    assert "+1.5" in other_chunk
+    assert ">8<" in other_chunk.replace(" ", "")
     assert 'class="players-par-help"' in html

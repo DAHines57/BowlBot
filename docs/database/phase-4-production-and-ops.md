@@ -20,14 +20,11 @@
 - Document how to download a dump and restore to local Postgres for debugging.
 - Define retention (e.g. keep weekly dumps for N weeks).
 
-## Optional Phase 4b — Writes from the app
+Details and checklist: [phase-10-security-and-backups.md](phase-10-security-and-backups.md).
 
-**Only after** reads are stable:
+## Data entry (Phases 6–9)
 
-- **Score entry** via API that writes DB **and** appends/updates sheet (hard — two writers).
-- Or: **DB as source of truth** and export-to-sheet batch job (organizational change).
-
-Treat write path as a separate project gate with explicit conflict and permission design.
+Live scores are **DB-first**; Excel is for historical import/repair only. See [phase-6](phase-6-data-ownership.md), [phase-7](phase-7-player-week-writes.md), [phase-8](phase-8-score-entry.md).
 
 ## Observability
 

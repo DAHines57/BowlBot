@@ -8,10 +8,18 @@ The app is a **Flask website** backed by **PostgreSQL**. League data is imported
 DATABASE_URL=postgresql://bowlbot:bowlbot@localhost:5432/bowlbot_dev
 EXCEL_FILE_PATH=Bowling-Friends League v5.xlsx
 DEBUG=true
-# RELOAD_SECRET=...   # optional: POST /reload?key=... re-syncs from Excel
+# LAST_EXCEL_IMPORTED_SEASON=13   # seasons above this are DB-only (Excel sync skipped)
+# RELOAD_SECRET=...   # optional: POST /refresh?key=... reloads facts from Postgres (not Excel)
+# ADMIN_PIN=your-secret   # alphanumeric password for /admin (session after unlock)
+# FLASK_SECRET_KEY=... # session signing (set in production)
 ```
 
 Google Sheets credentials are not used. The web app does not read the workbook directly.
+
+## Data ownership
+
+- **Closed seasons:** Import/repair from Excel with `python sync_db.py` (see [docs/database/phase-6-data-ownership.md](docs/database/phase-6-data-ownership.md)).
+- **Live season:** Enter scores in the database (Phase 8 UI/API). Set `LAST_EXCEL_IMPORTED_SEASON` so sync does not overwrite the current season.
 
 ## Excel workbook (v5)
 
@@ -27,7 +35,7 @@ One sheet per season (e.g. `Season 13`), one row per player per week:
 | Absent?, Substitute? | Y/N |
 | Opponent | Opponent team name for the week |
 
-After editing the file: `python sync_db.py` (or `POST /reload` if `RELOAD_SECRET` is set).
+After editing a **frozen** season in Excel: `python sync_db.py`, then `POST /refresh?key=...` (or restart the app) if the site is already running. Use `--force` only if you must overwrite a DB-managed season from the sheet.
 
 ## Historical v4 data
 

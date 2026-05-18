@@ -28,10 +28,14 @@ class Season(Base):
     sheet_key: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     sort_order: Mapped[Optional[int]] = mapped_column(Integer)
 
-    teams: Mapped[list["Team"]] = relationship(back_populates="season")
-    player_weeks: Mapped[list["PlayerWeek"]] = relationship(back_populates="season")
+    teams: Mapped[list["Team"]] = relationship(
+        back_populates="season", cascade="all, delete-orphan"
+    )
+    player_weeks: Mapped[list["PlayerWeek"]] = relationship(
+        back_populates="season", cascade="all, delete-orphan"
+    )
     matchup_overrides: Mapped[list["MatchupOverride"]] = relationship(
-        back_populates="season"
+        back_populates="season", cascade="all, delete-orphan"
     )
 
 

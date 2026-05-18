@@ -7,13 +7,13 @@ Actionable items for the **current** codebase (Flask + Postgres + Excel sync).
 ## Performance (acceptable for current scale)
 
 - `stats/compute.py` builds aggregates from in-memory fact lists; DB facts are cached per process in `DbLeagueData`.
-- Re-run `sync_db.py` or `POST /reload` after workbook changes.
+- Re-run `sync_db.py` after workbook changes; `POST /refresh` if the web app is already running.
 
 ---
 
 ## Docs / ops
 
-- **Spreadsheet = source of truth** for scores; Postgres is refreshed via sync.
+- **Excel** = historical import/repair; **Postgres** = source of truth for the live season (phases 6–8 in `docs/database/`).
 - **`matchup_overrides`** — seeded from v4 for older seasons; used for W/L when rows exist.
 - Phase docs: [docs/database/README.md](docs/database/README.md)
 
