@@ -12,6 +12,8 @@ DEBUG=true
 # RELOAD_SECRET=...   # optional: POST /refresh?key=... reloads facts from Postgres (not Excel)
 # ADMIN_PIN=your-secret   # alphanumeric password for /admin (session after unlock)
 # FLASK_SECRET_KEY=... # session signing (set in production)
+# ANTHROPIC_API_KEY=...   # optional: cropped scoreboard scan on /admin/enter (scores only; no names sent)
+# SCOREBOARD_SCAN_MODEL=claude-sonnet-4-20250514
 ```
 
 Google Sheets credentials are not used. The web app does not read the workbook directly.

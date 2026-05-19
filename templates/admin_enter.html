@@ -50,6 +50,29 @@
     td input[type="number"] { width: 3.2rem; text-align: center; padding: 0.35rem; border-radius: 4px; border: 1px solid var(--border); background: #12101a; color: var(--text); }
     .flags label { flex-direction: row; align-items: center; gap: 0.35rem; font-size: 0.75rem; color: var(--text); justify-content: center; }
     .actions { margin-top: 1.25rem; display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
+    .scan-panel { margin-bottom: 1rem; padding: 1rem; background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
+    .scan-panel h2 { font-size: 0.95rem; margin: 0 0 0.65rem; color: var(--mint); font-weight: 600; }
+    .scan-toolbar { display: flex; flex-wrap: wrap; gap: 0.65rem; align-items: center; margin-bottom: 0.75rem; }
+    .scan-toolbar input[type="file"] { font-size: 0.85rem; color: var(--muted); max-width: 100%; }
+    .scan-review { display: none; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
+    .scan-review.visible { display: block; }
+    .scan-preview { max-width: 100%; max-height: 160px; border-radius: 6px; margin-bottom: 0.75rem; border: 1px solid var(--border); }
+    .scan-crop-stage { position: relative; display: none; max-width: 100%; margin-bottom: 0.75rem; user-select: none; touch-action: none; cursor: crosshair; overflow: hidden; border-radius: 6px; isolation: isolate; }
+    .scan-crop-stage.visible { display: block; }
+    .scan-crop-stage img { display: block; max-width: 100%; height: auto; vertical-align: top; }
+    .scan-crop-box { position: absolute; border: 2px solid var(--mint); pointer-events: none; box-shadow: none; }
+    .scan-crop-box.ready { box-shadow: 0 0 0 9999px rgba(0,0,0,0.45); }
+    .scan-privacy { font-size: 0.78rem; color: var(--muted); margin: 0 0 0.65rem; }
+    .scan-errors { font-size: 0.85rem; color: #ffb4c0; margin: 0 0 0.65rem; padding-left: 1.1rem; }
+    .scan-errors li { margin: 0.2rem 0; }
+    .scan-table { width: 100%; font-size: 0.8rem; margin-bottom: 0.75rem; }
+    .scan-table input[type="number"] { width: 3rem; }
+    .scan-table select { background: #12101a; border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 0.25rem; font-size: 0.8rem; max-width: 11rem; }
+    .scan-table tr.duplicate-assign td { background: rgba(255, 107, 129, 0.12); }
+    .scan-status { font-size: 0.85rem; color: var(--muted); min-height: 1.2em; }
+    .scan-status.error { color: var(--danger); }
+    button.scan { background: linear-gradient(135deg, #2a4a6b, #1b3d69); border-color: #3a5f8a; }
+    button.scan:disabled { opacity: 0.5; cursor: not-allowed; }
   </style>
 </head>
 <body>
@@ -118,6 +141,42 @@
         </label>
       </div>
 
+      {% if scoreboard_scan_enabled and selected_team %}
+      <div class="scan-panel" id="scan-panel">
+        <h2>Scan scoreboard</h2>
+        <p class="meta" style="margin:0 0 0.35rem">For <strong>{{ selected_team }}</strong> — crop to game columns only, then assign rows to players.</p>
+        <p class="scan-privacy">Cropped scores are sent to Anthropic for processing. BowlBot does not store photos. Player names stay in this app only.</p>
+        <div class="scan-toolbar">
+          <input type="file" id="scan-image" accept="image/jpeg,image/png,image/webp" capture="environment">
+          <button type="button" class="scan" id="scan-run" disabled>Scan cropped area</button>
+          <button type="button" id="scan-recrop" style="display:none">Adjust crop</button>
+        </div>
+        <div class="scan-crop-stage" id="scan-crop-stage">
+          <img id="scan-crop-img" alt="">
+          <div class="scan-crop-box" id="scan-crop-box"></div>
+        </div>
+        <p class="meta" id="scan-crop-hint" style="display:none;margin:0 0 0.5rem;font-size:0.8rem">Drag on the image to select game columns 1–4 (exclude names and footer totals).</p>
+        <p class="scan-status" id="scan-status" aria-live="polite"></p>
+        <div class="scan-review" id="scan-review">
+          <img class="scan-preview" id="scan-preview" alt="Cropped area sent for scan">
+          <ul class="scan-errors" id="scan-errors"></ul>
+          <table class="scan-table" id="scan-table">
+            <thead>
+              <tr>
+                <th>Row</th>
+                <th>Assign to</th>
+                <th>G1</th><th>G2</th><th>G3</th><th>G4</th><th>G5</th>
+              </tr>
+            </thead>
+            <tbody id="scan-table-body"></tbody>
+          </table>
+          <button type="button" class="primary" id="scan-apply">Apply to grid</button>
+        </div>
+      </div>
+      {% elif scoreboard_scan_enabled and not selected_team %}
+      <p class="notice" style="font-size:0.88rem">Select a team above to scan a scoreboard photo.</p>
+      {% endif %}
+
       {% for team_name, team_rows in entry.teams_grouped %}
       {% set team_opp = entry.team_opponents.get(team_name, '') %}
       <div class="team-block" data-team="{{ team_name }}">
@@ -183,6 +242,9 @@
       var GAME_MAX = {{ game_score_max }};
       var SCORE_HINT = "Enter a whole number from " + GAME_MIN + " to " + GAME_MAX + ", or leave blank.";
       var syncingOpponents = false;
+      var SCAN_URL = {{ url_for('admin.admin_week_scan') | tojson }};
+      var TEAM_ROSTER = {{ team_roster_names | tojson }};
+      var scanRows = [];
 
       function validateGameInput(inp, tr) {
         var v = inp.value.trim();
@@ -300,6 +362,353 @@
         });
       });
       refreshOpponentOptions();
+
+      (function initScoreboardScan() {
+        var fileInput = document.getElementById("scan-image");
+        var runBtn = document.getElementById("scan-run");
+        if (!fileInput || !runBtn) return;
+
+        var statusEl = document.getElementById("scan-status");
+        var reviewEl = document.getElementById("scan-review");
+        var previewEl = document.getElementById("scan-preview");
+        var errorsEl = document.getElementById("scan-errors");
+        var tbody = document.getElementById("scan-table-body");
+        var applyBtn = document.getElementById("scan-apply");
+        var cropStage = document.getElementById("scan-crop-stage");
+        var cropImg = document.getElementById("scan-crop-img");
+        var cropBox = document.getElementById("scan-crop-box");
+        var cropHint = document.getElementById("scan-crop-hint");
+        var recropBtn = document.getElementById("scan-recrop");
+        var previewUrl = null;
+        var fileObjectUrl = null;
+        var cropRect = null;
+        var dragStart = null;
+
+        function setStatus(msg, isError) {
+          statusEl.textContent = msg || "";
+          statusEl.className = "scan-status" + (isError ? " error" : "");
+        }
+
+        function clearPreviewUrl() {
+          if (previewUrl) {
+            URL.revokeObjectURL(previewUrl);
+            previewUrl = null;
+          }
+        }
+
+        function clearFileUrl() {
+          if (fileObjectUrl) {
+            URL.revokeObjectURL(fileObjectUrl);
+            fileObjectUrl = null;
+          }
+        }
+
+        function defaultCropRect() {
+          return { x: 0.22, y: 0.18, w: 0.55, h: 0.62 };
+        }
+
+        function clampCrop(rect) {
+          var minSize = 0.05;
+          rect.w = Math.max(minSize, Math.min(1 - rect.x, rect.w));
+          rect.h = Math.max(minSize, Math.min(1 - rect.y, rect.h));
+          rect.x = Math.max(0, Math.min(1 - rect.w, rect.x));
+          rect.y = Math.max(0, Math.min(1 - rect.h, rect.y));
+          return rect;
+        }
+
+        function updateCropBox() {
+          if (!cropRect || !cropImg.clientWidth) return;
+          cropBox.style.left = (cropRect.x * 100) + "%";
+          cropBox.style.top = (cropRect.y * 100) + "%";
+          cropBox.style.width = (cropRect.w * 100) + "%";
+          cropBox.style.height = (cropRect.h * 100) + "%";
+          var ready = cropRect.w >= 0.05 && cropRect.h >= 0.05;
+          cropBox.classList.toggle("ready", ready);
+        }
+
+        function hideCropUI(showRecropBtn) {
+          cropStage.classList.remove("visible");
+          cropHint.style.display = "none";
+          cropBox.classList.remove("ready");
+          if (recropBtn) {
+            recropBtn.style.display = showRecropBtn && cropImg.src ? "" : "none";
+          }
+        }
+
+        function showCropUI() {
+          if (!cropImg.src) return;
+          cropStage.classList.add("visible");
+          cropHint.style.display = "block";
+          if (recropBtn) recropBtn.style.display = "none";
+          updateCropBox();
+        }
+
+        if (recropBtn) {
+          recropBtn.addEventListener("click", function () {
+            reviewEl.classList.remove("visible");
+            showCropUI();
+            setStatus("Adjust the crop box, then scan again.");
+            refreshScanButton();
+          });
+        }
+
+        function cropReady() {
+          return cropRect && cropRect.w >= 0.05 && cropRect.h >= 0.05 && cropImg.naturalWidth > 0;
+        }
+
+        function refreshScanButton() {
+          runBtn.disabled = !cropReady();
+        }
+
+        function pointerToNorm(clientX, clientY) {
+          var r = cropStage.getBoundingClientRect();
+          return {
+            x: Math.max(0, Math.min(1, (clientX - r.left) / r.width)),
+            y: Math.max(0, Math.min(1, (clientY - r.top) / r.height))
+          };
+        }
+
+        function onCropPointerDown(e) {
+          if (!cropImg.src) return;
+          e.preventDefault();
+          dragStart = pointerToNorm(e.clientX, e.clientY);
+          cropRect = { x: dragStart.x, y: dragStart.y, w: 0, h: 0 };
+          updateCropBox();
+          cropStage.setPointerCapture(e.pointerId);
+        }
+
+        function onCropPointerMove(e) {
+          if (!dragStart) return;
+          var p = pointerToNorm(e.clientX, e.clientY);
+          cropRect = clampCrop({
+            x: Math.min(dragStart.x, p.x),
+            y: Math.min(dragStart.y, p.y),
+            w: Math.abs(p.x - dragStart.x),
+            h: Math.abs(p.y - dragStart.y)
+          });
+          updateCropBox();
+          refreshScanButton();
+        }
+
+        function onCropPointerUp(e) {
+          if (!dragStart) return;
+          dragStart = null;
+          try { cropStage.releasePointerCapture(e.pointerId); } catch (err) {}
+          if (cropRect) cropRect = clampCrop(cropRect);
+          updateCropBox();
+          refreshScanButton();
+        }
+
+        cropStage.addEventListener("pointerdown", onCropPointerDown);
+        cropStage.addEventListener("pointermove", onCropPointerMove);
+        cropStage.addEventListener("pointerup", onCropPointerUp);
+        cropStage.addEventListener("pointercancel", onCropPointerUp);
+        cropImg.addEventListener("load", function () {
+          updateCropBox();
+          refreshScanButton();
+        });
+
+        function exportCroppedBlob(callback) {
+          var nw = cropImg.naturalWidth;
+          var nh = cropImg.naturalHeight;
+          var sx = Math.round(cropRect.x * nw);
+          var sy = Math.round(cropRect.y * nh);
+          var sw = Math.max(1, Math.round(cropRect.w * nw));
+          var sh = Math.max(1, Math.round(cropRect.h * nh));
+          var canvas = document.createElement("canvas");
+          canvas.width = sw;
+          canvas.height = sh;
+          var ctx = canvas.getContext("2d");
+          ctx.drawImage(cropImg, sx, sy, sw, sh, 0, 0, sw, sh);
+          canvas.toBlob(function (blob) {
+            callback(blob);
+          }, "image/jpeg", 0.92);
+        }
+
+        fileInput.addEventListener("change", function () {
+          clearPreviewUrl();
+          clearFileUrl();
+          scanRows = [];
+          reviewEl.classList.remove("visible");
+          hideCropUI(false);
+          errorsEl.innerHTML = "";
+          tbody.innerHTML = "";
+          cropImg.removeAttribute("src");
+          cropRect = null;
+          var file = fileInput.files && fileInput.files[0];
+          if (!file) {
+            refreshScanButton();
+            setStatus("");
+            return;
+          }
+          fileObjectUrl = URL.createObjectURL(file);
+          cropImg.src = fileObjectUrl;
+          cropRect = defaultCropRect();
+          showCropUI();
+          if (recropBtn) recropBtn.style.display = "none";
+          setStatus("Adjust the crop box over game columns 1–4, then scan.");
+          refreshScanButton();
+        });
+
+        function buildAssignSelect(selected) {
+          var sel = document.createElement("select");
+          sel.className = "scan-assign";
+          var empty = document.createElement("option");
+          empty.value = "";
+          empty.textContent = "— skip —";
+          sel.appendChild(empty);
+          (TEAM_ROSTER || []).forEach(function (name) {
+            var opt = document.createElement("option");
+            opt.value = name;
+            opt.textContent = name;
+            if (name === selected) opt.selected = true;
+            sel.appendChild(opt);
+          });
+          sel.addEventListener("change", highlightDuplicateAssigns);
+          return sel;
+        }
+
+        function highlightDuplicateAssigns() {
+          var seen = {};
+          tbody.querySelectorAll("tr[data-scan-idx]").forEach(function (tr) {
+            tr.classList.remove("duplicate-assign");
+            var sel = tr.querySelector("select.scan-assign");
+            var v = sel && sel.value.trim();
+            if (!v) return;
+            if (seen[v]) {
+              tr.classList.add("duplicate-assign");
+              seen[v].classList.add("duplicate-assign");
+            } else {
+              seen[v] = tr;
+            }
+          });
+        }
+
+        function gameCell(row, key) {
+          var td = document.createElement("td");
+          var inp = document.createElement("input");
+          inp.type = "number";
+          inp.min = String(GAME_MIN);
+          inp.max = String(GAME_MAX);
+          inp.step = "1";
+          inp.className = "scan-game";
+          if (row[key] != null) inp.value = String(row[key]);
+          td.appendChild(inp);
+          return td;
+        }
+
+        function renderReview(data, previewBlob) {
+          scanRows = data.score_rows || [];
+          errorsEl.innerHTML = "";
+          (data.validation_errors || []).forEach(function (err) {
+            var li = document.createElement("li");
+            li.textContent = err;
+            errorsEl.appendChild(li);
+          });
+          tbody.innerHTML = "";
+          var roster = data.roster_players || TEAM_ROSTER || [];
+          scanRows.forEach(function (row, idx) {
+            var tr = document.createElement("tr");
+            var rowTd = document.createElement("td");
+            rowTd.textContent = String((row.row_index != null ? row.row_index : idx) + 1);
+            tr.appendChild(rowTd);
+            var assignTd = document.createElement("td");
+            var defaultPlayer = roster[idx] || "";
+            assignTd.appendChild(buildAssignSelect(defaultPlayer));
+            tr.appendChild(assignTd);
+            ["game1", "game2", "game3", "game4", "game5"].forEach(function (k) {
+              tr.appendChild(gameCell(row, k));
+            });
+            tr.dataset.scanIdx = String(idx);
+            tbody.appendChild(tr);
+          });
+          highlightDuplicateAssigns();
+          hideCropUI(true);
+          clearPreviewUrl();
+          if (previewBlob) {
+            previewUrl = URL.createObjectURL(previewBlob);
+            previewEl.src = previewUrl;
+          }
+          reviewEl.classList.add("visible");
+          var errCount = (data.validation_errors || []).length;
+          setStatus(
+            errCount
+              ? "Assign each row to a player (" + errCount + " validation warning(s))."
+              : "Assign each row to a player, then apply to the grid."
+          );
+        }
+
+        runBtn.addEventListener("click", function () {
+          if (!cropReady() || !teamFilter) return;
+          runBtn.disabled = true;
+          setStatus("Scanning…");
+          exportCroppedBlob(function (blob) {
+            if (!blob) {
+              setStatus("Could not crop image.", true);
+              runBtn.disabled = false;
+              return;
+            }
+            var fd = new FormData();
+            fd.append("image", blob, "scoreboard-crop.jpg");
+            fd.append("season", season);
+            fd.append("week", String(week));
+            fd.append("team", teamFilter);
+            fetch(SCAN_URL, { method: "POST", body: fd, credentials: "same-origin" })
+              .then(function (res) {
+                return res.json().then(function (body) {
+                  return { ok: res.ok, body: body };
+                });
+              })
+              .then(function (result) {
+                if (!result.ok) {
+                  setStatus(result.body.error || "Scan failed.", true);
+                  return;
+                }
+                renderReview(result.body, blob);
+              })
+              .catch(function () {
+                setStatus("Network error during scan.", true);
+              })
+              .finally(function () {
+                refreshScanButton();
+              });
+          });
+        });
+
+        applyBtn.addEventListener("click", function () {
+          highlightDuplicateAssigns();
+          if (tbody.querySelector("tr.duplicate-assign")) {
+            setStatus("Each player can only be assigned once.", true);
+            return;
+          }
+          var applied = 0;
+          tbody.querySelectorAll("tr[data-scan-idx]").forEach(function (tr) {
+            var sel = tr.querySelector("select.scan-assign");
+            var player = sel && sel.value.trim();
+            if (!player) return;
+            var gridRow = document.querySelector(
+              'tr[data-row][data-team="' + CSS.escape(teamFilter) + '"][data-player="' + CSS.escape(player) + '"]'
+            );
+            if (!gridRow) return;
+            var inputs = gridRow.querySelectorAll("input.game");
+            tr.querySelectorAll("input.scan-game").forEach(function (inp, gi) {
+              var v = inp.value.trim();
+              if (inputs[gi]) {
+                inputs[gi].value = v;
+                validateGameInput(inputs[gi], gridRow);
+              }
+            });
+            gridRow.classList.remove("row-incomplete");
+            gridRow.removeAttribute("title");
+            applied += 1;
+          });
+          setStatus(
+            applied
+              ? "Applied " + applied + " player row(s). Save when ready."
+              : "Choose a player for each row you want to apply."
+          );
+        });
+      })();
 
       var debugFill = document.getElementById("debug-fill-scores");
       if (debugFill) {

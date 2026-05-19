@@ -30,6 +30,14 @@ from league_admin import (
     parse_week_rows_payload,
     save_week_entry,
 )
+from scoreboard_scan import (
+    ALLOWED_IMAGE_TYPES,
+    MAX_IMAGE_BYTES,
+    extract_score_rows,
+    scan_configured,
+    scan_scoreboard_image,
+    validate_extract,
+)
 from stats.compute import parse_season_number
 
 admin_bp = Blueprint("admin", __name__)
@@ -219,6 +227,13 @@ def admin_enter_form():
         "off",
     )
     show_debug_tools = not hide_debug
+    team_roster_names: list[str] = []
+    if team:
+        team_roster_names = [
+            str(r.get("player_display_name") or "").strip()
+            for r in payload.get("rows") or []
+            if str(r.get("player_display_name") or "").strip()
+        ]
     return render_template(
         "admin_enter.html",
         entry=payload,
@@ -226,10 +241,12 @@ def admin_enter_form():
         all_teams=all_teams,
         week_statuses=week_statuses,
         selected_team=team or "",
+        team_roster_names=team_roster_names,
         show_debug_tools=show_debug_tools,
         game_score_min=GAME_SCORE_MIN,
         game_score_max=GAME_SCORE_MAX,
         save_error=(request.args.get("error") or "").strip() or None,
+        scoreboard_scan_enabled=scan_configured(),
     )
 
 
@@ -251,6 +268,77 @@ def admin_week_get():
     if err:
         return jsonify({"error": err}), 400
     return jsonify(payload)
+
+
+@admin_bp.route("/admin/week/scan", methods=["POST"])
+def admin_week_scan():
+    denied = _require_admin()
+    if denied:
+        return denied
+    svc = _svc()
+    if not svc:
+        return jsonify({"error": "database not ready"}), 503
+    if not scan_configured():
+        return jsonify({"error": "Scoreboard scan is not configured (ANTHROPIC_API_KEY)."}), 503
+
+    team = (request.form.get("team") or "").strip()
+    if not team:
+        return jsonify({"error": "Select a team before scanning."}), 400
+
+    week, err = _parse_week_arg(required=True)
+    if err:
+        return jsonify({"error": err}), 400
+    season = _season_label(svc)
+
+    file = request.files.get("image")
+    if not file or not file.filename:
+        return jsonify({"error": "Missing image file."}), 400
+
+    content_type = (file.content_type or "").strip().lower()
+    if content_type not in ALLOWED_IMAGE_TYPES:
+        return jsonify({"error": "Use JPEG, PNG, or WebP."}), 400
+
+    image_bytes = file.read()
+    if not image_bytes:
+        return jsonify({"error": "Empty image file."}), 400
+    if len(image_bytes) > MAX_IMAGE_BYTES:
+        return jsonify({"error": "Image too large (max 8 MB)."}), 400
+
+    payload, err = get_week_entry(svc.data, season, week, team=team)
+    if err:
+        return jsonify({"error": err}), 400
+
+    roster_names = [
+        str(r.get("player_display_name") or "").strip()
+        for r in payload.get("rows") or []
+        if str(r.get("team") or "").strip() == team and str(r.get("player_display_name") or "").strip()
+    ]
+    if not roster_names:
+        return jsonify({"error": f"No roster players found for team {team!r}."}), 400
+
+    try:
+        extract = scan_scoreboard_image(image_bytes, content_type)
+    except Exception as exc:
+        return jsonify({"error": f"Scan failed: {exc}"}), 502
+
+    score_rows = extract_score_rows(extract)
+    validation_errors = validate_extract(extract)
+    if len(score_rows) != len(roster_names):
+        validation_errors.append(
+            f"Scan found {len(score_rows)} score row(s); "
+            f"roster has {len(roster_names)} player(s). Assign each row manually."
+        )
+
+    return jsonify(
+        {
+            "validation_errors": validation_errors,
+            "score_rows": score_rows,
+            "roster_players": roster_names,
+            "team": team,
+            "season": season,
+            "week": week,
+        }
+    )
 
 
 @admin_bp.route("/admin/week", methods=["POST"])
