@@ -6028,6 +6028,486 @@ body.page-playoffs .container {
 
 
 # ---------------------------------------------------------------------------
+# Best scores hub (players / teams with view tabs)
+# ---------------------------------------------------------------------------
+
+_BEST_SCORES_HUB_CSS = """
+.best-scores-hub-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 14px;
+}
+.best-scores-hub-tab {
+    font: inherit;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 7px 12px;
+    border-radius: 6px;
+    border: 1px solid #4a4068;
+    background: #1e1a32;
+    color: #c4b8e8;
+    cursor: pointer;
+}
+.best-scores-hub-tab:hover {
+    border-color: #7c6ec4;
+    color: #fff;
+}
+.best-scores-hub-tab.is-active,
+.best-scores-hub-tab[aria-pressed="true"] {
+    border-color: #7c6ec4;
+    background: #2d1b69;
+    color: #ffb86c;
+}
+.best-scores-hub-panel[hidden] { display: none !important; }
+.best-scores-hub-empty {
+    margin: 0;
+    padding: 12px 0 4px;
+    color: #9a96a8;
+    font-size: 13px;
+    line-height: 1.5;
+}
+"""
+
+_BEST_SCORES_HUB_SCRIPT = r"""<script>
+(function () {
+  document.querySelectorAll(".best-scores-hub").forEach(function (hub) {
+    var tabs = hub.querySelectorAll("[data-view-tab]");
+    var panels = hub.querySelectorAll("[data-view-panel]");
+    var initial = hub.getAttribute("data-initial-view") || "weeks";
+    function activate(view) {
+      tabs.forEach(function (t) {
+        var on = t.getAttribute("data-view-tab") === view;
+        t.setAttribute("aria-pressed", on ? "true" : "false");
+        t.classList.toggle("is-active", on);
+      });
+      panels.forEach(function (p) {
+        p.hidden = p.getAttribute("data-view-panel") !== view;
+      });
+    }
+    tabs.forEach(function (t) {
+      t.addEventListener("click", function () {
+        activate(t.getAttribute("data-view-tab"));
+      });
+    });
+    activate(initial);
+  });
+})();
+</script>"""
+
+
+def _normalize_scores_hub_view(view: Optional[str]) -> str:
+    v = (view or "weeks").strip().lower()
+    if v in ("game", "games"):
+        return "games"
+    if v in ("average", "averages", "avg", "season"):
+        return "averages"
+    return "weeks"
+
+
+def _scores_hub_tabs_html(initial_view: str) -> str:
+    initial = _normalize_scores_hub_view(initial_view)
+    tabs = (
+        ("weeks", "Best weeks"),
+        ("games", "Best games"),
+        ("averages", "Season averages"),
+    )
+    parts = ['<div class="best-scores-hub-tabs" role="tablist">']
+    for key, label in tabs:
+        pressed = "true" if key == initial else "false"
+        active = " is-active" if key == initial else ""
+        parts.append(
+            f'<button type="button" class="best-scores-hub-tab{active}" '
+            f'data-view-tab="{key}" role="tab" aria-pressed="{pressed}">'
+            f"{html_module.escape(label)}</button>"
+        )
+    parts.append("</div>")
+    return "".join(parts)
+
+
+def _scores_hub_panel(view: str, inner: str, *, hidden: bool) -> str:
+    hidden_attr = " hidden" if hidden else ""
+    return (
+        f'<div class="best-scores-hub-panel" data-view-panel="{view}"{hidden_attr}>'
+        f"{inner}</div>"
+    )
+
+
+def _top_player_games_section(games: list, n: int) -> str:
+    headers = [
+        {"label": "#", "right": True},
+        {"label": "Player"},
+        {"label": "Team"},
+        {"label": "Wk", "right": True},
+        {"label": "Score", "right": True},
+    ]
+    rows = []
+    for i, (player, team, week, score) in enumerate(games[:n], 1):
+        rows.append([
+            {"val": i, "cls": "right rank"},
+            {"val": _short_name(player), "cls": "name-col", "sort": player.lower()},
+            {"val": team, "cls": "sub-col", "style": _team_color_style(team), "sort": team.lower()},
+            {"val": week, "cls": "right sub-col"},
+            {"val": int(score), "cls": "right gold"},
+        ])
+    return _list_section(f"Top {n} individual games", headers, rows)
+
+
+def _top_player_weeks_section(weeks: list, n: int) -> str:
+    headers = [
+        {"label": "#", "right": True},
+        {"label": "Player"},
+        {"label": "Team"},
+        {"label": "Wk", "right": True},
+        {"label": "Avg", "right": True},
+        {"label": "Games", "right": True},
+        {"label": "Total", "right": True},
+    ]
+    rows = []
+    for i, week_data in enumerate(weeks[:n], 1):
+        if len(week_data) == 5:
+            player, team, week, total, num_games = week_data
+        else:
+            player, team, week, total = week_data
+            num_games = 0
+        week_avg = total / num_games if num_games else 0
+        rows.append([
+            {"val": i, "cls": "right rank"},
+            {"val": _short_name(player), "cls": "name-col", "sort": player.lower()},
+            {"val": team, "cls": "sub-col", "style": _team_color_style(team), "sort": team.lower()},
+            {"val": week, "cls": "right sub-col"},
+            {"val": f"{week_avg:.1f}", "cls": "right gold", "sort": week_avg},
+            {"val": num_games, "cls": "right sub-col"},
+            {"val": int(total), "cls": "right sub-col", "sort": total},
+        ])
+    return _list_section(f"Top {n} player weeks", headers, rows)
+
+
+def _top_player_season_avg_section(
+    player_data: Optional[dict],
+    n: int,
+    *,
+    season_rows: Optional[List[dict]] = None,
+) -> str:
+    """One row per player for a single season, or per (player, season) when season_rows is set."""
+    count_label = "Weeks"
+    if season_rows is not None:
+        headers = [
+            {"label": "#", "right": True},
+            {"label": "Player"},
+            {"label": "Season"},
+            {"label": "Team"},
+            {"label": "Avg", "right": True},
+            {"label": "High", "right": True},
+            {"label": "Low", "right": True},
+            {"label": count_label, "right": True},
+        ]
+        rows = []
+        for i, row in enumerate(season_rows[:n], 1):
+            name = row["player"]
+            team = row.get("team", "")
+            season = row.get("season", "")
+            avg = row.get("average", 0)
+            high = row.get("highest_game", 0)
+            low = row.get("lowest_game", 0)
+            weeks = row.get("weeks_played", row.get("games", 0))
+            rows.append(
+                [
+                    {"val": i, "cls": "right rank"},
+                    {"val": _short_name(name), "cls": "name-col", "sort": name.lower()},
+                    {"val": season, "cls": "sub-col", "sort": season.lower()},
+                    {
+                        "val": team,
+                        "cls": "sub-col",
+                        "style": _team_color_style(team),
+                        "sort": team.lower(),
+                    },
+                    {"val": f"{avg:.1f}", "cls": "right gold", "sort": avg},
+                    {"val": high, "cls": "right green"},
+                    {"val": low, "cls": "right sub-col"},
+                    {"val": weeks, "cls": "right sub-col"},
+                ]
+            )
+        title = f"Top {n} season averages"
+        return _list_section(title, headers, rows)
+
+    if not player_data:
+        return '<p class="best-scores-hub-empty">No season average data for this selection.</p>'
+
+    headers = [
+        {"label": "#", "right": True},
+        {"label": "Player"},
+        {"label": "Team"},
+        {"label": "Avg", "right": True},
+        {"label": "High", "right": True},
+        {"label": "Low", "right": True},
+        {"label": count_label, "right": True},
+    ]
+    rows = []
+    sorted_players = sorted(
+        player_data.items(), key=lambda x: x[1].get("average", 0), reverse=True
+    )
+    for i, (name, stats) in enumerate(sorted_players[:n], 1):
+        avg = stats.get("average", 0)
+        high = stats.get("highest_game", 0)
+        low = stats.get("lowest_game", 0)
+        weeks = stats.get("weeks_played", stats.get("games", 0))
+        team = stats.get("team", "")
+        rows.append(
+            _player_identity_cells(i, name, team)
+            + [
+                {"val": f"{avg:.1f}", "cls": "right gold"},
+                {"val": high, "cls": "right green"},
+                {"val": low, "cls": "right sub-col"},
+                {"val": weeks, "cls": "right sub-col"},
+            ]
+        )
+    return _list_section(f"Top {n} season averages", headers, rows)
+
+
+def _top_team_games_section(games: list, n: int) -> str:
+    headers = [
+        {"label": "#", "right": True},
+        {"label": "Team"},
+        {"label": "Wk", "right": True},
+        {"label": "Game", "right": True},
+        {"label": "Score", "right": True},
+    ]
+    team_rows: List[Tuple[List[dict], Dict[str, Any]]] = []
+    for i, entry in enumerate(games[:n], 1):
+        if len(entry) >= 5:
+            team, week, game_num, score, players = entry[:5]
+        else:
+            team, week, game_num, score = entry[:4]
+            players = {}
+        team_rows.append((
+            [
+                {"val": i, "cls": "right rank"},
+                {
+                    "val": _team_name_cell_expandable(team),
+                    "cls": "name-col",
+                    "style": _team_color_style(team),
+                    "sort": team.lower(),
+                },
+                {"val": week, "cls": "right sub-col"},
+                {"val": game_num, "cls": "right sub-col"},
+                {"val": int(score), "cls": "right gold"},
+            ],
+            players if isinstance(players, dict) else {},
+        ))
+    return _teams_standings_section(f"Top {n} team games", headers, team_rows)
+
+
+def _top_team_weeks_section(weeks: list, n: int) -> str:
+    headers = [
+        {"label": "#", "right": True},
+        {"label": "Team"},
+        {"label": "Wk", "right": True},
+        {"label": "Avg", "right": True},
+        {"label": "Games", "right": True},
+        {"label": "Total", "right": True},
+    ]
+    team_rows: List[Tuple[List[dict], Dict[str, Any]]] = []
+    for i, entry in enumerate(weeks[:n], 1):
+        if len(entry) >= 5:
+            team, week, total, num_games, players = entry[:5]
+        else:
+            team, week, total, num_games = entry[:4]
+            players = {}
+        week_avg = total / num_games if num_games else 0
+        team_rows.append((
+            [
+                {"val": i, "cls": "right rank"},
+                {
+                    "val": _team_name_cell_expandable(team),
+                    "cls": "name-col",
+                    "style": _team_color_style(team),
+                    "sort": team.lower(),
+                },
+                {"val": week, "cls": "right sub-col"},
+                {"val": f"{week_avg:.1f}", "cls": "right gold", "sort": week_avg},
+                {"val": num_games, "cls": "right sub-col"},
+                {"val": int(total), "cls": "right sub-col", "sort": total},
+            ],
+            players if isinstance(players, dict) else {},
+        ))
+    return _teams_standings_section(f"Top {n} team weeks", headers, team_rows)
+
+
+def _top_team_season_avg_section(
+    teams_data: Optional[dict],
+    n: int,
+    *,
+    season_rows: Optional[List[dict]] = None,
+    champion_team: Optional[str] = None,
+) -> str:
+    """One row per team for a single season, or per (team, season) when season_rows is set."""
+    if season_rows is not None:
+        headers = [
+            {"label": "#", "right": True},
+            {"label": "Team"},
+            {"label": "Season"},
+            {"label": "Record"},
+            {"label": "Avg", "right": True},
+            {"label": "Total Pins", "right": True},
+        ]
+        team_rows: List[Tuple[List[dict], Dict[str, Any]]] = []
+        for i, row in enumerate(season_rows[:n], 1):
+            name = row["team"]
+            season = row.get("season", "")
+            stats = row.get("stats") or {}
+            champ = row.get("champion_team")
+            w = stats.get("wins", 0)
+            l = stats.get("losses", 0)
+            t = stats.get("ties", 0)
+            record = f"{w}-{l}" + (f"-{t}" if t else "")
+            avg = stats.get("avg_per_game", 0)
+            pins = stats.get("pins_for", 0)
+            players = stats.get("players") or {}
+            team_rows.append((
+                [
+                    {"val": i, "cls": "right rank"},
+                    {
+                        "val": _team_name_cell_expandable(name, champ),
+                        "cls": "name-col",
+                        "style": _team_color_style(name),
+                        "sort": name.lower(),
+                    },
+                    {"val": season, "cls": "sub-col", "sort": season.lower()},
+                    {
+                        "val": record,
+                        "cls": "record",
+                        "sort": w * 1_000_000 - l * 1_000 - t,
+                    },
+                    {"val": f"{avg:.1f}", "cls": "right gold", "sort": avg},
+                    {"val": f"{pins:,}", "cls": "right sub-col", "sort": pins},
+                ],
+                players,
+            ))
+        return _teams_standings_section(f"Top {n} season averages", headers, team_rows)
+
+    if not teams_data:
+        return (
+            '<p class="best-scores-hub-empty">Season averages need a specific season, '
+            "not All seasons. Choose a season above.</p>"
+        )
+
+    headers = [
+        {"label": "#", "right": True},
+        {"label": "Team"},
+        {"label": "Record"},
+        {"label": "Avg", "right": True},
+        {"label": "Total Pins", "right": True},
+    ]
+    team_rows = []
+    sorted_teams = sorted(
+        teams_data.items(),
+        key=lambda x: x[1].get("avg_per_game", 0),
+        reverse=True,
+    )
+    for i, (name, stats) in enumerate(sorted_teams[:n], 1):
+        w = stats.get("wins", 0)
+        l = stats.get("losses", 0)
+        t = stats.get("ties", 0)
+        record = f"{w}-{l}" + (f"-{t}" if t else "")
+        avg = stats.get("avg_per_game", 0)
+        pins = stats.get("pins_for", 0)
+        players = stats.get("players") or {}
+        team_rows.append((
+            [
+                {"val": i, "cls": "right rank"},
+                {
+                    "val": _team_name_cell_expandable(name, champion_team),
+                    "cls": "name-col",
+                    "style": _team_color_style(name),
+                    "sort": name.lower(),
+                },
+                {
+                    "val": record,
+                    "cls": "record",
+                    "sort": w * 1_000_000 - l * 1_000 - t,
+                },
+                {"val": f"{avg:.1f}", "cls": "right gold", "sort": avg},
+                {"val": f"{pins:,}", "cls": "right sub-col", "sort": pins},
+            ],
+            players,
+        ))
+    return _teams_standings_section(f"Top {n} season averages", headers, team_rows)
+
+
+def build_top_player_scores_hub_html(
+    games: list,
+    weeks: list,
+    season: str,
+    n: int,
+    *,
+    player_data: Optional[dict] = None,
+    player_season_rows: Optional[List[dict]] = None,
+    initial_view: str = "weeks",
+) -> str:
+    view = _normalize_scores_hub_view(initial_view)
+    weeks_panel = _top_player_weeks_section(weeks, n)
+    games_panel = _top_player_games_section(games, n)
+    avg_panel = _top_player_season_avg_section(
+        player_data, n, season_rows=player_season_rows
+    )
+    hub_inner = (
+        f'<div class="best-scores-hub" data-initial-view="{view}">'
+        + _scores_hub_tabs_html(view)
+        + _scores_hub_panel("weeks", weeks_panel, hidden=view != "weeks")
+        + _scores_hub_panel("games", games_panel, hidden=view != "games")
+        + _scores_hub_panel("averages", avg_panel, hidden=view != "averages")
+        + "</div>"
+    )
+    return _render_list_page(
+        css=_LIST_CSS + _BEST_SCORES_HUB_CSS,
+        title="🎳 BEST PLAYER SCORES",
+        subtitle=season,
+        sections=hub_inner,
+        extra_script=_BEST_SCORES_HUB_SCRIPT,
+    )
+
+
+def build_top_team_scores_hub_html(
+    games: list,
+    weeks: list,
+    season: str,
+    n: int,
+    *,
+    teams_data: Optional[dict] = None,
+    team_season_rows: Optional[List[dict]] = None,
+    initial_view: str = "weeks",
+    champion_team: Optional[str] = None,
+) -> str:
+    view = _normalize_scores_hub_view(initial_view)
+    weeks_panel = _top_team_weeks_section(weeks, n)
+    games_panel = _top_team_games_section(games, n)
+    avg_panel = _top_team_season_avg_section(
+        teams_data,
+        n,
+        season_rows=team_season_rows,
+        champion_team=champion_team,
+    )
+    hub_inner = (
+        f'<div class="best-scores-hub" data-initial-view="{view}">'
+        + _scores_hub_tabs_html(view)
+        + _scores_hub_panel("weeks", weeks_panel, hidden=view != "weeks")
+        + _scores_hub_panel("games", games_panel, hidden=view != "games")
+        + _scores_hub_panel("averages", avg_panel, hidden=view != "averages")
+        + "</div>"
+    )
+    return _render_list_page(
+        css=_LIST_CSS + _TEAMS_STANDINGS_CSS + _BEST_SCORES_HUB_CSS,
+        title="🎳 BEST TEAM SCORES",
+        subtitle=season,
+        sections=hub_inner,
+        extra_script=_BEST_SCORES_HUB_SCRIPT + _TEAMS_EXPAND_SCRIPT,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Top team games / weeks
 # ---------------------------------------------------------------------------
 

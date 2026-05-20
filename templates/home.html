@@ -965,10 +965,8 @@
               <div class="btn-grid cols-2">
                 <a class="btn btn--spark" href="#" onclick="goSeasonTotals('/players', 'All players'); return false;">All players</a>
                 <a class="btn btn--spark btn-season-only" href="#" onclick="goSeasonTotals('/teams', 'Team standings'); return false;">Team standings</a>
-                <a class="btn btn--ghost btn--spark" href="#" onclick="goSeasonTotals('/top/games', 'Best single games'); return false;">Best single games</a>
-                <a class="btn btn--ghost btn--spark" href="#" onclick="goSeasonTotals('/top/team-games', 'Best team games'); return false;">Best team games</a>
-                <a class="btn btn--ghost btn--spark" href="#" onclick="goSeasonTotals('/top/weeks', 'Best single weeks'); return false;">Best single weeks</a>
-                <a class="btn btn--ghost btn--spark" href="#" onclick="goSeasonTotals('/top/team-weeks', 'Best team weeks'); return false;">Best team weeks</a>
+                <a class="btn btn--ghost btn--spark" href="#" onclick="goSeasonTotals('/top/player-scores', 'Best player scores'); return false;">Best player scores</a>
+                <a class="btn btn--ghost btn--spark" href="#" onclick="goSeasonTotals('/top/team-scores', 'Best team scores'); return false;">Best team scores</a>
                 <a id="btn-playoffs" class="btn btn--ghost btn--spark" href="#" style="grid-column: 1 / -1;" hidden onclick="goSeasonTotals('/bracket', 'Playoffs'); return false;">Playoffs (bracket &amp; scores)</a>
               </div>
             </div>
@@ -1406,7 +1404,11 @@
           showPanel(path + "?season=" + encodeURIComponent(seasonW), title, { skipScroll: true, noStore: true, scope: "season_totals" });
           return;
         }
-        if (path === "/top/games" || path === "/top/weeks" || path === "/top/team-games" || path === "/top/team-weeks") {
+        if (
+          path === "/top/games" || path === "/top/weeks" ||
+          path === "/top/team-games" || path === "/top/team-weeks" ||
+          path === "/top/player-scores" || path === "/top/team-scores"
+        ) {
           var seasonTop = getSeason();
           var spTop = new URLSearchParams();
           spTop.set("season", seasonTop);
@@ -1549,7 +1551,11 @@
           );
           return;
         }
-        if (path === "/top/games" || path === "/top/weeks" || path === "/top/team-games" || path === "/top/team-weeks") {
+        if (
+          path === "/top/games" || path === "/top/weeks" ||
+          path === "/top/team-games" || path === "/top/team-weeks" ||
+          path === "/top/player-scores" || path === "/top/team-scores"
+        ) {
           var sp = new URLSearchParams(qsSeasonTotals());
           sp.set("n", "50");
           showPanel(path + "?" + sp.toString(), title || "Scores", { scope: "season_totals" });

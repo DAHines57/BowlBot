@@ -17,6 +17,20 @@ def normalize(text: str) -> str:
     )
 
 
+def fact_in_roster_window(fact: dict) -> bool:
+    """True if this week is within roster membership bounds on the fact (if present)."""
+    week = safe_int(fact.get("week"), 0)
+    if week < 1:
+        return False
+    started = fact.get("roster_started_week")
+    if started is not None and week < int(started):
+        return False
+    ended = fact.get("roster_ended_week")
+    if ended is not None and week > int(ended):
+        return False
+    return True
+
+
 def games_list(fact: dict) -> List[float]:
     """Positive pin totals from game1–game5 on a fact row."""
     out: List[float] = []
@@ -28,6 +42,22 @@ def games_list(fact: dict) -> List[float]:
         if score > 0:
             out.append(score)
     return out
+
+
+def fact_has_play_activity(fact: dict) -> bool:
+    """True if the row represents a scored or absent week (not a blank template)."""
+    if fact.get("absent"):
+        return True
+    return len(games_list(fact)) > 0
+
+
+def fact_counts_for_stats(fact: dict) -> bool:
+    """Whether a fact row should affect season stats and player summaries."""
+    if fact.get("substitute"):
+        return False
+    if not fact_in_roster_window(fact):
+        return False
+    return fact_has_play_activity(fact)
 
 
 def games_slots(fact: dict) -> List[Optional[int]]:

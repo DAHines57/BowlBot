@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from stats.facts import (
+    fact_counts_for_stats,
     filter_facts,
     games_list,
     games_slots,
@@ -719,7 +720,7 @@ def get_league_stats(
     individual_games: List[tuple] = []
 
     for f in rows:
-        if f.get("substitute"):
+        if not fact_counts_for_stats(f):
             continue
         team = str(f.get("team") or "").strip()
         if not team:
@@ -951,6 +952,8 @@ def get_player_scores(
 
     player_data: Dict[str, dict] = {}
     for f in rows:
+        if not fact_counts_for_stats(f):
+            continue
         player = str(f.get("player_display_name") or "").strip()
         if not player:
             continue

@@ -48,6 +48,23 @@ def test_parse_teams_form_id_and_color(monkeypatch):
     assert teams[0]["players"] == ["Alice"]
 
 
+def test_parse_teams_form_captain_and_effective_week(monkeypatch):
+    from app import admin_routes
+
+    fake = _FakeForm(
+        {
+            "effective_week": "8",
+            "teams[0][name]": "Team A",
+            "teams[0][captain]": "Alice",
+        },
+        {"teams[0][player_pick][]": ["Alice", "Bob"]},
+    )
+    monkeypatch.setattr(admin_routes, "request", type("R", (), {"form": fake})())
+    assert admin_routes._effective_week_from_form() == 8
+    teams = admin_routes._parse_teams_form()
+    assert teams[0]["captain"] == "Alice"
+
+
 def test_parse_teams_form_with_picks(monkeypatch):
     from app import admin_routes
 

@@ -31,6 +31,9 @@ class Season(Base):
     teams: Mapped[list["Team"]] = relationship(
         back_populates="season", cascade="all, delete-orphan"
     )
+    roster_members: Mapped[list["TeamRosterMember"]] = relationship(
+        back_populates="season", cascade="all, delete-orphan"
+    )
     player_weeks: Mapped[list["PlayerWeek"]] = relationship(
         back_populates="season", cascade="all, delete-orphan"
     )
@@ -49,6 +52,9 @@ class Team(Base):
     color_hex: Mapped[Optional[str]] = mapped_column(String(7))
 
     season: Mapped["Season"] = relationship(back_populates="teams")
+    roster_members: Mapped[list["TeamRosterMember"]] = relationship(
+        back_populates="team", cascade="all, delete-orphan"
+    )
     player_weeks: Mapped[list["PlayerWeek"]] = relationship(back_populates="team")
 
 
@@ -58,7 +64,42 @@ class Player(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     display_name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
 
+    roster_members: Mapped[list["TeamRosterMember"]] = relationship(back_populates="player")
     player_weeks: Mapped[list["PlayerWeek"]] = relationship(back_populates="player")
+
+
+class TeamRosterMember(Base):
+    __tablename__ = "team_roster_members"
+    __table_args__ = (
+        UniqueConstraint(
+            "season_id",
+            "team_id",
+            "player_id",
+            name="uq_roster_season_team_player",
+        ),
+        Index("ix_roster_members_season_team", "season_id", "team_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    season_id: Mapped[int] = mapped_column(
+        ForeignKey("seasons.id", ondelete="CASCADE"), nullable=False
+    )
+    team_id: Mapped[int] = mapped_column(
+        ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
+    )
+    player_id: Mapped[int] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE"), nullable=False
+    )
+    is_captain: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    started_week: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    ended_week: Mapped[Optional[int]] = mapped_column(Integer)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+
+    season: Mapped["Season"] = relationship(back_populates="roster_members")
+    team: Mapped["Team"] = relationship(back_populates="roster_members")
+    player: Mapped["Player"] = relationship(back_populates="roster_members")
 
 
 class PlayerWeek(Base):

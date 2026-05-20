@@ -14,8 +14,10 @@ Align names and semantics with `sheets_handler.py` / workbook columns:
 
 1. **seasons** — `id` equals league `number` (e.g. both `11` for Season 11), plus `sheet_key`, `label`, optional `sort_order`.
 2. **teams** — `id`, `season_id`, `name` (unique per season).
-3. **players** — `id`, optional canonical `display_name`; link to teams is **per season** via roster or derive from weekly rows.
-4. **player_weeks** (fact table) — one row per player per week per season:
+3. **players** — `id`, canonical `display_name` (league-wide).
+4. **team_roster_members** — `season_id`, `team_id`, `player_id`, `is_captain`, `started_week`, `ended_week`, `active` (season roster; see migration `008`).
+5. **player_weeks** (fact table) — was item 4; weekly scores still live here.
+**player_weeks** — one row per player per week per season:
    - `season_id`, `week`, `team_id` (or denormalized team name at ingest time),
    - `game1` … `game5` (nullable numeric),
    - `week_average` (optional denormalized),

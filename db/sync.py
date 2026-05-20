@@ -12,7 +12,9 @@ from sqlalchemy.orm import Session
 from db.data_ownership import is_season_excel_importable
 from db.excluded_seasons import is_season_excluded
 from db.excel_colors import build_season_color_maps
-from db.models import Player, PlayerWeek, Season, Team
+from db.models import PlayerWeek, Season, Team
+from db.players import get_or_create_player
+from db.roster_members import backfill_season_roster
 from db.session import get_session
 from db.sheet_factory import get_handler_from_env
 from db.team_colors import resolve_color_hex
@@ -39,18 +41,6 @@ def _get_or_create_season(session: Session, sheet_key: str, season_number: int) 
         season.sort_order = season_number
     session.flush()
     return season
-
-
-def _get_or_create_player(session: Session, cache: dict[str, int], display_name: str) -> int:
-    if display_name in cache:
-        return cache[display_name]
-    player = session.scalar(select(Player).where(Player.display_name == display_name))
-    if player is None:
-        player = Player(display_name=display_name)
-        session.add(player)
-        session.flush()
-    cache[display_name] = player.id
-    return player.id
 
 
 def _replace_season_rows(
@@ -92,7 +82,7 @@ def _replace_season_rows(
 
     facts: list[PlayerWeek] = []
     for row in rows:
-        player_id = _get_or_create_player(session, player_cache, row["player_display_name"])
+        player_id = get_or_create_player(session, player_cache, row["player_display_name"])
         facts.append(
             PlayerWeek(
                 season_id=season.id,
@@ -114,6 +104,8 @@ def _replace_season_rows(
             )
         )
     session.add_all(facts)
+    session.flush()
+    backfill_season_roster(session, season.id, clear_existing=True)
     return len(facts)
 
 

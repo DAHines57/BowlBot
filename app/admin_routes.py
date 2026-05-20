@@ -7,8 +7,11 @@ from urllib.parse import quote
 import os
 
 from flask import Blueprint, Response, current_app, jsonify, redirect, render_template, request, url_for
+from sqlalchemy import select
 
 from app.admin_auth import admin_pin_configured, check_admin_authorized, unlock_admin
+from db.models import Season
+from db.roster_members import default_roster_effective_week
 from db.season_admin import (
     create_season,
     delete_season,
@@ -470,23 +473,71 @@ def admin_season_form():
     if not svc:
         return _no_svc()
 
-    season_num, _ = _season_number_from_request()
+    season_num = None
+    if (request.args.get("season") or "").strip():
+        season_num, season_err = _season_number_from_request()
+        if season_err:
+            return render_template("error.html", message=season_err), 400
+    view_week, week_err = _parse_week_arg()
+    if week_err:
+        return render_template("error.html", message=week_err), 400
+
     roster = None
+    week_statuses: list[dict] = []
     session = get_session()
     try:
         db_seasons = list_db_seasons(session)
         all_players = list_all_player_names(session)
-        if season_num is not None:
-            roster = get_season_roster(session, season_num)
+        if season_num is not None and view_week is not None:
+            roster = get_season_roster(session, season_num, view_week=view_week)
+            from league_admin import list_season_week_completion
+
+            season_label = roster["label"] if roster else f"Season {season_num}"
+            week_statuses = list_season_week_completion(
+                svc.data,
+                season_label,
+                through_week=view_week,
+            )
+        elif season_num is not None:
+            from league_admin import list_season_week_completion
+
+            season_label = f"Season {season_num}"
+            week_statuses = list_season_week_completion(svc.data, season_label)
+            if not week_statuses:
+                season_row = session.scalar(
+                    select(Season).where(Season.number == season_num)
+                )
+                if season_row:
+                    from db.roster_members import roster_week_choices
+
+                    week_statuses = [
+                        {"week": w, "status": "not_started"}
+                        for w in roster_week_choices(session, season_row.id)
+                    ]
     finally:
         session.close()
 
     existing_numbers = {s["number"] for s in db_seasons}
+    picker_week = view_week
+    if picker_week is None and season_num is not None and roster:
+        picker_week = roster.get("default_effective_week", 1)
+    elif picker_week is None and season_num is not None:
+        session2 = get_session()
+        try:
+            season_row = session2.scalar(
+                select(Season).where(Season.number == season_num)
+            )
+            if season_row:
+                picker_week = default_roster_effective_week(session2, season_row.id)
+        finally:
+            session2.close()
     return render_template(
         "admin_season.html",
         db_seasons=db_seasons,
         roster=roster,
         season_number=season_num,
+        picker_week=picker_week,
+        week_statuses=week_statuses,
         season_choices=_season_choices(svc, db_seasons),
         new_season_options=suggest_new_season_numbers(db_seasons),
         existing_season_numbers=existing_numbers,
@@ -529,10 +580,17 @@ def admin_season_post():
             if err:
                 raise ValueError(err)
             teams = _parse_teams_form()
-            save_season_roster(session, season_num, teams)
+            effective_week = _effective_week_from_form()
+            save_season_roster(session, season_num, teams, roster_week=effective_week)
             session.commit()
             svc.refresh_data()
-            return redirect(url_for("admin.admin_season_form", season=f"Season {season_num}"))
+            return redirect(
+                url_for(
+                    "admin.admin_season_form",
+                    season=f"Season {season_num}",
+                    week=effective_week,
+                )
+            )
 
         if action == "delete_season":
             season_num, err = _season_number_from_request()
@@ -577,8 +635,18 @@ def _players_for_team_index(team_idx: int) -> list[str]:
     return [p.strip() for p in raw.splitlines() if p.strip()]
 
 
+def _effective_week_from_form() -> int:
+    raw = (request.form.get("effective_week") or "").strip()
+    if not raw.isdigit():
+        raise ValueError("Effective from week must be a positive integer.")
+    week = int(raw)
+    if week < 1:
+        raise ValueError("Effective from week must be at least 1.")
+    return week
+
+
 def _parse_teams_form() -> list[dict]:
-    """Parse teams[N][name], id, color_hex, and player picks from the roster form."""
+    """Parse teams[N][name], id, color_hex, captain, and player picks from the roster form."""
     teams = []
     for idx in _team_indices_from_form():
         name = (request.form.get(f"teams[{idx}][name]") or "").strip()
@@ -592,5 +660,8 @@ def _parse_teams_form() -> list[dict]:
         raw_color = request.form.get(f"teams[{idx}][color_hex]")
         if raw_color is not None:
             entry["color_hex"] = raw_color.strip()
+        captain = (request.form.get(f"teams[{idx}][captain]") or "").strip()
+        if captain:
+            entry["captain"] = captain
         teams.append(entry)
     return teams

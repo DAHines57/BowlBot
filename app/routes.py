@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from flask import Blueprint, Response, current_app, render_template, request
+from flask import Blueprint, Response, current_app, redirect, render_template, request, url_for
 
 from league_admin import (
     list_public_seasons,
@@ -207,56 +207,62 @@ def top_players():
     return Response(html, mimetype="text/html; charset=utf-8")
 
 
-@bp.route("/top/games")
-def top_games():
+def _redirect_top_hub(hub_endpoint: str, view: str):
+    args = {k: v for k, v in request.args.items() if k != "view"}
+    args["view"] = view
+    return redirect(url_for(hub_endpoint, **args))
+
+
+@bp.route("/top/player-scores")
+def top_player_scores():
     svc = _svc()
     if not svc:
         return _no_svc()
     n = request.args.get("n", default=50, type=int)
     worst = request.args.get("worst", default=0, type=int) == 1
-    html, err = svc.top_games_page(_season_arg(), n, worst, embed=_embed_flag())
+    view = request.args.get("view")
+    html, err = svc.top_player_scores_hub_page(
+        _season_arg(), n, worst, view=view, embed=_embed_flag()
+    )
     if err:
         return render_template("error.html", message=err), 400
     return Response(html, mimetype="text/html; charset=utf-8")
+
+
+@bp.route("/top/team-scores")
+def top_team_scores():
+    svc = _svc()
+    if not svc:
+        return _no_svc()
+    n = request.args.get("n", default=50, type=int)
+    worst = request.args.get("worst", default=0, type=int) == 1
+    view = request.args.get("view")
+    html, err = svc.top_team_scores_hub_page(
+        _season_arg(), n, worst, view=view, embed=_embed_flag()
+    )
+    if err:
+        return render_template("error.html", message=err), 400
+    return Response(html, mimetype="text/html; charset=utf-8")
+
+
+@bp.route("/top/games")
+def top_games():
+    return _redirect_top_hub("site.top_player_scores", "games")
 
 
 @bp.route("/top/weeks")
 def top_weeks():
-    svc = _svc()
-    if not svc:
-        return _no_svc()
-    n = request.args.get("n", default=50, type=int)
-    worst = request.args.get("worst", default=0, type=int) == 1
-    html, err = svc.top_weeks_page(_season_arg(), n, worst, embed=_embed_flag())
-    if err:
-        return render_template("error.html", message=err), 400
-    return Response(html, mimetype="text/html; charset=utf-8")
+    return _redirect_top_hub("site.top_player_scores", "weeks")
 
 
 @bp.route("/top/team-games")
 def top_team_games():
-    svc = _svc()
-    if not svc:
-        return _no_svc()
-    n = request.args.get("n", default=50, type=int)
-    worst = request.args.get("worst", default=0, type=int) == 1
-    html, err = svc.top_team_games_page(_season_arg(), n, worst, embed=_embed_flag())
-    if err:
-        return render_template("error.html", message=err), 400
-    return Response(html, mimetype="text/html; charset=utf-8")
+    return _redirect_top_hub("site.top_team_scores", "games")
 
 
 @bp.route("/top/team-weeks")
 def top_team_weeks():
-    svc = _svc()
-    if not svc:
-        return _no_svc()
-    n = request.args.get("n", default=50, type=int)
-    worst = request.args.get("worst", default=0, type=int) == 1
-    html, err = svc.top_team_weeks_page(_season_arg(), n, worst, embed=_embed_flag())
-    if err:
-        return render_template("error.html", message=err), 400
-    return Response(html, mimetype="text/html; charset=utf-8")
+    return _redirect_top_hub("site.top_team_scores", "weeks")
 
 
 @bp.route("/player")

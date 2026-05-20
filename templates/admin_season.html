@@ -26,7 +26,17 @@
     .hint { color: var(--muted); font-size: 0.85rem; margin: 0 0 1rem; }
     .players-label { margin-top: 0.65rem; margin-bottom: 0.35rem; }
     .player-row { display: flex; gap: 0.4rem; align-items: center; margin-bottom: 0.4rem; }
-    .player-row select { flex: 1; min-width: 0; }
+    .player-row select.player-pick-select,
+    .player-row input.player-pick-new { flex: 1; min-width: 0; }
+    label.captain-label { flex: 0 0 auto; width: auto; margin: 0; display: flex; align-items: center; gap: 0.2rem; font-size: 0.75rem; color: var(--muted); cursor: pointer; user-select: none; }
+    label.captain-label input { width: auto; margin: 0; cursor: pointer; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 0.65rem; align-items: flex-end; margin-bottom: 1rem; padding: 0.75rem; background: #1a1730; border: 1px solid var(--border); border-radius: 8px; }
+    .toolbar label { flex: 1; min-width: 8rem; margin-bottom: 0; }
+    .toolbar select { width: 100%; }
+    .toolbar button { width: auto; flex: 0 0 auto; }
+    select.week-select option.complete { color: #50fa7b; }
+    select.week-select option.incomplete { color: #ff9eb0; }
+    select.week-select option.not-started { color: #9a96a8; }
     .team-meta { display: flex; flex-wrap: wrap; gap: 0.65rem; align-items: flex-end; margin-bottom: 0.5rem; }
     .team-meta label { flex: 1; min-width: 10rem; margin-bottom: 0; }
     label.color-label { flex: 0 0 auto; min-width: unset; }
@@ -69,23 +79,45 @@
     </div>
 
     <div class="card">
-      <h2>Edit season</h2>
-      <form method="get" class="row">
+      <h2>Edit roster</h2>
+      <form method="get" class="toolbar" action="{{ url_for('admin.admin_season_form') }}">
         <label>Season
-          <select name="season" onchange="this.form.submit()">
+          <select name="season" required>
             <option value="">— pick season —</option>
             {% for label in season_choices %}
             <option value="{{ label }}" {% if season_number and label == 'Season ' ~ season_number %}selected{% elif roster and label == roster.label %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
         </label>
+        <label>Week
+          <select name="week" class="week-select" required>
+            {% if week_statuses %}
+            {% for ws in week_statuses %}
+            <option value="{{ ws.week }}" class="{{ ws.status | replace('_', '-') }}"
+              {% if (roster and ws.week == roster.view_week) or (not roster and picker_week and ws.week == picker_week) %}selected{% endif %}>
+              Week {{ ws.week }} — {% if ws.status == 'complete' %}complete{% elif ws.status == 'incomplete' %}incomplete{% else %}not entered{% endif %}
+            </option>
+            {% endfor %}
+            {% elif season_number and roster %}
+            {% for w in roster.week_choices %}
+            <option value="{{ w }}" {% if w == roster.view_week %}selected{% endif %}>Week {{ w }}</option>
+            {% endfor %}
+            {% elif season_number %}
+            <option value="{{ picker_week or 1 }}" selected>Week {{ picker_week or 1 }}</option>
+            {% else %}
+            <option value="1">Week 1</option>
+            {% endif %}
+          </select>
+        </label>
+        <button type="submit">Load</button>
       </form>
 
       {% if roster %}
-      <p class="hint">For season start: swap players from the list, remove slots, rename teams, set colors. Adding new players or extra roster slots is disabled for now. Scored weeks are not removed when you save.</p>
+      <p class="hint">Roster as of <strong>week {{ roster.view_week }}</strong>. Edits apply from this week onward; earlier scored weeks are unchanged. Swap players, add slots, set colors, captain (C). Use “New player…” for names not in the list yet.</p>
       <form method="post" id="roster-form">
         <input type="hidden" name="action" value="save_roster">
         <input type="hidden" name="season" value="{{ roster.label }}">
+        <input type="hidden" name="effective_week" value="{{ roster.view_week }}">
         <div id="teams-editor">
           {% for team in roster.teams %}
           {% set tidx = loop.index0 %}
@@ -100,11 +132,16 @@
                 <input type="color" name="teams[{{ tidx }}][color_hex]" value="{{ team.color_hex or '#808080' }}" title="Team color for standings images">
               </label>
             </div>
-            <div class="players-label">Players</div>
+            <input type="hidden" class="captain-hidden" name="teams[{{ tidx }}][captain]" value="{{ team.captain or '' }}">
+            <div class="players-label">Players <span class="hint" style="display:inline;margin:0">(C = captain)</span></div>
             <div class="players-list" data-team-index="{{ tidx }}">
               {% for player in team.players %}
-              <div class="player-row">
-                <select class="player-pick" name="teams[{{ tidx }}][player_pick][]" required>
+              <div class="player-row{% if player and player not in all_players %} player-row--new{% endif %}">
+                <label class="captain-label" title="Captain">
+                  <input type="checkbox" class="captain-cb" {% if team.captain == player %}checked{% endif %}>
+                  <span>C</span>
+                </label>
+                <select class="player-pick-select" name="teams[{{ tidx }}][player_pick][]" {% if player and player not in all_players %}style="display:none" disabled{% endif %} required>
                   <option value="">— select —</option>
                   {% if player and player not in all_players %}
                   <option value="{{ player }}" selected>{{ player }}</option>
@@ -112,11 +149,14 @@
                   {% for pname in all_players %}
                   <option value="{{ pname }}" {% if pname == player %}selected{% endif %}>{{ pname }}</option>
                   {% endfor %}
+                  <option value="__NEW__">New player…</option>
                 </select>
+                <input type="text" class="player-pick-new" {% if player and player not in all_players %}name="teams[{{ tidx }}][player_pick][]" value="{{ player }}"{% endif %} placeholder="New player name" autocomplete="off" {% if not player or player in all_players %}style="display:none"{% endif %}>
                 <button type="button" class="icon remove-player" title="Remove">×</button>
               </div>
               {% endfor %}
             </div>
+            <button type="button" class="secondary add-player" style="margin-top:0.35rem">+ Add player</button>
           </div>
           {% endfor %}
         </div>
@@ -130,23 +170,23 @@
         <button type="submit" class="danger">Delete {{ roster.label }}</button>
       </form>
       {% elif season_number %}
-      <p class="hint">Season exists but has no roster yet. Add teams below (season start only).</p>
-      <form method="post">
-        <input type="hidden" name="action" value="save_roster">
-        <input type="hidden" name="season" value="Season {{ season_number }}">
-        <div id="teams-editor"></div>
-        <button type="button" id="add-team-btn" class="secondary">+ Add team</button>
-        <button type="submit" style="margin-top:0.75rem">Save roster</button>
-      </form>
+      <p class="hint">Select a week and click <strong>Load</strong> to view or edit the roster for that week.</p>
+      {% else %}
+      <p class="hint">Select a season and week, then click <strong>Load</strong>.</p>
       {% endif %}
     </div>
   </div>
 
   <template id="player-row-template">
     <div class="player-row">
-      <select class="player-pick" name="teams[__TIDX__][player_pick][]" required>
+      <label class="captain-label" title="Captain">
+        <input type="checkbox" class="captain-cb">
+        <span>C</span>
+      </label>
+      <select class="player-pick-select" name="teams[__TIDX__][player_pick][]" required>
         <option value="">— select —</option>
       </select>
+      <input type="text" class="player-pick-new" placeholder="New player name" autocomplete="off" style="display:none">
       <button type="button" class="icon remove-player" title="Remove">×</button>
     </div>
   </template>
@@ -162,8 +202,10 @@
           <input type="color" name="teams[__IDX__][color_hex]" value="#808080" title="Team color for standings images">
         </label>
       </div>
-      <div class="players-label">Players</div>
+      <input type="hidden" class="captain-hidden" name="teams[__IDX__][captain]" value="">
+      <div class="players-label">Players <span class="hint" style="display:inline;margin:0">(C = captain)</span></div>
       <div class="players-list" data-team-index="__IDX__"></div>
+      <button type="button" class="secondary add-player" style="margin-top:0.35rem">+ Add player</button>
     </div>
   </template>
 
@@ -176,9 +218,17 @@
       var teamTpl = document.getElementById("team-template").innerHTML;
       var playerRowTpl = document.getElementById("player-row-template").innerHTML;
 
+      var NEW_PLAYER_VALUE = "__NEW__";
+
       function fillPlayerSelect(sel, selected) {
-        sel.innerHTML = '<option value="">— select —</option>';
-        if (selected && ALL_PLAYERS.indexOf(selected) < 0) {
+        var teamIdx = sel.getAttribute("data-team-idx");
+        var nameAttr = teamIdx != null ? "teams[" + teamIdx + "][player_pick][]" : sel.getAttribute("name");
+        sel.innerHTML = "";
+        var empty = document.createElement("option");
+        empty.value = "";
+        empty.textContent = "— select —";
+        sel.appendChild(empty);
+        if (selected && selected !== NEW_PLAYER_VALUE && ALL_PLAYERS.indexOf(selected) < 0) {
           var legacy = document.createElement("option");
           legacy.value = selected;
           legacy.textContent = selected;
@@ -192,28 +242,142 @@
           if (p === selected) opt.selected = true;
           sel.appendChild(opt);
         });
+        var neu = document.createElement("option");
+        neu.value = NEW_PLAYER_VALUE;
+        neu.textContent = "New player…";
+        if (selected === NEW_PLAYER_VALUE) neu.selected = true;
+        sel.appendChild(neu);
+        if (nameAttr) sel.setAttribute("name", nameAttr);
       }
 
-      function bindPlayerRow(row) {
-        row.querySelector(".remove-player").addEventListener("click", function () {
-          row.remove();
+      function playerNameFromRow(row) {
+        var inp = row.querySelector(".player-pick-new");
+        if (inp && inp.offsetParent !== null) return (inp.value || "").trim();
+        var sel = row.querySelector(".player-pick-select");
+        if (!sel || !sel.value || sel.value === NEW_PLAYER_VALUE) return "";
+        return sel.value.trim();
+      }
+
+      function setRowNewPlayerMode(row, on, teamIdx) {
+        var sel = row.querySelector(".player-pick-select");
+        var inp = row.querySelector(".player-pick-new");
+        if (!sel || !inp) return;
+        var fieldName = "teams[" + teamIdx + "][player_pick][]";
+        if (on) {
+          row.classList.add("player-row--new");
+          sel.style.display = "none";
+          sel.disabled = true;
+          sel.removeAttribute("name");
+          sel.removeAttribute("required");
+          inp.style.display = "";
+          inp.setAttribute("name", fieldName);
+          inp.setAttribute("required", "required");
+          inp.focus();
+        } else {
+          row.classList.remove("player-row--new");
+          inp.style.display = "none";
+          inp.removeAttribute("name");
+          inp.removeAttribute("required");
+          inp.value = "";
+          sel.style.display = "";
+          sel.disabled = false;
+          sel.setAttribute("name", fieldName);
+          sel.setAttribute("required", "required");
+        }
+      }
+
+      function captainNameFromRow(row) {
+        return playerNameFromRow(row);
+      }
+
+      function syncCaptainHidden(card) {
+        var hidden = card.querySelector(".captain-hidden");
+        if (!hidden) return;
+        var checked = card.querySelector(".captain-cb:checked");
+        hidden.value = checked ? captainNameFromRow(checked.closest(".player-row")) : "";
+      }
+
+      function setCaptainCheckbox(row, on) {
+        var cb = row.querySelector(".captain-cb");
+        if (cb) cb.checked = on;
+      }
+
+      function bindCaptainCheckbox(cb, card) {
+        cb.addEventListener("change", function () {
+          if (cb.checked) {
+            card.querySelectorAll(".captain-cb").forEach(function (other) {
+              if (other !== cb) other.checked = false;
+            });
+          }
+          syncCaptainHidden(card);
         });
       }
 
-      function addPlayerRow(teamIdx, listEl, selected) {
+      function bindPlayerRow(row, card) {
+        row.querySelector(".remove-player").addEventListener("click", function () {
+          var wasCaptain = row.querySelector(".captain-cb") && row.querySelector(".captain-cb").checked;
+          row.remove();
+          if (wasCaptain) syncCaptainHidden(card);
+        });
+        var sel = row.querySelector(".player-pick-select");
+        if (sel) {
+          sel.setAttribute("data-team-idx", card.getAttribute("data-team-index"));
+          sel.addEventListener("change", function () {
+            if (sel.value === NEW_PLAYER_VALUE) {
+              setRowNewPlayerMode(row, true, card.getAttribute("data-team-index"));
+            }
+            syncCaptainHidden(card);
+          });
+        }
+        var inp = row.querySelector(".player-pick-new");
+        if (inp) {
+          inp.addEventListener("input", function () {
+            if (row.querySelector(".captain-cb") && row.querySelector(".captain-cb").checked) {
+              syncCaptainHidden(card);
+            }
+          });
+        }
+        var cb = row.querySelector(".captain-cb");
+        if (cb) bindCaptainCheckbox(cb, card);
+      }
+
+      function addPlayerRow(teamIdx, listEl, card, selected, isCaptain) {
         var html = playerRowTpl.replace(/__TIDX__/g, String(teamIdx));
         listEl.insertAdjacentHTML("beforeend", html);
         var row = listEl.lastElementChild;
-        fillPlayerSelect(row.querySelector(".player-pick"), selected || "");
-        bindPlayerRow(row);
+        var sel = row.querySelector(".player-pick-select");
+        sel.setAttribute("data-team-idx", String(teamIdx));
+        fillPlayerSelect(sel, selected || "");
+        if (selected && ALL_PLAYERS.indexOf(selected) < 0 && selected !== NEW_PLAYER_VALUE) {
+          setRowNewPlayerMode(row, true, teamIdx);
+          row.querySelector(".player-pick-new").value = selected;
+        }
+        if (isCaptain) {
+          card.querySelectorAll(".captain-cb").forEach(function (c) { c.checked = false; });
+          setCaptainCheckbox(row, true);
+        }
+        bindPlayerRow(row, card);
+        syncCaptainHidden(card);
         return row;
       }
 
       function bindTeamCard(card) {
         var teamIdx = card.getAttribute("data-team-index");
         var listEl = card.querySelector(".players-list");
-        listEl.querySelectorAll(".player-row").forEach(bindPlayerRow);
-        if (!listEl.children.length) addPlayerRow(teamIdx, listEl, "");
+        listEl.querySelectorAll(".player-row").forEach(function (row) {
+          if (row.classList.contains("player-row--new")) {
+            setRowNewPlayerMode(row, true, teamIdx);
+          }
+          bindPlayerRow(row, card);
+        });
+        syncCaptainHidden(card);
+        var addBtn = card.querySelector(".add-player");
+        if (addBtn) {
+          addBtn.addEventListener("click", function () {
+            addPlayerRow(teamIdx, listEl, card, "", false);
+          });
+        }
+        if (!listEl.children.length) addPlayerRow(teamIdx, listEl, card, "", false);
       }
 
       function nextTeamIndex() {
