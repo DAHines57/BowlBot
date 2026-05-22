@@ -62,6 +62,8 @@
     th:first-child, td:first-child { text-align: left; padding-left: 0.65rem; }
     td input[type="number"] { width: 3.2rem; text-align: center; padding: 0.35rem; border-radius: 4px; border: 1px solid var(--border); background: #12101a; color: var(--text); }
     .flags label { flex-direction: row; align-items: center; gap: 0.35rem; font-size: 0.75rem; color: var(--text); justify-content: center; }
+    .team-block.hide-game5 .game5-col { display: none; }
+    .scan-table.hide-game5 .game5-col { display: none; }
     .actions { margin-top: 1.25rem; display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
     .scan-panel { margin-bottom: 1rem; padding: 1rem; background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; max-width: 100%; }
     .scan-panel h2 { font-size: 0.95rem; margin: 0 0 0.65rem; color: var(--mint); font-weight: 600; }
@@ -218,7 +220,8 @@
                 <tr>
                   <th>Row</th>
                   <th>Assign to</th>
-                  <th>G1</th><th>G2</th><th>G3</th><th>G4</th><th>G5</th>
+                  <th>G1</th><th>G2</th><th>G3</th><th>G4</th>
+                  <th class="game5-col">G5</th>
                 </tr>
               </thead>
               <tbody id="scan-table-body"></tbody>
@@ -233,7 +236,8 @@
 
       {% for team_name, team_rows in entry.teams_grouped %}
       {% set team_opp = entry.team_opponents.get(team_name, '') %}
-      <div class="team-block" data-team="{{ team_name }}">
+      {% set show_g5 = entry.team_game5_visible.get(team_name, false) %}
+      <div class="team-block{% if not show_g5 %} hide-game5{% endif %}" data-team="{{ team_name }}">
         <div class="team-bar">
           <span class="team-title">{{ team_name }}</span>
           <label>Opponent
@@ -244,24 +248,30 @@
               {% endfor %}
             </select>
           </label>
+          <label class="inline-row team-game5-label">
+            <input type="checkbox" class="team-game5-toggle" {% if show_g5 %}checked{% endif %}>
+            Game 5
+          </label>
         </div>
         <div class="table-scroll">
         <table>
           <thead>
             <tr>
               <th>Player</th>
-              <th>G1</th><th>G2</th><th>G3</th><th>G4</th><th>G5</th>
               <th>Absent</th>
+              <th>G1</th><th>G2</th><th>G3</th><th>G4</th>
+              <th class="game5-col">G5</th>
             </tr>
           </thead>
           <tbody>
             {% for row in team_rows %}
             <tr data-row data-team="{{ team_name }}" data-player="{{ row.player_display_name }}" data-substitute="{{ 'true' if row.substitute else 'false' }}"{% if row.missing_games %} class="row-incomplete" title="{{ row.missing_games }} game(s) missing"{% endif %}>
               <td>{{ row.player_display_name }}</td>
-              {% for g in [row.game1, row.game2, row.game3, row.game4, row.game5] %}
-              <td class="game-cell"><input type="number" min="{{ game_score_min }}" max="{{ game_score_max }}" step="1" class="game" value="{{ g if g is not none else '' }}"></td>
-              {% endfor %}
               <td class="flags"><label><input type="checkbox" class="absent" {% if row.absent %}checked{% endif %}></label></td>
+              {% for g in [row.game1, row.game2, row.game3, row.game4] %}
+              <td class="game-cell"><input type="number" min="{{ game_score_min }}" max="{{ game_score_max }}" step="1" class="game game-main" value="{{ g if g is not none else '' }}"></td>
+              {% endfor %}
+              <td class="game-cell game5-col"><input type="number" min="{{ game_score_min }}" max="{{ game_score_max }}" step="1" class="game game5" value="{{ row.game5 if row.game5 is not none else '' }}"></td>
             </tr>
             {% endfor %}
           </tbody>
@@ -300,6 +310,8 @@
       var syncingOpponents = false;
       var SCAN_URL = {{ url_for('admin.admin_week_scan') | tojson }};
       var TEAM_ROSTER = {{ team_roster_names | tojson }};
+      var ABSENT_FILL = {{ entry.absent_fill_averages | tojson }};
+      var TEAM_GAME5 = {{ (entry.team_game5_visible or {}) | tojson }};
       var scanRows = [];
 
       function validateGameInput(inp, tr) {
@@ -317,12 +329,80 @@
         return true;
       }
 
+      function setTeamGame5Visible(block, show) {
+        if (!block) return;
+        block.classList.toggle("hide-game5", !show);
+        var toggle = block.querySelector(".team-game5-toggle");
+        if (toggle) toggle.checked = show;
+        var team = block.getAttribute("data-team");
+        if (team) TEAM_GAME5[team] = show;
+        if (teamFilter && team === teamFilter) {
+          var scanTable = document.getElementById("scan-table");
+          if (scanTable) scanTable.classList.toggle("hide-game5", !show);
+        }
+      }
+
+      function initTeamGame5Toggles() {
+        document.querySelectorAll(".team-block").forEach(function (block) {
+          var team = block.getAttribute("data-team");
+          var show = TEAM_GAME5[team] === true;
+          var toggle = block.querySelector(".team-game5-toggle");
+          if (toggle) {
+            toggle.addEventListener("change", function () {
+              setTeamGame5Visible(block, toggle.checked);
+            });
+          }
+          setTeamGame5Visible(block, show);
+        });
+      }
+
+      function teamShowsGame5(tr) {
+        var block = tr.closest(".team-block");
+        return block && !block.classList.contains("hide-game5");
+      }
+
+      function absentFillInputs(tr) {
+        var sel = "input.game-main";
+        if (teamShowsGame5(tr)) sel += ", input.game5";
+        return tr.querySelectorAll(sel);
+      }
+
+      function fillAbsentScores(tr, force) {
+        var player = tr.getAttribute("data-player");
+        var avg = player && ABSENT_FILL[player];
+        if (avg == null) return;
+        if (!force) {
+          var hasScore = false;
+          absentFillInputs(tr).forEach(function (inp) {
+            if (inp.value.trim() !== "") hasScore = true;
+          });
+          if (hasScore) return;
+        }
+        absentFillInputs(tr).forEach(function (inp) {
+          inp.value = String(avg);
+          validateGameInput(inp, tr);
+        });
+        tr.classList.remove("row-incomplete");
+        tr.removeAttribute("title");
+      }
+
+      function bindAbsentRow(tr) {
+        var absentInp = tr.querySelector("input.absent");
+        if (!absentInp) return;
+        absentInp.addEventListener("change", function () {
+          if (absentInp.checked) fillAbsentScores(tr, true);
+        });
+        if (absentInp.checked) fillAbsentScores(tr, false);
+      }
+
       document.querySelectorAll("tr[data-row]").forEach(function (tr) {
+        bindAbsentRow(tr);
         tr.querySelectorAll("input.game").forEach(function (inp) {
           inp.addEventListener("input", function () { validateGameInput(inp, tr); });
           inp.addEventListener("blur", function () { validateGameInput(inp, tr); });
         });
       });
+      initTeamGame5Toggles();
 
       function randomDebugScore() {
         return Math.floor(Math.random() * 71) + 150;
@@ -674,6 +754,7 @@
 
         function gameCell(row, key) {
           var td = document.createElement("td");
+          if (key === "game5") td.className = "game5-col";
           var inp = document.createElement("input");
           inp.type = "number";
           inp.min = String(GAME_MIN);
@@ -718,6 +799,11 @@
             previewEl.src = previewUrl;
           }
           reviewEl.classList.add("visible");
+          var teamBlock = findTeamBlock(teamFilter);
+          var scanTable = document.getElementById("scan-table");
+          if (scanTable && teamBlock) {
+            scanTable.classList.toggle("hide-game5", teamBlock.classList.contains("hide-game5"));
+          }
           var errCount = (data.validation_errors || []).length;
           setStatus(
             errCount
@@ -781,8 +867,11 @@
               'tr[data-row][data-team="' + CSS.escape(teamFilter) + '"][data-player="' + CSS.escape(player) + '"]'
             );
             if (!gridRow) return;
+            var teamBlock = findTeamBlock(teamFilter);
+            var showG5 = teamBlock && !teamBlock.classList.contains("hide-game5");
             var inputs = gridRow.querySelectorAll("input.game");
             tr.querySelectorAll("input.scan-game").forEach(function (inp, gi) {
+              if (gi === 4 && !showG5) return;
               var v = inp.value.trim();
               if (inputs[gi]) {
                 inputs[gi].value = v;
@@ -805,9 +894,16 @@
       if (debugFill) {
         debugFill.addEventListener("click", function () {
           document.querySelectorAll("tr[data-row]").forEach(function (tr) {
-            tr.querySelectorAll("input.game").forEach(function (inp) {
+            var block = tr.closest(".team-block");
+            var showG5 = block && !block.classList.contains("hide-game5");
+            tr.querySelectorAll("input.game-main").forEach(function (inp) {
               inp.value = String(randomDebugScore());
             });
+            if (showG5) {
+              tr.querySelectorAll("input.game5").forEach(function (inp) {
+                inp.value = String(randomDebugScore());
+              });
+            }
             tr.classList.remove("row-incomplete");
             tr.removeAttribute("title");
           });

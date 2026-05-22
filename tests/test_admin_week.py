@@ -4,6 +4,7 @@ import pytest
 from app import create_app
 from league_admin import (
     assess_week_completion,
+    build_absent_fill_averages,
     default_entry_week,
     get_week_entry,
     list_public_seasons,
@@ -11,6 +12,7 @@ from league_admin import (
     list_season_week_completion,
     parse_game_score,
     parse_week_rows_payload,
+    team_show_game5_default,
     _template_week_rows,
     fact_to_entry_row,
 )
@@ -337,6 +339,60 @@ def test_template_from_prior_season():
     facts = [_fact(season_number=9, week=1), _fact(season_number=9, player_display_name="Carl", week=1)]
     rows = _template_week_rows(facts, 10, 1)
     assert len(rows) == 2
+
+
+def test_build_absent_fill_uses_current_season_after_three_weeks():
+    facts = [
+        _fact(week=1, game1=180, game2=180, game3=180, game4=180),
+        _fact(week=2, game1=200, game2=200, game3=200, game4=200),
+        _fact(week=3, game1=220, game2=220, game3=220, game4=220),
+    ]
+    avgs = build_absent_fill_averages(facts, 10, 4, ["Alice"])
+    assert avgs["Alice"] == 200
+
+
+def test_build_absent_fill_truncates_not_rounds():
+    """187.92 pin avg must fill as 187, not round(avg) → 188."""
+    facts = [
+        _fact(week=1, game1=188, game2=188, game3=188, game4=188),
+        _fact(week=2, game1=188, game2=188, game3=188, game4=188),
+        _fact(week=3, game1=188, game2=188, game3=188, game4=187),
+    ]
+    avgs = build_absent_fill_averages(facts, 10, 4, ["Alice"])
+    assert avgs["Alice"] == 187
+
+
+def test_build_absent_fill_uses_prior_season_when_few_weeks():
+    facts = [
+        _fact(season_number=9, week=1, game1=150, game2=150, game3=150, game4=150),
+        _fact(season_number=9, week=2, game1=170, game2=170, game3=170, game4=170),
+        _fact(season_number=10, week=1, game1=190, game2=190, game3=190, game4=190),
+        _fact(season_number=10, week=2, game1=210, game2=210, game3=210, game4=210),
+    ]
+    avgs = build_absent_fill_averages(facts, 10, 3, ["Alice"])
+    assert avgs["Alice"] == 160
+
+
+def test_get_week_entry_includes_absent_fill_averages():
+    facts = [_fact(game3=200, game4=200)]
+    data = _FakeData(facts)
+    payload, err = get_week_entry(data, "Season 10", 2)
+    assert err is None
+    assert "absent_fill_averages" in payload
+    assert isinstance(payload["absent_fill_averages"], dict)
+
+
+def test_team_show_game5_default():
+    assert team_show_game5_default([{"game5": None}]) is False
+    assert team_show_game5_default([{"game5": 195}]) is True
+
+
+def test_get_week_entry_team_game5_visible():
+    facts = [_fact(game5=180)]
+    data = _FakeData(facts)
+    payload, err = get_week_entry(data, "Season 10", 1)
+    assert err is None
+    assert payload["team_game5_visible"]["Team A"] is True
 
 
 @pytest.fixture

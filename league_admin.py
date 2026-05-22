@@ -11,7 +11,7 @@ from db.player_week_writes import save_week_rows, sync_week_team_opponents
 from db.session import get_session
 from league_data import LeagueDataSource
 from stats import compute
-from stats.facts import games_slots, filter_facts
+from stats.facts import fact_counts_for_stats, games_list, games_slots, filter_facts
 from utils import safe_int
 
 GAME_SCORE_MIN = 1
@@ -292,6 +292,86 @@ def playoff_weeks_by_season(
     return out
 
 
+ABSENT_FILL_MIN_PLAYED_WEEKS = 3
+
+
+def _player_played_weeks_before(
+    rows: List[dict], player: str, before_week: int
+) -> int:
+    """Weeks with scored games (not absent/sub) strictly before before_week."""
+    weeks: set[int] = set()
+    for f in rows:
+        if str(f.get("player_display_name") or "").strip() != player:
+            continue
+        if not fact_counts_for_stats(f) or f.get("absent"):
+            continue
+        wk = safe_int(f.get("week"), 0)
+        if wk < 1 or wk >= before_week or not games_list(f):
+            continue
+        weeks.add(wk)
+    return len(weeks)
+
+
+def _player_pin_average(rows: List[dict], player: str) -> Optional[float]:
+    """Per-game pin average from non-absent scored weeks."""
+    games: List[float] = []
+    for f in rows:
+        if str(f.get("player_display_name") or "").strip() != player:
+            continue
+        if not fact_counts_for_stats(f) or f.get("absent"):
+            continue
+        games.extend(games_list(f))
+    if not games:
+        return None
+    return sum(games) / len(games)
+
+
+def build_absent_fill_averages(
+    facts: List[dict],
+    season_num: int,
+    week: int,
+    players: List[str],
+) -> dict[str, int]:
+    """Truncated per-game pin average to pre-fill absent rows on score entry."""
+    season_rows = filter_facts(facts, season_num=season_num)
+    prior_rows_by_season: dict[int, List[dict]] = {}
+    for f in facts:
+        sn = safe_int(f.get("season_number"), 0)
+        if sn < 1 or sn >= season_num:
+            continue
+        prior_rows_by_season.setdefault(sn, []).append(f)
+    prior_season_nums = sorted(prior_rows_by_season.keys(), reverse=True)
+
+    out: dict[str, int] = {}
+    for raw_name in players:
+        player = str(raw_name or "").strip()
+        if not player:
+            continue
+        played = _player_played_weeks_before(season_rows, player, week)
+        if played >= ABSENT_FILL_MIN_PLAYED_WEEKS:
+            scope = [
+                f
+                for f in season_rows
+                if safe_int(f.get("week"), 0) < week
+            ]
+        else:
+            scope = []
+            for sn in prior_season_nums:
+                candidate = prior_rows_by_season[sn]
+                if _player_pin_average(candidate, player) is not None:
+                    scope = candidate
+                    break
+        avg = _player_pin_average(scope, player)
+        if avg is not None:
+            out[player] = int(avg)
+    return out
+
+
+def team_show_game5_default(team_rows: List[dict]) -> bool:
+    """True when this team already has game 5 scores for the week being entered."""
+    return any(r.get("game5") is not None for r in team_rows)
+
+
 def fact_to_entry_row(f: dict) -> dict:
     games = games_slots(f)
     return {
@@ -426,6 +506,21 @@ def get_week_entry(
                 team_rows = [r for r in entry_rows if r.get("team") == t]
                 teams_grouped.append((t, team_rows))
 
+    players = sorted(
+        {
+            str(r.get("player_display_name") or "").strip()
+            for r in full_entry_rows
+            if str(r.get("player_display_name") or "").strip()
+        }
+    )
+    absent_fill_averages = build_absent_fill_averages(
+        facts, season_num, week, players
+    )
+    team_game5_visible = {
+        team_name: team_show_game5_default(team_rows)
+        for team_name, team_rows in teams_grouped
+    }
+
     return (
         {
             "season": season_label,
@@ -439,6 +534,8 @@ def get_week_entry(
             "selected_team": team or "",
             "templated": templated,
             "completion": completion,
+            "absent_fill_averages": absent_fill_averages,
+            "team_game5_visible": team_game5_visible,
         },
         None,
     )
