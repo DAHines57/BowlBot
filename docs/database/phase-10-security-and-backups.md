@@ -62,6 +62,9 @@ pg_dump $env:DATABASE_URL -Fc -f "backups/bowlbot_$ts.dump"
 
 # Local Docker
 docker compose exec -T db pg_dump -U bowlbot -d bowlbot_dev -Fc > "backups/local_$ts.dump"
+
+# Remote (e.g. Railway PG 18) when local pg_dump version does not match:
+# .\scripts\backup_db.ps1   # uses postgres:18-alpine via Docker
 ```
 
 ### Restore drill (do once)

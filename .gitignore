@@ -111,3 +111,6 @@ build/
 /.idea
 *.xlsx
 *.png
+
+# Database backups (keep local only)
+backups/*.dump
