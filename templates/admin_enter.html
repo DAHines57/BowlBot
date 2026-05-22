@@ -38,7 +38,20 @@
     tr.row-incomplete td input.game[value=""] { border-color: rgba(255, 107, 129, 0.55); }
     input.game:invalid { border-color: var(--danger); }
     .notice.save-error { background: rgba(255, 107, 129, 0.12); border-color: rgba(255, 107, 129, 0.45); color: var(--text); }
-    .team-block { margin-bottom: 1.25rem; }
+    .team-block { margin-bottom: 1.25rem; max-width: 100%; }
+    .table-scroll {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      max-width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+    .table-scroll > table {
+      width: 100%;
+      margin-bottom: 0;
+      border: none;
+      border-radius: 0;
+    }
     .team-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1.25rem; margin: 0.75rem 0 0.5rem; }
     .team-bar .team-title { font-weight: 700; color: var(--accent); font-size: 1rem; margin: 0; }
     .team-bar label { min-width: 12rem; }
@@ -50,7 +63,7 @@
     td input[type="number"] { width: 3.2rem; text-align: center; padding: 0.35rem; border-radius: 4px; border: 1px solid var(--border); background: #12101a; color: var(--text); }
     .flags label { flex-direction: row; align-items: center; gap: 0.35rem; font-size: 0.75rem; color: var(--text); justify-content: center; }
     .actions { margin-top: 1.25rem; display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
-    .scan-panel { margin-bottom: 1rem; padding: 1rem; background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
+    .scan-panel { margin-bottom: 1rem; padding: 1rem; background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; max-width: 100%; }
     .scan-panel h2 { font-size: 0.95rem; margin: 0 0 0.65rem; color: var(--mint); font-weight: 600; }
     .scan-toolbar { display: flex; flex-wrap: wrap; gap: 0.65rem; align-items: center; margin-bottom: 0.75rem; }
     .scan-toolbar input[type="file"] { font-size: 0.85rem; color: var(--muted); max-width: 100%; }
@@ -60,8 +73,17 @@
     .scan-crop-stage { position: relative; display: none; max-width: 100%; margin-bottom: 0.75rem; user-select: none; touch-action: none; cursor: crosshair; overflow: hidden; border-radius: 6px; isolation: isolate; }
     .scan-crop-stage.visible { display: block; }
     .scan-crop-stage img { display: block; max-width: 100%; height: auto; vertical-align: top; }
-    .scan-crop-box { position: absolute; border: 2px solid var(--mint); pointer-events: none; box-shadow: none; }
-    .scan-crop-box.ready { box-shadow: 0 0 0 9999px rgba(0,0,0,0.45); }
+    .scan-crop-dim {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.45);
+      pointer-events: none;
+      z-index: 1;
+      display: none;
+    }
+    .scan-crop-dim.ready { display: block; }
+    .scan-crop-box { position: absolute; z-index: 2; border: 2px solid var(--mint); pointer-events: none; box-shadow: none; }
+    .scan-review .table-scroll { margin-bottom: 0.75rem; }
     .scan-privacy { font-size: 0.78rem; color: var(--muted); margin: 0 0 0.65rem; }
     .scan-errors { font-size: 0.85rem; color: #ffb4c0; margin: 0 0 0.65rem; padding-left: 1.1rem; }
     .scan-errors li { margin: 0.2rem 0; }
@@ -71,8 +93,33 @@
     .scan-table tr.duplicate-assign td { background: rgba(255, 107, 129, 0.12); }
     .scan-status { font-size: 0.85rem; color: var(--muted); min-height: 1.2em; }
     .scan-status.error { color: var(--danger); }
+    .scan-loading { display: none; align-items: center; gap: 0.65rem; margin: 0.35rem 0 0.5rem; }
+    .scan-loading.visible { display: flex; }
+    .scan-spinner {
+      width: 1.35rem;
+      height: 1.35rem;
+      border: 2px solid var(--border);
+      border-top-color: var(--mint);
+      border-radius: 50%;
+      animation: scan-spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes scan-spin { to { transform: rotate(360deg); } }
+    .scan-loading-text { font-size: 0.85rem; color: var(--muted); }
     button.scan { background: linear-gradient(135deg, #2a4a6b, #1b3d69); border-color: #3a5f8a; }
     button.scan:disabled { opacity: 0.5; cursor: not-allowed; }
+    @media (max-width: 640px) {
+      .scan-crop-stage { max-height: min(42vh, 260px); }
+      .scan-crop-stage img { max-height: min(42vh, 260px); width: 100%; object-fit: contain; }
+      .scan-preview { max-height: 120px; }
+      .table-scroll > table { font-size: 0.8rem; }
+      .table-scroll th, .table-scroll td { padding: 0.35rem 0.25rem; }
+      .table-scroll td input[type="number"] { width: 2.75rem; padding: 0.28rem; font-size: 0.85rem; }
+      .scan-table { font-size: 0.72rem; }
+      .scan-table th, .scan-table td { padding: 0.3rem 0.2rem; }
+      .scan-table input[type="number"] { width: 2.35rem; padding: 0.25rem; font-size: 0.8rem; }
+      .scan-table select { max-width: 7.5rem; font-size: 0.72rem; }
+    }
   </style>
 </head>
 <body>
@@ -147,29 +194,36 @@
         <p class="meta" style="margin:0 0 0.35rem">For <strong>{{ selected_team }}</strong> — crop to game columns only, then assign rows to players.</p>
         <p class="scan-privacy">Cropped scores are sent to Anthropic for processing. BowlBot does not store photos. Player names stay in this app only.</p>
         <div class="scan-toolbar">
-          <input type="file" id="scan-image" accept="image/jpeg,image/png,image/webp" capture="environment">
+          <input type="file" id="scan-image" accept="image/jpeg,image/png,image/webp">
           <button type="button" class="scan" id="scan-run" disabled>Scan cropped area</button>
           <button type="button" id="scan-recrop" style="display:none">Adjust crop</button>
         </div>
         <div class="scan-crop-stage" id="scan-crop-stage">
+          <div class="scan-crop-dim" id="scan-crop-dim" aria-hidden="true"></div>
           <img id="scan-crop-img" alt="">
           <div class="scan-crop-box" id="scan-crop-box"></div>
         </div>
         <p class="meta" id="scan-crop-hint" style="display:none;margin:0 0 0.5rem;font-size:0.8rem">Drag on the image to select game columns 1–4 (exclude names and footer totals).</p>
         <p class="scan-status" id="scan-status" aria-live="polite"></p>
+        <div class="scan-loading" id="scan-loading" aria-hidden="true">
+          <div class="scan-spinner" role="status" aria-label="Scanning scoreboard"></div>
+          <span class="scan-loading-text">Reading scoreboard…</span>
+        </div>
         <div class="scan-review" id="scan-review">
           <img class="scan-preview" id="scan-preview" alt="Cropped area sent for scan">
           <ul class="scan-errors" id="scan-errors"></ul>
-          <table class="scan-table" id="scan-table">
-            <thead>
-              <tr>
-                <th>Row</th>
-                <th>Assign to</th>
-                <th>G1</th><th>G2</th><th>G3</th><th>G4</th><th>G5</th>
-              </tr>
-            </thead>
-            <tbody id="scan-table-body"></tbody>
-          </table>
+          <div class="table-scroll">
+            <table class="scan-table" id="scan-table">
+              <thead>
+                <tr>
+                  <th>Row</th>
+                  <th>Assign to</th>
+                  <th>G1</th><th>G2</th><th>G3</th><th>G4</th><th>G5</th>
+                </tr>
+              </thead>
+              <tbody id="scan-table-body"></tbody>
+            </table>
+          </div>
           <button type="button" class="primary" id="scan-apply">Apply to grid</button>
         </div>
       </div>
@@ -191,6 +245,7 @@
             </select>
           </label>
         </div>
+        <div class="table-scroll">
         <table>
           <thead>
             <tr>
@@ -211,6 +266,7 @@
             {% endfor %}
           </tbody>
         </table>
+        </div>
       </div>
       {% endfor %}
 
@@ -369,6 +425,7 @@
         if (!fileInput || !runBtn) return;
 
         var statusEl = document.getElementById("scan-status");
+        var loadingEl = document.getElementById("scan-loading");
         var reviewEl = document.getElementById("scan-review");
         var previewEl = document.getElementById("scan-preview");
         var errorsEl = document.getElementById("scan-errors");
@@ -377,6 +434,7 @@
         var cropStage = document.getElementById("scan-crop-stage");
         var cropImg = document.getElementById("scan-crop-img");
         var cropBox = document.getElementById("scan-crop-box");
+        var cropDim = document.getElementById("scan-crop-dim");
         var cropHint = document.getElementById("scan-crop-hint");
         var recropBtn = document.getElementById("scan-recrop");
         var previewUrl = null;
@@ -387,6 +445,14 @@
         function setStatus(msg, isError) {
           statusEl.textContent = msg || "";
           statusEl.className = "scan-status" + (isError ? " error" : "");
+        }
+
+        function setScanLoading(on) {
+          if (loadingEl) {
+            loadingEl.classList.toggle("visible", on);
+            loadingEl.setAttribute("aria-hidden", on ? "false" : "true");
+          }
+          fileInput.disabled = on;
         }
 
         function clearPreviewUrl() {
@@ -418,18 +484,40 @@
 
         function updateCropBox() {
           if (!cropRect || !cropImg.clientWidth) return;
-          cropBox.style.left = (cropRect.x * 100) + "%";
-          cropBox.style.top = (cropRect.y * 100) + "%";
-          cropBox.style.width = (cropRect.w * 100) + "%";
-          cropBox.style.height = (cropRect.h * 100) + "%";
+          var left = cropRect.x * 100;
+          var top = cropRect.y * 100;
+          var width = cropRect.w * 100;
+          var height = cropRect.h * 100;
+          cropBox.style.left = left + "%";
+          cropBox.style.top = top + "%";
+          cropBox.style.width = width + "%";
+          cropBox.style.height = height + "%";
           var ready = cropRect.w >= 0.05 && cropRect.h >= 0.05;
           cropBox.classList.toggle("ready", ready);
+          if (cropDim) {
+            cropDim.classList.toggle("ready", ready);
+            if (ready) {
+              var right = left + width;
+              var bottom = top + height;
+              cropDim.style.clipPath =
+                "polygon(evenodd, 0% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 0%, "
+                + left + "% " + top + "%, " + right + "% " + top + "%, "
+                + right + "% " + bottom + "%, " + left + "% " + bottom + "%, "
+                + left + "% " + top + "%)";
+            } else {
+              cropDim.style.clipPath = "";
+            }
+          }
         }
 
         function hideCropUI(showRecropBtn) {
           cropStage.classList.remove("visible");
           cropHint.style.display = "none";
           cropBox.classList.remove("ready");
+          if (cropDim) {
+            cropDim.classList.remove("ready");
+            cropDim.style.clipPath = "";
+          }
           if (recropBtn) {
             recropBtn.style.display = showRecropBtn && cropImg.src ? "" : "none";
           }
@@ -641,9 +729,11 @@
         runBtn.addEventListener("click", function () {
           if (!cropReady() || !teamFilter) return;
           runBtn.disabled = true;
-          setStatus("Scanning…");
+          setScanLoading(true);
+          setStatus("");
           exportCroppedBlob(function (blob) {
             if (!blob) {
+              setScanLoading(false);
               setStatus("Could not crop image.", true);
               runBtn.disabled = false;
               return;
@@ -670,6 +760,7 @@
                 setStatus("Network error during scan.", true);
               })
               .finally(function () {
+                setScanLoading(false);
                 refreshScanButton();
               });
           });

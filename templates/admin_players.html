@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Manage players</title>
+  <style>
+    :root { --bg: #12101a; --card: #1a1730; --border: #2a2050; --text: #e8e6ef; --muted: #9a96a8; --accent: #ffb86c; --danger: #ff6b81; --mint: #50fa7b; --warn: #f1fa8c; }
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 1.25rem 1rem 3rem; }
+    .shell { max-width: 720px; margin: 0 auto; }
+    h1 { color: var(--accent); margin: 0 0 0.5rem; }
+    .nav { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-bottom: 1.25rem; }
+    .nav a { display: inline-block; padding: 0.55rem 0.9rem; background: var(--card); border: 1px solid var(--border); border-radius: 8px; color: var(--mint); text-decoration: none; font-weight: 600; font-size: 0.9rem; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; margin-bottom: 1rem; }
+    h2 { font-size: 1rem; margin: 0 0 0.75rem; }
+    label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 0.25rem; }
+    input, select, button { padding: 0.45rem 0.55rem; border-radius: 6px; border: 1px solid var(--border); background: #12101a; color: var(--text); font-size: 0.9rem; }
+    button { cursor: pointer; font-weight: 600; }
+    button.primary { background: #2a3a28; border-color: var(--mint); color: var(--mint); }
+    button.danger { background: #4a2028; border-color: var(--danger); color: #ffc0c8; }
+    .row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: flex-end; margin-top: 0.5rem; }
+    .hint { color: var(--muted); font-size: 0.85rem; margin: 0.25rem 0 0.75rem; }
+    .flash { padding: 0.6rem 0.75rem; border-radius: 8px; margin-bottom: 1rem; font-size: 0.88rem; }
+    .flash.ok { background: #1a3028; border: 1px solid var(--mint); color: var(--mint); }
+    .flash.err { background: #3a2028; border: 1px solid var(--danger); color: #ffc0c8; }
+    .impact { font-size: 0.88rem; }
+    .impact dt { color: var(--muted); margin-top: 0.5rem; }
+    .impact dd { margin: 0.15rem 0 0 0; }
+    .impact-warn { color: var(--warn); font-weight: 600; margin: 0.75rem 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 0.5rem; }
+    th, td { padding: 0.35rem 0.3rem; border-bottom: 1px solid var(--border); text-align: left; }
+    th { color: var(--muted); }
+    .purge-box { border: 1px solid var(--danger); border-radius: 8px; padding: 0.75rem; margin-top: 0.75rem; }
+    .checkbox-row { display: flex; align-items: flex-start; gap: 0.5rem; margin: 0.75rem 0; font-size: 0.88rem; }
+    .checkbox-row input { margin-top: 0.2rem; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <h1>Manage players</h1>
+    <p class="hint">Rename a player everywhere in the database, or permanently delete all of their week rows and roster links.</p>
+    <nav class="nav">
+      <a href="{{ url_for('admin.admin_home') }}">← Admin</a>
+      <a href="{{ url_for('admin.admin_season_form') }}">Season setup</a>
+    </nav>
+
+    {% if success %}
+    <div class="flash ok">{{ success }}</div>
+    {% endif %}
+    {% if error %}
+    <div class="flash err">{{ error }}</div>
+    {% endif %}
+
+    <div class="card">
+      <h2>Select player</h2>
+      <form method="get" action="{{ url_for('admin.admin_players') }}">
+        <div class="row">
+          <div style="flex:1;min-width:12rem">
+            <label for="player_id">Player</label>
+            <select id="player_id" name="player_id" required>
+              <option value="">— choose —</option>
+              {% for p in players %}
+              <option value="{{ p.id }}" {% if selected_player_id == p.id %}selected{% endif %}>{{ p.display_name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <button type="submit" class="primary">Load impact</button>
+        </div>
+      </form>
+    </div>
+
+    {% if impact %}
+    <div class="card">
+      <h2>Impact — {{ impact.display_name }}</h2>
+      <p class="hint">Player id {{ impact.player_id }}</p>
+      <dl class="impact">
+        <dt>Week rows (all)</dt>
+        <dd>{{ impact.week_row_count }}</dd>
+        <dt>Rows with scores, absences, subs, or matchups</dt>
+        <dd>{{ impact.meaningful_row_count }}</dd>
+        <dt>Seasons affected</dt>
+        <dd>{{ impact.season_count }}</dd>
+        <dt>Roster memberships</dt>
+        <dd>{{ impact.roster_membership_count }}</dd>
+      </dl>
+      {% if impact.seasons %}
+      <table>
+        <thead><tr><th>Season</th><th>Week rows</th><th>With data</th><th>Weeks</th></tr></thead>
+        <tbody>
+          {% for s in impact.seasons %}
+          <tr>
+            <td>{{ s.label }}</td>
+            <td>{{ s.week_row_count }}</td>
+            <td>{{ s.meaningful_row_count }}</td>
+            <td>{% if s.week_min is not none %}{{ s.week_min }}–{{ s.week_max }}{% else %}—{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+
+      <form method="post" action="{{ url_for('admin.admin_players') }}" style="margin-top:1.25rem">
+        <input type="hidden" name="action" value="rename">
+        <input type="hidden" name="player_id" value="{{ impact.player_id }}">
+        <h2>Rename</h2>
+        <p class="hint">Updates the player name on every week row linked to this player.</p>
+        <div class="row">
+          <div style="flex:1;min-width:12rem">
+            <label for="new_name">New name</label>
+            <input type="text" id="new_name" name="new_name" maxlength="128" required placeholder="Corrected name">
+          </div>
+          <button type="submit" class="primary">Rename</button>
+        </div>
+      </form>
+
+      <div class="purge-box">
+        <h2 style="color:var(--danger);margin-top:0">Delete player and all week data</h2>
+        <p class="impact-warn">
+          This permanently deletes {{ impact.week_row_count }} week row(s)
+          (including {{ impact.meaningful_row_count }} with scores or flags)
+          and {{ impact.roster_membership_count }} roster membership(s).
+          Leaderboards and player pages for this name will change. Cannot be undone.
+        </p>
+        <form method="post" action="{{ url_for('admin.admin_players') }}"
+              onsubmit="return confirm('Permanently delete {{ impact.display_name }} and all {{ impact.week_row_count }} week rows?');">
+          <input type="hidden" name="action" value="purge">
+          <input type="hidden" name="player_id" value="{{ impact.player_id }}">
+          <label class="checkbox-row">
+            <input type="checkbox" name="understand" value="1" required>
+            <span>I understand this permanently deletes all week data for this player.</span>
+          </label>
+          <label for="confirm_name">Type the player name to confirm</label>
+          <input type="text" id="confirm_name" name="confirm_name" required
+                 autocomplete="off" placeholder="{{ impact.display_name }}" style="width:100%;max-width:20rem;margin-top:0.35rem">
+          <div class="row" style="margin-top:0.75rem">
+            <button type="submit" class="danger">Delete player and purge all week data</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    {% elif selected_player_id %}
+    <p class="hint">Could not load impact for that player.</p>
+    {% endif %}
+  </div>
+</body>
+</html>

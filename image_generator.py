@@ -6087,9 +6087,16 @@ _BEST_SCORES_HUB_SCRIPT = r"""<script>
         p.hidden = p.getAttribute("data-view-panel") !== view;
       });
     }
+    function notifyParentCloseNav() {
+      if (window.self === window.top) return;
+      try {
+        parent.postMessage({ type: "bowlbot-close-nav" }, window.location.origin);
+      } catch (err) { /* ignore */ }
+    }
     tabs.forEach(function (t) {
       t.addEventListener("click", function () {
         activate(t.getAttribute("data-view-tab"));
+        notifyParentCloseNav();
       });
     });
     activate(initial);
@@ -6112,7 +6119,7 @@ def _scores_hub_tabs_html(initial_view: str) -> str:
     tabs = (
         ("weeks", "Best weeks"),
         ("games", "Best games"),
-        ("averages", "Season averages"),
+        ("averages", "Best seasons"),
     )
     parts = ['<div class="best-scores-hub-tabs" role="tablist">']
     for key, label in tabs:
@@ -6140,8 +6147,8 @@ def _top_player_games_section(games: list, n: int) -> str:
         {"label": "#", "right": True},
         {"label": "Player"},
         {"label": "Team"},
-        {"label": "Wk", "right": True},
         {"label": "Score", "right": True},
+        {"label": "Wk", "right": True},
     ]
     rows = []
     for i, (player, team, week, score) in enumerate(games[:n], 1):
@@ -6149,8 +6156,8 @@ def _top_player_games_section(games: list, n: int) -> str:
             {"val": i, "cls": "right rank"},
             {"val": _short_name(player), "cls": "name-col", "sort": player.lower()},
             {"val": team, "cls": "sub-col", "style": _team_color_style(team), "sort": team.lower()},
-            {"val": week, "cls": "right sub-col"},
             {"val": int(score), "cls": "right gold"},
+            {"val": week, "cls": "right sub-col"},
         ])
     return _list_section(f"Top {n} individual games", headers, rows)
 
@@ -6160,8 +6167,8 @@ def _top_player_weeks_section(weeks: list, n: int) -> str:
         {"label": "#", "right": True},
         {"label": "Player"},
         {"label": "Team"},
-        {"label": "Wk", "right": True},
         {"label": "Avg", "right": True},
+        {"label": "Wk", "right": True},
         {"label": "Games", "right": True},
         {"label": "Total", "right": True},
     ]
@@ -6177,8 +6184,8 @@ def _top_player_weeks_section(weeks: list, n: int) -> str:
             {"val": i, "cls": "right rank"},
             {"val": _short_name(player), "cls": "name-col", "sort": player.lower()},
             {"val": team, "cls": "sub-col", "style": _team_color_style(team), "sort": team.lower()},
-            {"val": week, "cls": "right sub-col"},
             {"val": f"{week_avg:.1f}", "cls": "right gold", "sort": week_avg},
+            {"val": week, "cls": "right sub-col"},
             {"val": num_games, "cls": "right sub-col"},
             {"val": int(total), "cls": "right sub-col", "sort": total},
         ])
@@ -6197,11 +6204,11 @@ def _top_player_season_avg_section(
         headers = [
             {"label": "#", "right": True},
             {"label": "Player"},
-            {"label": "Season"},
             {"label": "Team"},
             {"label": "Avg", "right": True},
             {"label": "High", "right": True},
             {"label": "Low", "right": True},
+            {"label": "Season"},
             {"label": count_label, "right": True},
         ]
         rows = []
@@ -6217,7 +6224,6 @@ def _top_player_season_avg_section(
                 [
                     {"val": i, "cls": "right rank"},
                     {"val": _short_name(name), "cls": "name-col", "sort": name.lower()},
-                    {"val": season, "cls": "sub-col", "sort": season.lower()},
                     {
                         "val": team,
                         "cls": "sub-col",
@@ -6227,14 +6233,15 @@ def _top_player_season_avg_section(
                     {"val": f"{avg:.1f}", "cls": "right gold", "sort": avg},
                     {"val": high, "cls": "right green"},
                     {"val": low, "cls": "right sub-col"},
+                    {"val": season, "cls": "sub-col", "sort": season.lower()},
                     {"val": weeks, "cls": "right sub-col"},
                 ]
             )
-        title = f"Top {n} season averages"
+        title = f"Top {n} best seasons"
         return _list_section(title, headers, rows)
 
     if not player_data:
-        return '<p class="best-scores-hub-empty">No season average data for this selection.</p>'
+        return '<p class="best-scores-hub-empty">No best seasons data for this selection.</p>'
 
     headers = [
         {"label": "#", "right": True},
@@ -6264,7 +6271,7 @@ def _top_player_season_avg_section(
                 {"val": weeks, "cls": "right sub-col"},
             ]
         )
-    return _list_section(f"Top {n} season averages", headers, rows)
+    return _list_section(f"Top {n} best seasons", headers, rows)
 
 
 def _top_team_games_section(games: list, n: int) -> str:
@@ -6386,12 +6393,12 @@ def _top_team_season_avg_section(
                 ],
                 players,
             ))
-        return _teams_standings_section(f"Top {n} season averages", headers, team_rows)
+        return _teams_standings_section(f"Top {n} best seasons", headers, team_rows)
 
     if not teams_data:
         return (
-            '<p class="best-scores-hub-empty">Season averages need a specific season, '
-            "not All seasons. Choose a season above.</p>"
+            '<p class="best-scores-hub-empty">Pick a specific season above — '
+            "not All seasons.</p>"
         )
 
     headers = [
@@ -6434,7 +6441,7 @@ def _top_team_season_avg_section(
             ],
             players,
         ))
-    return _teams_standings_section(f"Top {n} season averages", headers, team_rows)
+    return _teams_standings_section(f"Top {n} best seasons", headers, team_rows)
 
 
 def build_top_player_scores_hub_html(

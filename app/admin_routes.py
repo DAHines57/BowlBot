@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import json
-from urllib.parse import quote
-
 import os
+from urllib.parse import quote
 
 from flask import Blueprint, Response, current_app, jsonify, redirect, render_template, request, url_for
 from sqlalchemy import select
@@ -12,6 +11,12 @@ from sqlalchemy import select
 from app.admin_auth import admin_pin_configured, check_admin_authorized, unlock_admin
 from db.models import Season
 from db.roster_members import default_roster_effective_week
+from db.player_admin import (
+    list_players,
+    player_impact_summary,
+    purge_player,
+    rename_player,
+)
 from db.season_admin import (
     create_season,
     delete_season,
@@ -30,6 +35,7 @@ from league_admin import (
     default_entry_week,
     get_week_entry,
     list_season_teams_from_db,
+    list_season_week_completion,
     parse_week_rows_payload,
     save_week_entry,
 )
@@ -213,8 +219,6 @@ def admin_enter_form():
     all_teams = sorted(set(payload["teams"]) | set(db_teams))
     if not payload["teams"] and db_teams:
         payload["teams"] = db_teams
-
-    from league_admin import list_season_week_completion
 
     week_statuses = list_season_week_completion(
         svc.data,
@@ -464,6 +468,108 @@ def admin_week_delete():
     return redirect(url_for("admin.admin_home"))
 
 
+@admin_bp.route("/admin/players", methods=["GET"])
+def admin_players():
+    denied = _require_admin()
+    if denied:
+        return denied
+    svc = _svc()
+    if not svc:
+        return _no_svc()
+
+    selected_raw = (request.args.get("player_id") or "").strip()
+    selected_player_id: int | None = None
+    impact = None
+    session = get_session()
+    try:
+        players = list_players(session)
+        if selected_raw.isdigit():
+            selected_player_id = int(selected_raw)
+            try:
+                impact = player_impact_summary(session, selected_player_id)
+            except ValueError:
+                impact = None
+    finally:
+        session.close()
+
+    return render_template(
+        "admin_players.html",
+        players=players,
+        selected_player_id=selected_player_id,
+        impact=impact,
+        success=request.args.get("success"),
+        error=request.args.get("error"),
+    )
+
+
+@admin_bp.route("/admin/players", methods=["POST"])
+def admin_players_post():
+    denied = _require_admin()
+    if denied:
+        return denied
+    svc = _svc()
+    if not svc:
+        return _no_svc()
+
+    action = (request.form.get("action") or "").strip()
+    player_raw = (request.form.get("player_id") or "").strip()
+    if not player_raw.isdigit():
+        return _players_redirect(error="Invalid player.")
+    player_id = int(player_raw)
+
+    session = get_session()
+    try:
+        if action == "rename":
+            new_name = (request.form.get("new_name") or "").strip()
+            count = rename_player(session, player_id, new_name)
+            session.commit()
+            svc.refresh_data()
+            if count:
+                msg = f"Renamed player ({count} week row(s) updated)."
+            else:
+                msg = "Name unchanged (already matches)."
+            return _players_redirect(player_id=player_id, success=msg)
+
+        if action == "purge":
+            if not request.form.get("understand"):
+                raise ValueError(
+                    "You must check the box confirming you understand this deletes all week data."
+                )
+            confirm_name = (request.form.get("confirm_name") or "").strip()
+            result = purge_player(session, player_id, confirm_name=confirm_name)
+            session.commit()
+            svc.refresh_data()
+            msg = (
+                f"Deleted player and purged {result['deleted_week_rows']} week row(s) "
+                f"and {result['deleted_roster_memberships']} roster membership(s)."
+            )
+            return _players_redirect(success=msg)
+
+        raise ValueError(f"Unknown action: {action}")
+    except Exception as exc:
+        session.rollback()
+        return _players_redirect(player_id=player_id, error=str(exc))
+    finally:
+        session.close()
+
+
+def _players_redirect(
+    *,
+    player_id: int | None = None,
+    success: str | None = None,
+    error: str | None = None,
+):
+    params: list[str] = []
+    if player_id is not None:
+        params.append(f"player_id={player_id}")
+    if success:
+        params.append(f"success={quote(success)}")
+    if error:
+        params.append(f"error={quote(error)}")
+    q = f"?{'&'.join(params)}" if params else ""
+    return redirect(url_for("admin.admin_players") + q)
+
+
 @admin_bp.route("/admin/season", methods=["GET"])
 def admin_season_form():
     denied = _require_admin()
@@ -490,8 +596,6 @@ def admin_season_form():
         all_players = list_all_player_names(session)
         if season_num is not None and view_week is not None:
             roster = get_season_roster(session, season_num, view_week=view_week)
-            from league_admin import list_season_week_completion
-
             season_label = roster["label"] if roster else f"Season {season_num}"
             week_statuses = list_season_week_completion(
                 svc.data,
@@ -499,8 +603,6 @@ def admin_season_form():
                 through_week=view_week,
             )
         elif season_num is not None:
-            from league_admin import list_season_week_completion
-
             season_label = f"Season {season_num}"
             week_statuses = list_season_week_completion(svc.data, season_label)
             if not week_statuses:

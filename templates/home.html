@@ -539,6 +539,10 @@
       .panel-details > summary {
         display: none;
       }
+      /* Summaries are hidden; never collapse content on desktop. */
+      .sidebar .panel-details .panel-details-body {
+        display: block !important;
+      }
       .panel-details-body {
         margin-top: 0;
         padding-top: 0;
@@ -889,6 +893,47 @@
         min-height: 0;
       }
     }
+
+    .drawer-head-start {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      min-width: 0;
+    }
+
+    .admin-link {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      text-decoration: none;
+      padding: 0.25rem 0.55rem;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      opacity: 0.65;
+      flex-shrink: 0;
+      transition: color var(--dur) var(--ease), opacity var(--dur) var(--ease), border-color var(--dur) var(--ease);
+    }
+
+    .admin-link:hover {
+      color: var(--accent);
+      opacity: 1;
+      border-color: var(--border);
+    }
+
+    .sidebar-admin {
+      display: none;
+    }
+
+    @media (min-width: 900px) {
+      .sidebar-admin {
+        display: block;
+        margin-top: 0.1rem;
+        text-align: center;
+      }
+    }
   </style>
 </head>
 <body>
@@ -912,7 +957,10 @@
     <div class="layout">
       <aside class="sidebar" id="app-sidebar">
         <div class="drawer-head">
-          <span class="drawer-head-title">Menu</span>
+          <div class="drawer-head-start">
+            <span class="drawer-head-title">Menu</span>
+            <a class="admin-link" href="{{ url_for('admin.admin_home') }}">Admin</a>
+          </div>
           <button type="button" class="drawer-close" id="nav-close">Close</button>
         </div>
         <div class="panels">
@@ -997,6 +1045,10 @@
               </div>
             </details>
           </section>
+
+          <div class="sidebar-admin">
+            <a class="admin-link" href="{{ url_for('admin.admin_home') }}">Admin</a>
+          </div>
         </div>
       </aside>
 
@@ -1095,9 +1147,7 @@
           closeNav();
           return;
         }
-        panelDetails().forEach(function (el) {
-          el.open = false;
-        });
+        /* Desktop summaries are hidden; closing <details> hides all sidebar content. */
       }
 
       if (typeof narrowMq.addEventListener === "function") {
@@ -1311,7 +1361,7 @@
           lastPreview = null;
           clearStoredPreview();
         }
-        if (narrowMq.matches) closeNav();
+        if (narrowMq.matches && !options.skipScroll) closeNav();
       }
 
       function showPanel(fullPathWithQuery, title, options) {
@@ -1341,9 +1391,13 @@
         resetPlaceholderCopy();
         setPlaceholder(false);
         frame.src = withEmbed(base.pathname + base.search);
-        if (!options.skipScroll && narrowMq.matches) {
+        if (narrowMq.matches) {
+          if (!options.skipScroll) {
+            closeNav();
+            panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          }
+        } else if (!options.skipScroll) {
           collapsePanelsForPreview();
-          panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
         }
       }
 
@@ -1451,8 +1505,14 @@
         var frame = document.getElementById("embed-frame");
         if (!frame || !frame.contentWindow || e.source !== frame.contentWindow) return;
         if (e.origin !== window.location.origin) return;
-        if (!e.data || e.data.type !== "bowlbot-embed-home") return;
-        goEmbedHome();
+        if (!e.data || !e.data.type) return;
+        if (e.data.type === "bowlbot-embed-home") {
+          goEmbedHome();
+          return;
+        }
+        if (e.data.type === "bowlbot-close-nav") {
+          closeNav();
+        }
       });
 
       document.getElementById("embed-close").addEventListener("click", function () {
@@ -1492,6 +1552,7 @@
       });
 
       function go(path, title) {
+        if (narrowMq.matches) closeNav();
         if (getSeason() === "all") {
           showEmbedInvalid(
             "Weekly reports need a specific season, not All seasons. Choose a season above.",
@@ -1536,6 +1597,7 @@
       }
 
       function goSeasonTotals(path, title) {
+        if (narrowMq.matches) closeNav();
         var s = getSeason();
         if (path === "/bracket" || path === "/playoffs") {
           var blocked = embedBlockedMessage(path, "");
