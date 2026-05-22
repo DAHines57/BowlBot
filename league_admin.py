@@ -3,7 +3,10 @@ from __future__ import annotations
 
 from typing import Any, Callable, List, Optional, Tuple
 
+from sqlalchemy import func, select
+
 from db.data_ownership import is_season_db_managed
+from db.models import Season, TeamRosterMember
 from db.player_week_writes import save_week_rows, sync_week_team_opponents
 from db.session import get_session
 from league_data import LeagueDataSource
@@ -307,7 +310,24 @@ def fact_to_entry_row(f: dict) -> dict:
 
 
 def _template_week_rows(facts: List[dict], season_num: int, week: int) -> List[dict]:
-    """Roster lines from the latest prior week in this season (empty scores)."""
+    """Roster lines for score entry (membership-aware, else prior-week copy)."""
+    from db.roster_members import template_rows_for_week
+
+    with get_session() as session:
+        has_members = bool(
+            session.scalar(
+                select(func.count())
+                .select_from(TeamRosterMember)
+                .join(Season, TeamRosterMember.season_id == Season.id)
+                .where(Season.number == season_num)
+            )
+        )
+        if has_members:
+            rows = template_rows_for_week(session, season_num, week)
+            session.commit()
+            if rows:
+                return rows
+
     season_rows = filter_facts(facts, season_num=season_num)
     prior_weeks = sorted(
         {safe_int(f.get("week"), 0) for f in season_rows if safe_int(f.get("week"), 0) < week}

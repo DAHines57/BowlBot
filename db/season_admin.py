@@ -6,9 +6,19 @@ from typing import Any, List, Optional
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, joinedload
 
-from db.models import MatchupOverride, Player, PlayerWeek, Season, Team
+from db.models import MatchupOverride, Player, PlayerWeek, Season, Team, TeamRosterMember
 from db.player_week_writes import save_week_rows
-from db.sync import _get_or_create_player, _get_or_create_season
+from db.roster_members import (
+    captain_for_team_at_week,
+    default_roster_effective_week,
+    ensure_membership_for_player,
+    max_scored_week,
+    roster_week_choices,
+    sync_roster_from_admin,
+    team_player_names_for_week,
+    team_player_names_from_memberships,
+)
+from db.sync import _get_or_create_season
 from db.team_colors import normalize_color_hex
 from stats.facts import canonical_team_name, name_matches_team
 
@@ -104,7 +114,12 @@ def list_db_seasons(session: Session) -> List[dict]:
     return out
 
 
-def get_season_roster(session: Session, season_number: int) -> Optional[dict]:
+def get_season_roster(
+    session: Session,
+    season_number: int,
+    *,
+    view_week: Optional[int] = None,
+) -> Optional[dict]:
     season = session.scalar(select(Season).where(Season.number == season_number))
     if season is None:
         return None
@@ -112,37 +127,57 @@ def get_season_roster(session: Session, season_number: int) -> Optional[dict]:
     teams = session.scalars(
         select(Team).where(Team.season_id == season.id).order_by(Team.name)
     ).all()
-    roster_week = session.scalar(
-        select(func.min(PlayerWeek.week)).where(PlayerWeek.season_id == season.id)
+    display_week = view_week if view_week is not None else default_roster_effective_week(
+        session, season.id
     )
-    source_week = roster_week if roster_week else 1
+    has_memberships = bool(
+        session.scalar(
+            select(func.count())
+            .select_from(TeamRosterMember)
+            .where(TeamRosterMember.season_id == season.id)
+        )
+    )
 
     teams_out: List[dict] = []
     for team in teams:
-        rows = session.scalars(
-            select(PlayerWeek)
-            .where(
-                PlayerWeek.season_id == season.id,
-                PlayerWeek.team_id == team.id,
-                PlayerWeek.week == source_week,
-                PlayerWeek.substitute.is_(False),
+        captain: Optional[str] = None
+        if has_memberships:
+            players = team_player_names_for_week(
+                session, season.id, team.id, display_week
             )
-            .order_by(PlayerWeek.player_display_name)
-        ).all()
-        players = [r.player_display_name for r in rows]
+            captain = captain_for_team_at_week(
+                session, season.id, team.id, display_week, players
+            )
+        else:
+            rows = session.scalars(
+                select(PlayerWeek)
+                .where(
+                    PlayerWeek.season_id == season.id,
+                    PlayerWeek.team_id == team.id,
+                    PlayerWeek.week == display_week,
+                    PlayerWeek.substitute.is_(False),
+                )
+                .order_by(PlayerWeek.player_display_name)
+            ).all()
+            players = [r.player_display_name for r in rows]
+
         teams_out.append(
             {
                 "id": team.id,
                 "name": team.name,
                 "players": players,
+                "captain": captain,
                 "color_hex": normalize_color_hex(team.color_hex),
             }
         )
 
+    default_effective = default_roster_effective_week(session, season.id)
     return {
         "season_number": season.number,
         "label": season.label,
-        "roster_week": int(source_week),
+        "view_week": int(display_week),
+        "default_effective_week": int(default_effective),
+        "week_choices": roster_week_choices(session, season.id),
         "teams": teams_out,
     }
 
@@ -161,18 +196,20 @@ def create_season(
     season = _get_or_create_season(session, label, season_number)
 
     if clone_from is not None:
-        src = get_season_roster(session, clone_from)
-        if src and src["teams"]:
-            cloned = []
-            for t in src["teams"]:
-                cloned.append(
-                    {
-                        "name": t["name"],
-                        "players": list(t["players"]),
-                        "color_hex": t.get("color_hex"),
-                    }
-                )
-            save_season_roster(session, season_number, cloned, roster_week=1)
+        src_roster = get_season_roster(session, clone_from)
+        if src_roster:
+            if src_roster["teams"]:
+                cloned = []
+                for t in src_roster["teams"]:
+                    cloned.append(
+                        {
+                            "name": t["name"],
+                            "players": list(t["players"]),
+                            "captain": t.get("captain"),
+                            "color_hex": t.get("color_hex"),
+                        }
+                    )
+                save_season_roster(session, season_number, cloned, roster_week=1)
     return season
 
 
@@ -181,12 +218,14 @@ def save_season_roster(
     season_number: int,
     teams: List[dict[str, Any]],
     *,
-    roster_week: int = 1,
+    roster_week: Optional[int] = None,
 ) -> int:
-    """Upsert teams and roster-week rows; does not delete scored weeks."""
+    """Upsert teams, memberships, and template rows for roster_week; does not delete scored weeks."""
     season = session.scalar(select(Season).where(Season.number == season_number))
     if season is None:
         raise ValueError(f"Season {season_number} not found.")
+    if roster_week is None:
+        roster_week = default_roster_effective_week(session, season.id)
 
     submitted_ids: set[int] = set()
     for team_data in teams:
@@ -214,6 +253,9 @@ def save_season_roster(
     wanted: set[tuple[str, str]] = set()
     save_rows: List[dict] = []
     wanted_teams: set[str] = set()
+    max_scored = max_scored_week(session, season.id)
+    # After scores exist: a future effective week updates membership only (no template rows).
+    templates_new_players_only = max_scored > 0 and roster_week > max_scored
     for team_data in teams:
         team_name = canonical_team_name(
             str(team_data.get("name") or "").strip(), season_num=season_number
@@ -221,6 +263,9 @@ def save_season_roster(
         if not team_name:
             continue
         wanted_teams.add(team_name)
+        team = session.scalar(
+            select(Team).where(Team.season_id == season.id, Team.name == team_name)
+        )
         players = team_data.get("players") or []
         if isinstance(players, str):
             players = [p.strip() for p in players.splitlines() if p.strip()]
@@ -246,7 +291,7 @@ def save_season_roster(
                 }
             )
 
-    if save_rows:
+    if save_rows and not templates_new_players_only:
         save_week_rows(
             session,
             season_number,
@@ -255,6 +300,11 @@ def save_season_roster(
             sheet_key=season.label,
             preserve_scores=True,
         )
+
+    sync_roster_from_admin(session, season, teams, roster_week=roster_week)
+    from db.roster_members import cleanup_stale_template_rows
+
+    cleanup_stale_template_rows(session, season.id)
 
     for team_data in teams:
         team_name = canonical_team_name(
@@ -336,8 +386,9 @@ def add_player_to_team(
     if team is None:
         team = add_team(session, season_number, name)
     player = player_name.strip()
-    cache: dict[str, int] = {}
-    _get_or_create_player(session, cache, player)
+    ensure_membership_for_player(
+        session, season, team, player, roster_week=roster_week
+    )
     save_week_rows(
         session,
         season_number,
@@ -389,5 +440,6 @@ def delete_season(session: Session, season_number: int) -> None:
     # session.delete(season) makes ORM null child FKs first (fails on teams.season_id).
     session.execute(delete(PlayerWeek).where(PlayerWeek.season_id == sid))
     session.execute(delete(MatchupOverride).where(MatchupOverride.season_id == sid))
+    session.execute(delete(TeamRosterMember).where(TeamRosterMember.season_id == sid))
     session.execute(delete(Team).where(Team.season_id == sid))
     session.execute(delete(Season).where(Season.id == sid))

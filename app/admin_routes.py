@@ -2,13 +2,21 @@
 from __future__ import annotations
 
 import json
+import os
 from urllib.parse import quote
 
-import os
-
 from flask import Blueprint, Response, current_app, jsonify, redirect, render_template, request, url_for
+from sqlalchemy import select
 
 from app.admin_auth import admin_pin_configured, check_admin_authorized, unlock_admin
+from db.models import Season
+from db.roster_members import default_roster_effective_week
+from db.player_admin import (
+    list_players,
+    player_impact_summary,
+    purge_player,
+    rename_player,
+)
 from db.season_admin import (
     create_season,
     delete_season,
@@ -27,8 +35,17 @@ from league_admin import (
     default_entry_week,
     get_week_entry,
     list_season_teams_from_db,
+    list_season_week_completion,
     parse_week_rows_payload,
     save_week_entry,
+)
+from scoreboard_scan import (
+    ALLOWED_IMAGE_TYPES,
+    MAX_IMAGE_BYTES,
+    extract_score_rows,
+    scan_configured,
+    scan_scoreboard_image,
+    validate_extract,
 )
 from stats.compute import parse_season_number
 
@@ -203,8 +220,6 @@ def admin_enter_form():
     if not payload["teams"] and db_teams:
         payload["teams"] = db_teams
 
-    from league_admin import list_season_week_completion
-
     week_statuses = list_season_week_completion(
         svc.data,
         payload["season"],
@@ -219,6 +234,13 @@ def admin_enter_form():
         "off",
     )
     show_debug_tools = not hide_debug
+    team_roster_names: list[str] = []
+    if team:
+        team_roster_names = [
+            str(r.get("player_display_name") or "").strip()
+            for r in payload.get("rows") or []
+            if str(r.get("player_display_name") or "").strip()
+        ]
     return render_template(
         "admin_enter.html",
         entry=payload,
@@ -226,10 +248,12 @@ def admin_enter_form():
         all_teams=all_teams,
         week_statuses=week_statuses,
         selected_team=team or "",
+        team_roster_names=team_roster_names,
         show_debug_tools=show_debug_tools,
         game_score_min=GAME_SCORE_MIN,
         game_score_max=GAME_SCORE_MAX,
         save_error=(request.args.get("error") or "").strip() or None,
+        scoreboard_scan_enabled=scan_configured(),
     )
 
 
@@ -251,6 +275,77 @@ def admin_week_get():
     if err:
         return jsonify({"error": err}), 400
     return jsonify(payload)
+
+
+@admin_bp.route("/admin/week/scan", methods=["POST"])
+def admin_week_scan():
+    denied = _require_admin()
+    if denied:
+        return denied
+    svc = _svc()
+    if not svc:
+        return jsonify({"error": "database not ready"}), 503
+    if not scan_configured():
+        return jsonify({"error": "Scoreboard scan is not configured (ANTHROPIC_API_KEY)."}), 503
+
+    team = (request.form.get("team") or "").strip()
+    if not team:
+        return jsonify({"error": "Select a team before scanning."}), 400
+
+    week, err = _parse_week_arg(required=True)
+    if err:
+        return jsonify({"error": err}), 400
+    season = _season_label(svc)
+
+    file = request.files.get("image")
+    if not file or not file.filename:
+        return jsonify({"error": "Missing image file."}), 400
+
+    content_type = (file.content_type or "").strip().lower()
+    if content_type not in ALLOWED_IMAGE_TYPES:
+        return jsonify({"error": "Use JPEG, PNG, or WebP."}), 400
+
+    image_bytes = file.read()
+    if not image_bytes:
+        return jsonify({"error": "Empty image file."}), 400
+    if len(image_bytes) > MAX_IMAGE_BYTES:
+        return jsonify({"error": "Image too large (max 8 MB)."}), 400
+
+    payload, err = get_week_entry(svc.data, season, week, team=team)
+    if err:
+        return jsonify({"error": err}), 400
+
+    roster_names = [
+        str(r.get("player_display_name") or "").strip()
+        for r in payload.get("rows") or []
+        if str(r.get("team") or "").strip() == team and str(r.get("player_display_name") or "").strip()
+    ]
+    if not roster_names:
+        return jsonify({"error": f"No roster players found for team {team!r}."}), 400
+
+    try:
+        extract = scan_scoreboard_image(image_bytes, content_type)
+    except Exception as exc:
+        return jsonify({"error": f"Scan failed: {exc}"}), 502
+
+    score_rows = extract_score_rows(extract)
+    validation_errors = validate_extract(extract)
+    if len(score_rows) != len(roster_names):
+        validation_errors.append(
+            f"Scan found {len(score_rows)} score row(s); "
+            f"roster has {len(roster_names)} player(s). Assign each row manually."
+        )
+
+    return jsonify(
+        {
+            "validation_errors": validation_errors,
+            "score_rows": score_rows,
+            "roster_players": roster_names,
+            "team": team,
+            "season": season,
+            "week": week,
+        }
+    )
 
 
 @admin_bp.route("/admin/week", methods=["POST"])
@@ -373,6 +468,108 @@ def admin_week_delete():
     return redirect(url_for("admin.admin_home"))
 
 
+@admin_bp.route("/admin/players", methods=["GET"])
+def admin_players():
+    denied = _require_admin()
+    if denied:
+        return denied
+    svc = _svc()
+    if not svc:
+        return _no_svc()
+
+    selected_raw = (request.args.get("player_id") or "").strip()
+    selected_player_id: int | None = None
+    impact = None
+    session = get_session()
+    try:
+        players = list_players(session)
+        if selected_raw.isdigit():
+            selected_player_id = int(selected_raw)
+            try:
+                impact = player_impact_summary(session, selected_player_id)
+            except ValueError:
+                impact = None
+    finally:
+        session.close()
+
+    return render_template(
+        "admin_players.html",
+        players=players,
+        selected_player_id=selected_player_id,
+        impact=impact,
+        success=request.args.get("success"),
+        error=request.args.get("error"),
+    )
+
+
+@admin_bp.route("/admin/players", methods=["POST"])
+def admin_players_post():
+    denied = _require_admin()
+    if denied:
+        return denied
+    svc = _svc()
+    if not svc:
+        return _no_svc()
+
+    action = (request.form.get("action") or "").strip()
+    player_raw = (request.form.get("player_id") or "").strip()
+    if not player_raw.isdigit():
+        return _players_redirect(error="Invalid player.")
+    player_id = int(player_raw)
+
+    session = get_session()
+    try:
+        if action == "rename":
+            new_name = (request.form.get("new_name") or "").strip()
+            count = rename_player(session, player_id, new_name)
+            session.commit()
+            svc.refresh_data()
+            if count:
+                msg = f"Renamed player ({count} week row(s) updated)."
+            else:
+                msg = "Name unchanged (already matches)."
+            return _players_redirect(player_id=player_id, success=msg)
+
+        if action == "purge":
+            if not request.form.get("understand"):
+                raise ValueError(
+                    "You must check the box confirming you understand this deletes all week data."
+                )
+            confirm_name = (request.form.get("confirm_name") or "").strip()
+            result = purge_player(session, player_id, confirm_name=confirm_name)
+            session.commit()
+            svc.refresh_data()
+            msg = (
+                f"Deleted player and purged {result['deleted_week_rows']} week row(s) "
+                f"and {result['deleted_roster_memberships']} roster membership(s)."
+            )
+            return _players_redirect(success=msg)
+
+        raise ValueError(f"Unknown action: {action}")
+    except Exception as exc:
+        session.rollback()
+        return _players_redirect(player_id=player_id, error=str(exc))
+    finally:
+        session.close()
+
+
+def _players_redirect(
+    *,
+    player_id: int | None = None,
+    success: str | None = None,
+    error: str | None = None,
+):
+    params: list[str] = []
+    if player_id is not None:
+        params.append(f"player_id={player_id}")
+    if success:
+        params.append(f"success={quote(success)}")
+    if error:
+        params.append(f"error={quote(error)}")
+    q = f"?{'&'.join(params)}" if params else ""
+    return redirect(url_for("admin.admin_players") + q)
+
+
 @admin_bp.route("/admin/season", methods=["GET"])
 def admin_season_form():
     denied = _require_admin()
@@ -382,23 +579,67 @@ def admin_season_form():
     if not svc:
         return _no_svc()
 
-    season_num, _ = _season_number_from_request()
+    season_num = None
+    if (request.args.get("season") or "").strip():
+        season_num, season_err = _season_number_from_request()
+        if season_err:
+            return render_template("error.html", message=season_err), 400
+    view_week, week_err = _parse_week_arg()
+    if week_err:
+        return render_template("error.html", message=week_err), 400
+
     roster = None
+    week_statuses: list[dict] = []
     session = get_session()
     try:
         db_seasons = list_db_seasons(session)
         all_players = list_all_player_names(session)
-        if season_num is not None:
-            roster = get_season_roster(session, season_num)
+        if season_num is not None and view_week is not None:
+            roster = get_season_roster(session, season_num, view_week=view_week)
+            season_label = roster["label"] if roster else f"Season {season_num}"
+            week_statuses = list_season_week_completion(
+                svc.data,
+                season_label,
+                through_week=view_week,
+            )
+        elif season_num is not None:
+            season_label = f"Season {season_num}"
+            week_statuses = list_season_week_completion(svc.data, season_label)
+            if not week_statuses:
+                season_row = session.scalar(
+                    select(Season).where(Season.number == season_num)
+                )
+                if season_row:
+                    from db.roster_members import roster_week_choices
+
+                    week_statuses = [
+                        {"week": w, "status": "not_started"}
+                        for w in roster_week_choices(session, season_row.id)
+                    ]
     finally:
         session.close()
 
     existing_numbers = {s["number"] for s in db_seasons}
+    picker_week = view_week
+    if picker_week is None and season_num is not None and roster:
+        picker_week = roster.get("default_effective_week", 1)
+    elif picker_week is None and season_num is not None:
+        session2 = get_session()
+        try:
+            season_row = session2.scalar(
+                select(Season).where(Season.number == season_num)
+            )
+            if season_row:
+                picker_week = default_roster_effective_week(session2, season_row.id)
+        finally:
+            session2.close()
     return render_template(
         "admin_season.html",
         db_seasons=db_seasons,
         roster=roster,
         season_number=season_num,
+        picker_week=picker_week,
+        week_statuses=week_statuses,
         season_choices=_season_choices(svc, db_seasons),
         new_season_options=suggest_new_season_numbers(db_seasons),
         existing_season_numbers=existing_numbers,
@@ -441,10 +682,17 @@ def admin_season_post():
             if err:
                 raise ValueError(err)
             teams = _parse_teams_form()
-            save_season_roster(session, season_num, teams)
+            effective_week = _effective_week_from_form()
+            save_season_roster(session, season_num, teams, roster_week=effective_week)
             session.commit()
             svc.refresh_data()
-            return redirect(url_for("admin.admin_season_form", season=f"Season {season_num}"))
+            return redirect(
+                url_for(
+                    "admin.admin_season_form",
+                    season=f"Season {season_num}",
+                    week=effective_week,
+                )
+            )
 
         if action == "delete_season":
             season_num, err = _season_number_from_request()
@@ -489,8 +737,18 @@ def _players_for_team_index(team_idx: int) -> list[str]:
     return [p.strip() for p in raw.splitlines() if p.strip()]
 
 
+def _effective_week_from_form() -> int:
+    raw = (request.form.get("effective_week") or "").strip()
+    if not raw.isdigit():
+        raise ValueError("Effective from week must be a positive integer.")
+    week = int(raw)
+    if week < 1:
+        raise ValueError("Effective from week must be at least 1.")
+    return week
+
+
 def _parse_teams_form() -> list[dict]:
-    """Parse teams[N][name], id, color_hex, and player picks from the roster form."""
+    """Parse teams[N][name], id, color_hex, captain, and player picks from the roster form."""
     teams = []
     for idx in _team_indices_from_form():
         name = (request.form.get(f"teams[{idx}][name]") or "").strip()
@@ -504,5 +762,8 @@ def _parse_teams_form() -> list[dict]:
         raw_color = request.form.get(f"teams[{idx}][color_hex]")
         if raw_color is not None:
             entry["color_hex"] = raw_color.strip()
+        captain = (request.form.get(f"teams[{idx}][captain]") or "").strip()
+        if captain:
+            entry["captain"] = captain
         teams.append(entry)
     return teams

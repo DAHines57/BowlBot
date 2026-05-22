@@ -6,7 +6,7 @@ from typing import List, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from db.models import MatchupOverride, PlayerWeek, Season, Team
+from db.models import MatchupOverride, PlayerWeek, Season, Team, TeamRosterMember
 from db.session import get_session
 from stats.facts import canonical_team_name
 
@@ -32,10 +32,21 @@ def load_all_facts(session: Optional[Session] = None) -> List[dict]:
             )
         )
         rows = session.scalars(stmt).all()
+        roster_windows: dict[tuple[int, int, int], tuple[int, Optional[int]]] = {}
+        for m in session.scalars(select(TeamRosterMember)).all():
+            roster_windows[(m.season_id, m.team_id, m.player_id)] = (
+                int(m.started_week),
+                int(m.ended_week) if m.ended_week is not None else None,
+            )
         facts: List[dict] = []
         for pw in rows:
             season = pw.season
             team = pw.team
+            if pw.player_id is not None:
+                window = roster_windows.get((season.id, team.id, pw.player_id))
+                started, ended = window if window else (1, None)
+            else:
+                started, ended = 1, None
             facts.append(
                 {
                     "sheet_key": season.sheet_key,
@@ -44,6 +55,8 @@ def load_all_facts(session: Optional[Session] = None) -> List[dict]:
                     "team": canonical_team_name(team.name, season_num=season.number),
                     "player_display_name": pw.player_display_name,
                     "week": pw.week,
+                    "roster_started_week": started,
+                    "roster_ended_week": ended,
                     "game1": float(pw.game1) if pw.game1 is not None else None,
                     "game2": float(pw.game2) if pw.game2 is not None else None,
                     "game3": float(pw.game3) if pw.game3 is not None else None,

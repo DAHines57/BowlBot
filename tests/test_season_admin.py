@@ -274,9 +274,10 @@ def test_rename_team_retroactive(db_session):
     w2 = db_session.scalars(
         select(PlayerWeek).where(PlayerWeek.season_id == 10, PlayerWeek.week == 2)
     ).all()
-    assert len(w2) == 1
-    assert w2[0].team_id == team_a_id
-    assert w2[0].opponent == "Team B"
+    alice_w2 = [r for r in w2 if r.player_display_name == "Alice"]
+    assert len(alice_w2) == 1
+    assert alice_w2[0].team_id == team_a_id
+    assert alice_w2[0].opponent == "Team B"
 
 
 def test_clone_season_copies_team_colors(db_session):

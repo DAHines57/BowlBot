@@ -76,6 +76,7 @@ See [docs/database/phase-1-schema-and-migrations.md](docs/database/phase-1-schem
 ## Production (e.g. Railway)
 
 - **Optional PostgreSQL roadmap:** [docs/database/README.md](docs/database/README.md) (phased plan: schema → ingest → app reads → ops).
+- **Schema updates:** `alembic upgrade head` against production `DATABASE_URL` before or right after deploy. See [docs/database/deploy-roster-migration.md](docs/database/deploy-roster-migration.md) for the roster table rollout.
 - Start with gunicorn: `gunicorn main:app --bind 0.0.0.0:$PORT`
 - Set the same env vars as above.
 - Optional: `RELOAD_SECRET` — if set, refresh the in-process cache with `POST /refresh?key=<secret>` (`/reload` is an alias).

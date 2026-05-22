@@ -20,6 +20,8 @@ from image_generator import (
     build_teams_html,
     champion_from_playoff_snapshots,
     build_top_games_html,
+    build_top_player_scores_hub_html,
+    build_top_team_scores_hub_html,
     build_top_weeks_html,
     compute_bracket_rounds,
     inject_web_chrome,
@@ -386,6 +388,163 @@ class LeagueService:
         if not player_data:
             return None, "No player data."
         return inject_web_chrome(build_players_html(player_data, label, ascending=worst), embed=embed), ""
+
+    def _top_stats_bundle(self, season: str) -> Tuple[Optional[dict], str]:
+        if season == "all":
+            stats = self.data.get_all_time_stats()
+        else:
+            stats = self.data.get_league_stats(season)
+        if "error" in stats:
+            return None, stats["error"]
+        return stats, ""
+
+    def _player_season_avg_rows_all_seasons(self, worst: bool) -> List[dict]:
+        rows: List[dict] = []
+        for season in self.data.get_seasons():
+            raw = self.data.get_player_scores(None, season)
+            if isinstance(raw, dict) and "error" in raw:
+                continue
+            for name, stats in raw.items():
+                if not stats.get("weeks_played") and not stats.get("scores"):
+                    continue
+                rows.append(
+                    {
+                        "player": name,
+                        "season": season,
+                        "team": stats.get("team", ""),
+                        "average": stats.get("average", 0),
+                        "highest_game": stats.get("highest_game", 0),
+                        "lowest_game": stats.get("lowest_game", 0),
+                        "weeks_played": stats.get("weeks_played", 0),
+                    }
+                )
+        rows.sort(key=lambda r: r.get("average", 0), reverse=not worst)
+        return rows
+
+    def _team_season_avg_rows_all_seasons(self, worst: bool) -> List[dict]:
+        rows: List[dict] = []
+        for season in self.data.get_seasons():
+            raw = self.data.get_team_scores(None, season)
+            if isinstance(raw, dict) and "error" in raw:
+                continue
+            _, snapshots = self._playoff_snapshots_for_season(season)
+            champion = champion_from_playoff_snapshots(snapshots)
+            for name, stats in raw.items():
+                rows.append(
+                    {
+                        "team": name,
+                        "season": season,
+                        "stats": stats,
+                        "champion_team": champion,
+                    }
+                )
+        rows.sort(
+            key=lambda r: (r.get("stats") or {}).get("avg_per_game", 0),
+            reverse=not worst,
+        )
+        return rows
+
+    def top_player_scores_hub_page(
+        self,
+        season: str,
+        n: int,
+        worst: bool,
+        *,
+        view: Optional[str] = None,
+        embed: bool = False,
+    ) -> Tuple[Optional[str], str]:
+        n = max(1, min(n, 50))
+        stats, err = self._top_stats_bundle(season)
+        if err:
+            return None, err
+        games = list(stats.get("top_games", []))
+        weeks = list(stats.get("top_weeks", []))
+        if worst:
+            games = list(reversed(games))
+            weeks = list(reversed(weeks))
+        subtitle = stats.get("season", season)
+        player_data: Optional[dict] = None
+        player_season_rows: Optional[List[dict]] = None
+        if season == "all":
+            player_season_rows = self._player_season_avg_rows_all_seasons(worst)[:n]
+        else:
+            raw = self.data.get_player_scores(None, season)
+            if isinstance(raw, dict) and "error" in raw:
+                return None, raw["error"]
+            sorted_players = sorted(
+                raw.items(), key=lambda x: x[1].get("average", 0), reverse=not worst
+            )
+            player_data = dict(sorted_players)
+        return (
+            inject_web_chrome(
+                build_top_player_scores_hub_html(
+                    games,
+                    weeks,
+                    subtitle,
+                    n,
+                    player_data=player_data,
+                    player_season_rows=player_season_rows,
+                    initial_view=view or "weeks",
+                ),
+                embed=embed,
+            ),
+            "",
+        )
+
+    def top_team_scores_hub_page(
+        self,
+        season: str,
+        n: int,
+        worst: bool,
+        *,
+        view: Optional[str] = None,
+        embed: bool = False,
+    ) -> Tuple[Optional[str], str]:
+        n = max(1, min(n, 50))
+        stats, err = self._top_stats_bundle(season)
+        if err:
+            return None, err
+        games = list(stats.get("top_team_games", []))
+        weeks = list(stats.get("top_team_weeks", []))
+        if worst:
+            games = list(reversed(games))
+            weeks = list(reversed(weeks))
+        subtitle = stats.get("season", season)
+        teams_data: Optional[dict] = None
+        team_season_rows: Optional[List[dict]] = None
+        champion_team: Optional[str] = None
+        if season == "all":
+            team_season_rows = self._team_season_avg_rows_all_seasons(worst)[:n]
+        else:
+            raw = self.data.get_team_scores(None, season)
+            if isinstance(raw, dict) and "error" in raw:
+                return None, raw["error"]
+            teams_data = raw
+            if worst and teams_data:
+                teams_data = dict(
+                    sorted(
+                        teams_data.items(),
+                        key=lambda x: x[1].get("avg_per_game", 0),
+                    )
+                )
+            _, snapshots = self._playoff_snapshots_for_season(season)
+            champion_team = champion_from_playoff_snapshots(snapshots)
+        return (
+            inject_web_chrome(
+                build_top_team_scores_hub_html(
+                    games,
+                    weeks,
+                    subtitle,
+                    n,
+                    teams_data=teams_data,
+                    team_season_rows=team_season_rows,
+                    initial_view=view or "weeks",
+                    champion_team=champion_team,
+                ),
+                embed=embed,
+            ),
+            "",
+        )
 
     def top_games_page(self, season: str, n: int, worst: bool, *, embed: bool = False) -> Tuple[Optional[str], str]:
         n = max(1, min(n, 50))

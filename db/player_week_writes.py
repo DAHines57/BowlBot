@@ -7,7 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from db.models import PlayerWeek, Team
-from db.sync import _get_or_create_player, _get_or_create_season
+from db.players import get_or_create_player
+from db.sync import _get_or_create_season
 from stats.facts import canonical_team_name, resolve_opponent_on_roster
 
 
@@ -98,7 +99,7 @@ def upsert_player_week(
 
     team_id = _get_or_create_team(session, season.id, normalized["team"])
     cache = player_cache if player_cache is not None else {}
-    player_id = _get_or_create_player(
+    player_id = get_or_create_player(
         session, cache, normalized["player_display_name"]
     )
 

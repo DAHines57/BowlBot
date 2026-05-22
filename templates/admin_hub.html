@@ -20,6 +20,7 @@
     form.inline { display: inline; }
     button.danger { background: #4a2028; border: 1px solid var(--danger); color: #ffc0c8; padding: 0.25rem 0.5rem; border-radius: 6px; cursor: pointer; font-size: 0.8rem; }
     label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 0.25rem; }
+    .muted { color: var(--muted); font-size: 0.88rem; margin: 0; }
     input, select { padding: 0.4rem; border-radius: 6px; border: 1px solid var(--border); background: #12101a; color: var(--text); }
     .row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: flex-end; margin-top: 0.5rem; }
   </style>
@@ -31,6 +32,7 @@
     <nav class="nav">
       <a href="{{ url_for('admin.admin_enter_form') }}">Enter scores</a>
       <a href="{{ url_for('admin.admin_season_form') }}">Season setup</a>
+      <a href="{{ url_for('admin.admin_players') }}">Manage players</a>
       <a href="/">Home</a>
     </nav>
 
