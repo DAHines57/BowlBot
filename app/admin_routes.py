@@ -56,6 +56,11 @@ def _svc():
     return current_app.config.get("LEAGUE_SERVICE")
 
 
+def _admin_debug_tools_enabled() -> bool:
+    """Random-score fill on /admin/enter — only when DEBUG is enabled."""
+    return os.environ.get("DEBUG", "false").strip().lower() in ("1", "true", "yes")
+
+
 def _forbidden_admin():
     return redirect(url_for("admin.admin_home", next=request.path))
 
@@ -226,14 +231,7 @@ def admin_enter_form():
         season_teams=all_teams,
         through_week=payload["week"],
     )
-    # Admin is PIN-gated; hide fill helper only when explicitly disabled (e.g. production).
-    hide_debug = os.environ.get("ADMIN_DEBUG_TOOLS", "").strip().lower() in (
-        "0",
-        "false",
-        "no",
-        "off",
-    )
-    show_debug_tools = not hide_debug
+    show_debug_tools = _admin_debug_tools_enabled()
     team_roster_names: list[str] = []
     if team:
         team_roster_names = [
