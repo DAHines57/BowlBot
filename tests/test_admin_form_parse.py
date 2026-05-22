@@ -1,5 +1,10 @@
 """Tests for admin roster form parsing."""
-from app.admin_routes import _parse_teams_form, _players_for_team_index, _team_indices_from_form
+from app.admin_routes import (
+    _admin_debug_tools_enabled,
+    _parse_teams_form,
+    _players_for_team_index,
+    _team_indices_from_form,
+)
 
 
 class _FakeForm:
@@ -83,3 +88,10 @@ def test_parse_teams_form_with_picks(monkeypatch):
     assert len(teams) == 2
     assert teams[0]["players"] == ["Alice"]
     assert teams[1]["players"] == ["Carl"]
+
+
+def test_admin_debug_tools_follows_debug(monkeypatch):
+    monkeypatch.setenv("DEBUG", "false")
+    assert _admin_debug_tools_enabled() is False
+    monkeypatch.setenv("DEBUG", "true")
+    assert _admin_debug_tools_enabled() is True
