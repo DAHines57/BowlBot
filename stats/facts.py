@@ -31,10 +31,20 @@ def fact_in_roster_window(fact: dict) -> bool:
     return True
 
 
-def games_list(fact: dict) -> List[float]:
-    """Positive pin totals from game1–game5 on a fact row."""
+GAME_SLOT_KEYS = ("game1", "game2", "game3", "game4", "game5")
+
+
+def _game_absent(fact: dict, slot: int) -> bool:
+    """True when slot uses book average (missed that game). Ignored if whole week absent."""
+    if fact.get("absent"):
+        return False
+    return bool(fact.get(f"game{slot}_absent"))
+
+
+def games_list_for_team(fact: dict) -> List[float]:
+    """Positive pin totals from all game slots (team pins, matchups, league totals)."""
     out: List[float] = []
-    for key in ("game1", "game2", "game3", "game4", "game5"):
+    for key in GAME_SLOT_KEYS:
         g = fact.get(key)
         if g is None or g == "":
             continue
@@ -44,11 +54,33 @@ def games_list(fact: dict) -> List[float]:
     return out
 
 
+def games_list_for_player_stats(fact: dict) -> List[float]:
+    """Pin totals that count toward player season average, PAR, high/low (not book-avg slots)."""
+    if fact.get("absent"):
+        return []
+    out: List[float] = []
+    for i, key in enumerate(GAME_SLOT_KEYS, start=1):
+        if _game_absent(fact, i):
+            continue
+        g = fact.get(key)
+        if g is None or g == "":
+            continue
+        score = safe_float(g)
+        if score > 0:
+            out.append(score)
+    return out
+
+
+def games_list(fact: dict) -> List[float]:
+    """Alias for team pin totals (backward compatible)."""
+    return games_list_for_team(fact)
+
+
 def fact_has_play_activity(fact: dict) -> bool:
     """True if the row represents a scored or absent week (not a blank template)."""
     if fact.get("absent"):
         return True
-    return len(games_list(fact)) > 0
+    return len(games_list_for_team(fact)) > 0
 
 
 def fact_counts_for_stats(fact: dict) -> bool:
@@ -60,10 +92,23 @@ def fact_counts_for_stats(fact: dict) -> bool:
     return fact_has_play_activity(fact)
 
 
+def add_slot_pins_to_index(
+    index: Dict[int, float],
+    slots: List[Optional[int]],
+    *,
+    max_slot: int = 5,
+) -> None:
+    """Add pin totals by game number (1-based) into index[game_num]."""
+    for i, g in enumerate(slots, start=1):
+        if i > max_slot or g is None:
+            continue
+        index[i] = index.get(i, 0) + int(g)
+
+
 def games_slots(fact: dict) -> List[Optional[int]]:
     """game1–game5 pin slots; None when blank (preserves game index for matchup tables)."""
     out: List[Optional[int]] = []
-    for key in ("game1", "game2", "game3", "game4", "game5"):
+    for key in GAME_SLOT_KEYS:
         g = fact.get(key)
         if g is None or g == "":
             out.append(None)

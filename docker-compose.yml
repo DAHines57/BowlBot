@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     ports:
       - "5432:5432"
     environment:
@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: bowlbot
       POSTGRES_DB: bowlbot_dev
     volumes:
-      - bowlbot_pgdata:/var/lib/postgresql/data
+      - bowlbot_pgdata:/var/lib/postgresql
 
 volumes:
   bowlbot_pgdata:

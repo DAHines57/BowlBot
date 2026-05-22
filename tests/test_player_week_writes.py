@@ -17,6 +17,14 @@ def test_compute_week_average_empty():
     assert compute_week_average((None, None, None, None, None)) is None
 
 
+def test_compute_week_average_excludes_per_game_absent():
+    avg = compute_week_average(
+        (190.0, 220.0, 210.0, 200.0, None),
+        game_absent=(True, False, False, False, False),
+    )
+    assert avg == pytest.approx((220 + 210 + 200) / 3)
+
+
 def test_normalize_row_canonical_team_and_opponent():
     row = {
         "team": "Team A",

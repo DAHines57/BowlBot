@@ -251,6 +251,9 @@ def admin_enter_form():
         game_score_min=GAME_SCORE_MIN,
         game_score_max=GAME_SCORE_MAX,
         save_error=(request.args.get("error") or "").strip() or None,
+        save_success=(request.args.get("msg") or "").strip() or None
+        if (request.args.get("saved") or "").strip() in ("1", "true", "yes")
+        else None,
         scoreboard_scan_enabled=scan_configured(),
     )
 
@@ -400,7 +403,7 @@ def admin_week_post():
 
     if ok:
         team = (body.get("team") or request.form.get("team") or "").strip()
-        q = f"?season={quote(season)}&week={week}"
+        q = f"?season={quote(season)}&week={week}&saved=1&msg={quote(msg)}"
         if team:
             q += f"&team={quote(team)}"
         return Response("", status=303, headers={"Location": f"/admin/enter{q}"})

@@ -66,6 +66,11 @@ def load_all_facts(session: Optional[Session] = None) -> List[dict]:
                     if pw.week_average is not None
                     else None,
                     "absent": bool(pw.absent),
+                    "game1_absent": bool(pw.game1_absent),
+                    "game2_absent": bool(pw.game2_absent),
+                    "game3_absent": bool(pw.game3_absent),
+                    "game4_absent": bool(pw.game4_absent),
+                    "game5_absent": bool(pw.game5_absent),
                     "substitute": bool(pw.substitute),
                     "playoffs": bool(pw.playoffs),
                     "opponent": canonical_team_name(

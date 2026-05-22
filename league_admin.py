@@ -11,7 +11,13 @@ from db.player_week_writes import save_week_rows, sync_week_team_opponents
 from db.session import get_session
 from league_data import LeagueDataSource
 from stats import compute
-from stats.facts import fact_counts_for_stats, games_list, games_slots, filter_facts
+from stats.facts import (
+    fact_counts_for_stats,
+    games_list_for_player_stats,
+    games_list_for_team,
+    games_slots,
+    filter_facts,
+)
 from utils import safe_int
 
 GAME_SCORE_MIN = 1
@@ -306,7 +312,7 @@ def _player_played_weeks_before(
         if not fact_counts_for_stats(f) or f.get("absent"):
             continue
         wk = safe_int(f.get("week"), 0)
-        if wk < 1 or wk >= before_week or not games_list(f):
+        if wk < 1 or wk >= before_week or not games_list_for_player_stats(f):
             continue
         weeks.add(wk)
     return len(weeks)
@@ -320,7 +326,7 @@ def _player_pin_average(rows: List[dict], player: str) -> Optional[float]:
             continue
         if not fact_counts_for_stats(f) or f.get("absent"):
             continue
-        games.extend(games_list(f))
+        games.extend(games_list_for_player_stats(f))
     if not games:
         return None
     return sum(games) / len(games)
@@ -384,6 +390,11 @@ def fact_to_entry_row(f: dict) -> dict:
         "game4": games[3],
         "game5": games[4],
         "absent": bool(f.get("absent")),
+        "game1_absent": bool(f.get("game1_absent")),
+        "game2_absent": bool(f.get("game2_absent")),
+        "game3_absent": bool(f.get("game3_absent")),
+        "game4_absent": bool(f.get("game4_absent")),
+        "game5_absent": bool(f.get("game5_absent")),
         "substitute": bool(f.get("substitute")),
         "playoffs": bool(f.get("playoffs")),
     }
@@ -428,6 +439,8 @@ def _template_week_rows(facts: List[dict], season_num: int, week: int) -> List[d
                 row = fact_to_entry_row(f)
                 row["game1"] = row["game2"] = row["game3"] = row["game4"] = row["game5"] = None
                 row["absent"] = False
+                row["game1_absent"] = row["game2_absent"] = row["game3_absent"] = False
+                row["game4_absent"] = row["game5_absent"] = False
                 row["playoffs"] = False
                 template.append(row)
             return template
@@ -440,6 +453,8 @@ def _template_week_rows(facts: List[dict], season_num: int, week: int) -> List[d
         row = fact_to_entry_row(f)
         row["game1"] = row["game2"] = row["game3"] = row["game4"] = row["game5"] = None
         row["absent"] = False
+        row["game1_absent"] = row["game2_absent"] = row["game3_absent"] = False
+        row["game4_absent"] = row["game5_absent"] = False
         row["playoffs"] = False
         template.append(row)
     return template
@@ -626,12 +641,15 @@ def parse_week_rows_payload(body: dict) -> Tuple[Optional[List[dict]], Optional[
         substitute = _bool_field(raw.get("substitute"))
         label = f"rows[{i}] ({player})"
         games: dict[str, Optional[float]] = {}
+        game_absent: dict[str, bool] = {}
         for gn in range(1, 6):
             key = f"game{gn}"
             score, score_err = parse_game_score(raw.get(key))
             if score_err:
                 return None, f"{label} {key}: {score_err}"
             games[key] = score
+            miss_key = f"game{gn}_absent"
+            game_absent[miss_key] = False if absent else _bool_field(raw.get(miss_key))
         parsed.append(
             {
                 "team": team,
@@ -643,6 +661,11 @@ def parse_week_rows_payload(body: dict) -> Tuple[Optional[List[dict]], Optional[
                 "game4": games["game4"],
                 "game5": games["game5"],
                 "absent": absent,
+                "game1_absent": game_absent["game1_absent"],
+                "game2_absent": game_absent["game2_absent"],
+                "game3_absent": game_absent["game3_absent"],
+                "game4_absent": game_absent["game4_absent"],
+                "game5_absent": game_absent["game5_absent"],
                 "substitute": substitute,
                 "playoffs": week_playoffs,
             }
@@ -698,7 +721,18 @@ def save_week_entry(
     finally:
         session.close()
 
+    miss_flags = sum(
+        1
+        for row in rows
+        if not row.get("absent")
+        for n in range(1, 6)
+        if row.get(f"game{n}_absent")
+    )
+    summary = f"Saved {count} row(s) for {season_label} week {week}."
+    if miss_flags:
+        summary += f" {miss_flags} missed-game flag(s) recorded."
+
     ok, msg = refresh()
     if not ok:
-        return True, f"Saved {count} row(s), but cache refresh failed: {msg}"
-    return True, f"Saved {count} row(s) for {season_label} week {week}."
+        return True, f"{summary} Site cache refresh failed: {msg}"
+    return True, summary

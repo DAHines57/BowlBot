@@ -98,6 +98,47 @@ def test_parse_week_rows_payload():
     assert rows[0]["opponent"] == "Team B"
 
 
+def test_parse_week_rows_payload_per_game_absent():
+    rows, err = parse_week_rows_payload(
+        {
+            "rows": [
+                {
+                    "team": "Team A",
+                    "player_display_name": "Bob",
+                    "game1": 190,
+                    "game2": 220,
+                    "game3": 210,
+                    "game4": 200,
+                    "game1_absent": True,
+                }
+            ],
+        }
+    )
+    assert err is None
+    assert rows[0]["game1_absent"] is True
+    assert rows[0]["game2_absent"] is False
+    assert rows[0]["absent"] is False
+
+
+def test_parse_week_rows_payload_whole_week_absent_clears_per_game_flags():
+    rows, err = parse_week_rows_payload(
+        {
+            "rows": [
+                {
+                    "team": "Team A",
+                    "player_display_name": "Bob",
+                    "game1": 180,
+                    "absent": True,
+                    "game1_absent": True,
+                }
+            ],
+        }
+    )
+    assert err is None
+    assert rows[0]["absent"] is True
+    assert rows[0]["game1_absent"] is False
+
+
 def test_parse_week_rows_payload_absent_with_scores():
     rows, err = parse_week_rows_payload(
         {
@@ -519,6 +560,46 @@ def test_admin_week_post_rejects_invalid_score(app, monkeypatch):
         )
         assert rv.status_code == 400
         assert "error" in rv.get_json()
+
+
+def test_admin_week_post_form_success_redirect_shows_message(app, monkeypatch):
+    monkeypatch.setattr(
+        "app.admin_routes.save_week_entry",
+        lambda *a, **k: (True, "Saved 1 row(s) for Season 10 week 2. 1 missed-game flag(s) recorded."),
+    )
+
+    class _Svc:
+        data = _FakeData([_fact(week=2)])
+
+        def resolve_season(self, raw):
+            return str(raw)
+
+        def refresh_data(self):
+            return True, "ok"
+
+        def seasons_sorted(self):
+            return ["Season 10"]
+
+    app.config["LEAGUE_SERVICE"] = _Svc()
+
+    with app.test_client() as client:
+        client.post("/admin/unlock", data={"pin": "4242"})
+        rv = client.post(
+            "/admin/week",
+            data={
+                "payload": (
+                    '{"season": "Season 10", "week": 2, "rows": ['
+                    '{"team": "Team A", "player_display_name": "Alice", '
+                    '"game1": 190, "game2": 220, "game3": 210, "game4": 200, "game1_absent": true}'
+                    "]}"
+                ),
+                "team": "",
+            },
+            follow_redirects=True,
+        )
+        assert rv.status_code == 200
+        assert b"save-success" in rv.data
+        assert b"missed-game flag" in rv.data
 
 
 def test_admin_week_post_form_validation_redirects(app, monkeypatch):

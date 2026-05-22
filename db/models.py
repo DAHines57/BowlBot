@@ -136,6 +136,22 @@ class PlayerWeek(Base):
     game5: Mapped[Optional[float]] = mapped_column(Numeric(6, 2))
     week_average: Mapped[Optional[float]] = mapped_column(Numeric(6, 2))
 
+    game1_absent: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    game2_absent: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    game3_absent: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    game4_absent: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    game5_absent: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+
     absent: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     substitute: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     playoffs: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))

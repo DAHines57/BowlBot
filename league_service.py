@@ -407,6 +407,7 @@ class LeagueService:
             for name, stats in raw.items():
                 if not stats.get("weeks_played") and not stats.get("scores"):
                     continue
+                scores = stats.get("scores") or []
                 rows.append(
                     {
                         "player": name,
@@ -416,6 +417,7 @@ class LeagueService:
                         "highest_game": stats.get("highest_game", 0),
                         "lowest_game": stats.get("lowest_game", 0),
                         "weeks_played": stats.get("weeks_played", 0),
+                        "games_bowled": len(scores),
                     }
                 )
         rows.sort(key=lambda r: r.get("average", 0), reverse=not worst)

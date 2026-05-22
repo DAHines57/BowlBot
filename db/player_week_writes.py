@@ -15,10 +15,16 @@ from stats.facts import canonical_team_name, resolve_opponent_on_roster
 def compute_week_average(
     games: tuple[Optional[float], ...],
     provided: Optional[float] = None,
+    *,
+    game_absent: tuple[bool, ...] = (False, False, False, False, False),
 ) -> Optional[float]:
     if provided is not None:
         return float(provided)
-    played = [g for g in games if g is not None]
+    played = [
+        g
+        for g, miss in zip(games, game_absent)
+        if g is not None and not miss
+    ]
     if not played:
         return None
     return sum(played) / len(played)
@@ -52,7 +58,14 @@ def _normalize_row(row: dict[str, Any], season_num: int, roster: List[str]) -> d
         row.get("game4"),
         row.get("game5"),
     )
-    week_average = compute_week_average(games, row.get("week_average"))
+    whole_week_absent = bool(row.get("absent"))
+    game_absent = tuple(
+        False if whole_week_absent else bool(row.get(f"game{n}_absent"))
+        for n in range(1, 6)
+    )
+    week_average = compute_week_average(
+        games, row.get("week_average"), game_absent=game_absent
+    )
     opponent = row.get("opponent")
     if opponent:
         opp = str(opponent).strip()
@@ -71,7 +84,12 @@ def _normalize_row(row: dict[str, Any], season_num: int, roster: List[str]) -> d
         "game4": games[3],
         "game5": games[4],
         "week_average": week_average,
-        "absent": bool(row.get("absent")),
+        "absent": whole_week_absent,
+        "game1_absent": game_absent[0],
+        "game2_absent": game_absent[1],
+        "game3_absent": game_absent[2],
+        "game4_absent": game_absent[3],
+        "game5_absent": game_absent[4],
         "substitute": bool(row.get("substitute")),
         "playoffs": bool(row.get("playoffs")),
         "opponent": opponent,
@@ -125,6 +143,11 @@ def upsert_player_week(
             game5=normalized["game5"],
             week_average=normalized["week_average"],
             absent=normalized["absent"],
+            game1_absent=normalized["game1_absent"],
+            game2_absent=normalized["game2_absent"],
+            game3_absent=normalized["game3_absent"],
+            game4_absent=normalized["game4_absent"],
+            game5_absent=normalized["game5_absent"],
             substitute=normalized["substitute"],
             playoffs=normalized["playoffs"],
             opponent=normalized["opponent"],
@@ -145,6 +168,11 @@ def upsert_player_week(
     existing.game5 = normalized["game5"]
     existing.week_average = normalized["week_average"]
     existing.absent = normalized["absent"]
+    existing.game1_absent = normalized["game1_absent"]
+    existing.game2_absent = normalized["game2_absent"]
+    existing.game3_absent = normalized["game3_absent"]
+    existing.game4_absent = normalized["game4_absent"]
+    existing.game5_absent = normalized["game5_absent"]
     existing.substitute = normalized["substitute"]
     existing.playoffs = normalized["playoffs"]
     existing.opponent = normalized["opponent"]

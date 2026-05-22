@@ -38,6 +38,9 @@
     tr.row-incomplete td input.game[value=""] { border-color: rgba(255, 107, 129, 0.55); }
     input.game:invalid { border-color: var(--danger); }
     .notice.save-error { background: rgba(255, 107, 129, 0.12); border-color: rgba(255, 107, 129, 0.45); color: var(--text); }
+    .notice.save-success { background: rgba(80, 250, 123, 0.12); border-color: rgba(80, 250, 123, 0.45); color: var(--mint); font-weight: 600; }
+    tr.has-game-miss td:first-child { border-left: 3px solid var(--accent); }
+    tr.has-game-miss label.game-miss:has(input:checked) { color: var(--accent); font-weight: 600; }
     .team-block { margin-bottom: 1.25rem; max-width: 100%; }
     .table-scroll {
       overflow-x: auto;
@@ -62,6 +65,9 @@
     th:first-child, td:first-child { text-align: left; padding-left: 0.65rem; }
     td input[type="number"] { width: 3.2rem; text-align: center; padding: 0.35rem; border-radius: 4px; border: 1px solid var(--border); background: #12101a; color: var(--text); }
     .flags label { flex-direction: row; align-items: center; gap: 0.35rem; font-size: 0.75rem; color: var(--text); justify-content: center; }
+    .game-miss { display: flex; flex-direction: column; align-items: center; gap: 0.2rem; margin-top: 0.2rem; font-size: 0.65rem; color: var(--muted); cursor: pointer; }
+    .game-miss input { margin: 0; }
+    tr.week-absent .game-miss { opacity: 0.35; pointer-events: none; }
     .team-block.hide-game5 .game5-col { display: none; }
     .scan-table.hide-game5 .game5-col { display: none; }
     .actions { margin-top: 1.25rem; display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
@@ -168,6 +174,9 @@
       <button type="submit">Load</button>
     </form>
 
+    {% if save_success %}
+    <p class="notice save-success" id="save-success" role="status">{{ save_success }}</p>
+    {% endif %}
     {% if save_error %}
     <p class="notice save-error">{{ save_error }}</p>
     {% endif %}
@@ -258,20 +267,31 @@
           <thead>
             <tr>
               <th>Player</th>
-              <th>Absent</th>
+              <th title="Whole week out">Week<br>out</th>
               <th>G1</th><th>G2</th><th>G3</th><th>G4</th>
               <th class="game5-col">G5</th>
             </tr>
           </thead>
           <tbody>
             {% for row in team_rows %}
-            <tr data-row data-team="{{ team_name }}" data-player="{{ row.player_display_name }}" data-substitute="{{ 'true' if row.substitute else 'false' }}"{% if row.missing_games %} class="row-incomplete" title="{{ row.missing_games }} game(s) missing"{% endif %}>
+            <tr data-row data-team="{{ team_name }}" data-player="{{ row.player_display_name }}" data-substitute="{{ 'true' if row.substitute else 'false' }}" class="{% if row.missing_games %}row-incomplete {% endif %}{% if row.absent %}week-absent{% endif %}"{% if row.missing_games %} title="{{ row.missing_games }} game(s) missing"{% endif %}>
               <td>{{ row.player_display_name }}</td>
               <td class="flags"><label><input type="checkbox" class="absent" {% if row.absent %}checked{% endif %}></label></td>
-              {% for g in [row.game1, row.game2, row.game3, row.game4] %}
-              <td class="game-cell"><input type="number" min="{{ game_score_min }}" max="{{ game_score_max }}" step="1" class="game game-main" value="{{ g if g is not none else '' }}"></td>
+              {% for gn, g, miss in [
+                (1, row.game1, row.game1_absent),
+                (2, row.game2, row.game2_absent),
+                (3, row.game3, row.game3_absent),
+                (4, row.game4, row.game4_absent),
+              ] %}
+              <td class="game-cell">
+                <input type="number" min="{{ game_score_min }}" max="{{ game_score_max }}" step="1" class="game game-main" value="{{ g if g is not none else '' }}">
+                <label class="game-miss" title="Missed this game — book average (still counts for team; excluded from player season average)"><input type="checkbox" class="game-absent" {% if miss %}checked{% endif %}> miss</label>
+              </td>
               {% endfor %}
-              <td class="game-cell game5-col"><input type="number" min="{{ game_score_min }}" max="{{ game_score_max }}" step="1" class="game game5" value="{{ row.game5 if row.game5 is not none else '' }}"></td>
+              <td class="game-cell game5-col">
+                <input type="number" min="{{ game_score_min }}" max="{{ game_score_max }}" step="1" class="game game5" value="{{ row.game5 if row.game5 is not none else '' }}">
+                <label class="game-miss" title="Missed this game — book average"><input type="checkbox" class="game-absent" {% if row.game5_absent %}checked{% endif %}> miss</label>
+              </td>
             </tr>
             {% endfor %}
           </tbody>
@@ -284,7 +304,8 @@
         {% if show_debug_tools %}
         <button type="button" class="debug" id="debug-fill-scores" title="Testing only — does not save">Debug: random scores (150–220)</button>
         {% endif %}
-        <button type="submit" class="primary">Save{% if selected_team %} {{ selected_team }}{% endif %}</button>
+        <button type="submit" class="primary" id="save-btn">Save{% if selected_team %} {{ selected_team }}{% endif %}</button>
+        <span id="save-pending" class="scan-status" style="display:none" aria-live="polite">Saving…</span>
       </div>
     </form>
 
@@ -386,17 +407,70 @@
         tr.removeAttribute("title");
       }
 
+      function setWeekAbsentRow(tr, on) {
+        tr.classList.toggle("week-absent", on);
+        tr.querySelectorAll("input.game-absent").forEach(function (cb) {
+          if (on) cb.checked = false;
+          cb.disabled = on;
+        });
+      }
+
+      function fillGameAbsentScore(inp, tr) {
+        var player = tr.getAttribute("data-player");
+        var avg = player && ABSENT_FILL[player];
+        if (avg == null) return;
+        if (inp.value.trim() === "") inp.value = String(avg);
+        validateGameInput(inp, tr);
+      }
+
       function bindAbsentRow(tr) {
         var absentInp = tr.querySelector("input.absent");
         if (!absentInp) return;
         absentInp.addEventListener("change", function () {
+          setWeekAbsentRow(tr, absentInp.checked);
           if (absentInp.checked) fillAbsentScores(tr, true);
+          refreshGameMissRow(tr);
         });
+        setWeekAbsentRow(tr, absentInp.checked);
         if (absentInp.checked) fillAbsentScores(tr, false);
+      }
+
+      function refreshGameMissRow(tr) {
+        var any = false;
+        tr.querySelectorAll("input.game-absent").forEach(function (cb) {
+          if (cb.checked && !cb.disabled) any = true;
+        });
+        tr.classList.toggle("has-game-miss", any);
+      }
+
+      function bindGameAbsentBoxes(tr) {
+        tr.querySelectorAll("input.game-absent").forEach(function (cb) {
+          cb.addEventListener("change", function () {
+            if (cb.checked) {
+              var cell = cb.closest(".game-cell");
+              var inp = cell && cell.querySelector("input.game");
+              if (inp) fillGameAbsentScore(inp, tr);
+            }
+            refreshGameMissRow(tr);
+          });
+        });
+        refreshGameMissRow(tr);
+      }
+
+      var saveSuccess = document.getElementById("save-success");
+      if (saveSuccess) {
+        saveSuccess.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        if (window.history && window.history.replaceState) {
+          var u = new URL(window.location.href);
+          u.searchParams.delete("saved");
+          u.searchParams.delete("msg");
+          window.history.replaceState({}, "", u.pathname + u.search);
+        }
       }
 
       document.querySelectorAll("tr[data-row]").forEach(function (tr) {
         bindAbsentRow(tr);
+        bindGameAbsentBoxes(tr);
         tr.querySelectorAll("input.game").forEach(function (inp) {
           inp.addEventListener("input", function () { validateGameInput(inp, tr); });
           inp.addEventListener("blur", function () { validateGameInput(inp, tr); });
@@ -944,13 +1018,20 @@
             var v = inp.value.trim();
             games.push(v === "" ? null : parseInt(v, 10));
           });
+          var misses = tr.querySelectorAll("input.game-absent");
+          var weekOut = tr.querySelector("input.absent").checked;
           var team = tr.getAttribute("data-team");
           rows.push({
             team: team,
             player_display_name: tr.getAttribute("data-player"),
             opponent: teamOpponents[team] || null,
             game1: games[0], game2: games[1], game3: games[2], game4: games[3], game5: games[4],
-            absent: tr.querySelector("input.absent").checked,
+            absent: weekOut,
+            game1_absent: !weekOut && misses[0] && misses[0].checked,
+            game2_absent: !weekOut && misses[1] && misses[1].checked,
+            game3_absent: !weekOut && misses[2] && misses[2].checked,
+            game4_absent: !weekOut && misses[3] && misses[3].checked,
+            game5_absent: !weekOut && misses[4] && misses[4].checked,
             substitute: tr.getAttribute("data-substitute") === "true"
           });
         });
@@ -962,6 +1043,10 @@
           team: teamFilter || null,
           rows: rows
         });
+        var pending = document.getElementById("save-pending");
+        var saveBtn = document.getElementById("save-btn");
+        if (pending) pending.style.display = "inline";
+        if (saveBtn) saveBtn.disabled = true;
         form.submit();
       });
     })();

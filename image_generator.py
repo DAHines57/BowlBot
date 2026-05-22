@@ -140,6 +140,12 @@ body {
 
 /* Section */
 .section { margin-bottom: 20px; }
+.section-note {
+    font-size: 11px;
+    color: #888;
+    margin: -6px 0 10px;
+    line-height: 1.4;
+}
 .section-title {
     font-size: 11px;
     font-weight: bold;
@@ -729,6 +735,7 @@ body {
     color: #bbb;
 }
 .pst-score--empty { color: #444; background: transparent; }
+.pst-score--miss { color: #ff6b81; }
 .player-tag {
     font-size: 8px;
     font-weight: bold;
@@ -794,15 +801,20 @@ def _matchup_player_name_html(p: dict, *, away: bool) -> str:
     return f"{name}{' ' if tag else ''}{tag}"
 
 
-def _matchup_game_cells_html(games: list, num_games: int) -> str:
+def _matchup_game_cells_html(
+    games: list, num_games: int, game_absent: Optional[list] = None
+) -> str:
+    flags = game_absent or []
     cells = []
     for i in range(num_games):
         val = games[i] if i < len(games) else None
         if val is None:
             cells.append('<td class="pst-g"><span class="pst-score pst-score--empty">—</span></td>')
         else:
+            miss = i < len(flags) and bool(flags[i])
+            score_cls = "pst-score pst-score--miss" if miss else "pst-score"
             cells.append(
-                f'<td class="pst-g"><span class="pst-score">{int(val):,}</span></td>'
+                f'<td class="pst-g"><span class="{score_cls}">{int(val):,}</span></td>'
             )
     return "".join(cells)
 
@@ -819,7 +831,7 @@ def _matchup_player_table_html(players: list, num_games: int, *, away: bool) -> 
     for p in players:
         games = p.get("games") or []
         name_td = f'<td class="pst-name">{_matchup_player_name_html(p, away=away)}</td>'
-        game_tds = _matchup_game_cells_html(games, num_games)
+        game_tds = _matchup_game_cells_html(games, num_games, p.get("game_absent"))
         if away:
             body_rows.append(f"<tr>{game_tds}{name_td}</tr>")
         else:
@@ -2356,14 +2368,19 @@ def _header_sort_type(h: dict) -> str:
     return "string"
 
 
-def _sortable_th_content(label: str, *, right: bool = False) -> str:
+def _sortable_th_content(label: str, *, right: bool = False, hint: Optional[str] = None) -> str:
     """Header label + sort indicator. Numeric (right) columns put the indicator first so
     right-aligned headers line up with right-aligned values (indicator after label would
     shift the label left)."""
     ind = '<span class="sort-ind" aria-hidden="true"></span>'
     if right:
-        return f"{ind}{label}"
-    return f"{label}{ind}"
+        body = f"{ind}{label}"
+    else:
+        body = f"{label}{ind}"
+    if hint:
+        esc = html_module.escape(hint)
+        return f'<span title="{esc}">{body}</span>'
+    return body
 
 
 def _cell_data_sort_value(c: dict) -> str:
@@ -2399,7 +2416,7 @@ def _render_sortable_table(headers: List[dict], rows: List[List[dict]]) -> str:
         st = html_module.escape(_header_sort_type(h))
         th_parts.append(
             f'<th class="{" ".join(cls_parts)}" data-sort-col="{i}" data-sort-type="{st}">'
-            f'{_sortable_th_content(h["label"], right=bool(h.get("right")))}</th>'
+            f'{_sortable_th_content(h["label"], right=bool(h.get("right")), hint=h.get("hint"))}</th>'
         )
     th = "".join(th_parts)
 
@@ -2425,13 +2442,40 @@ def _render_sortable_table(headers: List[dict], rows: List[List[dict]]) -> str:
     )
 
 
-def _list_section(title: str, headers: List[dict], rows: List[List[dict]]) -> str:
+def _section_note(text: str) -> str:
+    return f'<p class="section-note">{html_module.escape(text)}</p>'
+
+
+def _list_section(
+    title: str,
+    headers: List[dict],
+    rows: List[List[dict]],
+    *,
+    note: Optional[str] = None,
+) -> str:
     """Titled table section with client-side sort (asc / desc / default) on headers."""
+    note_html = _section_note(note) if note else ""
     return f"""
     <div class="section">
       <div class="section-title">{title}</div>
+      {note_html}
       {_render_sortable_table(headers, rows)}
     </div>"""
+
+
+def _player_games_bowled_count(stats: dict) -> int:
+    """Games that count toward player average (excludes book-average slots)."""
+    scores = stats.get("scores")
+    if scores is not None:
+        return len(scores)
+    return int(stats.get("games_bowled", 0) or 0)
+
+
+def _format_roster_score_value(value: float) -> str:
+    iv = int(round(value))
+    if abs(value - iv) < 0.01:
+        return f"{iv:,}"
+    return f"{value:.1f}"
 
 
 _PLAYERS_STATS_TOGGLE_CSS = """
@@ -2808,6 +2852,41 @@ def _team_roster_breakdown_sort_key(item: Tuple[str, Any]) -> tuple:
     return (0, -float(info), pname.lower())
 
 
+def _roster_absence_tags(info: dict) -> str:
+    """Whole-week ABS, or ABS G1 / ABS G1,2,3 for per-game book averages."""
+    if info.get("absent"):
+        return ' <span class="player-tag">ABS</span>'
+    missed = info.get("missed_games") or []
+    if not missed:
+        return ""
+    games_label = ",".join(str(g) for g in missed)
+    return f' <span class="player-tag">ABS G{games_label}</span>'
+
+
+def _team_roster_score_html(info: dict) -> tuple[str, str]:
+    """Score span and list item class for expandable team roster rows."""
+    absent = bool(info.get("absent"))
+    missed = bool(info.get("missed_game"))
+    if absent:
+        item_cls = "team-roster-item team-roster-item--absent"
+        if info.get("value") is not None:
+            val_html = (
+                f'<span class="team-roster-avg">'
+                f'{_format_roster_score_value(float(info["value"]))}</span>'
+            )
+        else:
+            val_html = '<span class="team-roster-avg team-roster-avg--empty">—</span>'
+        return item_cls, val_html
+    if info.get("value") is None:
+        return "team-roster-item", '<span class="team-roster-avg team-roster-avg--empty">—</span>'
+    avg_cls = "team-roster-avg team-roster-avg--miss" if missed else "team-roster-avg"
+    val_html = (
+        f'<span class="{avg_cls}">'
+        f'{_format_roster_score_value(float(info["value"]))}</span>'
+    )
+    return "team-roster-item", val_html
+
+
 def _team_roster_detail_html(players: Dict[str, Any]) -> str:
     if not players:
         return '<p class="team-roster-empty">No player averages for this team.</p>'
@@ -2816,22 +2895,8 @@ def _team_roster_detail_html(players: Dict[str, Any]) -> str:
         items = []
         for pname, info in sorted(players.items(), key=_team_roster_breakdown_sort_key):
             label = html_module.escape(_short_name(pname))
-            absent = bool(info.get("absent"))
-            tag = ' <span class="player-tag">ABS</span>' if absent else ""
-            if absent:
-                item_cls = "team-roster-item team-roster-item--absent"
-                if info.get("value") is not None:
-                    val_html = (
-                        f'<span class="team-roster-avg">{float(info["value"]):.1f}</span>'
-                    )
-                else:
-                    val_html = '<span class="team-roster-avg team-roster-avg--empty">—</span>'
-            elif info.get("value") is None:
-                val_html = '<span class="team-roster-avg team-roster-avg--empty">—</span>'
-                item_cls = "team-roster-item"
-            else:
-                val_html = f'<span class="team-roster-avg">{float(info["value"]):.1f}</span>'
-                item_cls = "team-roster-item"
+            tag = _roster_absence_tags(info)
+            item_cls, val_html = _team_roster_score_html(info)
             items.append(
                 f'<li class="{item_cls}">'
                 f'<span class="team-roster-name">{label}{tag}</span>'
@@ -2852,10 +2917,15 @@ def _team_roster_detail_html(players: Dict[str, Any]) -> str:
 
 
 def _teams_standings_section(
-    title: str, headers: List[dict], team_rows: List[Tuple[List[dict], Dict[str, Any]]]
+    title: str,
+    headers: List[dict],
+    team_rows: List[Tuple[List[dict], Dict[str, Any]]],
+    *,
+    note: Optional[str] = None,
 ) -> str:
     """Standings table with expandable per-team player rosters."""
     ncols = len(headers)
+    note_html = _section_note(note) if note else ""
     th_parts: List[str] = []
     for i, h in enumerate(headers):
         cls_parts: List[str] = []
@@ -2865,7 +2935,7 @@ def _teams_standings_section(
         st = html_module.escape(_header_sort_type(h))
         th_parts.append(
             f'<th class="{" ".join(cls_parts)}" data-sort-col="{i}" data-sort-type="{st}">'
-            f'{_sortable_th_content(h["label"], right=bool(h.get("right")))}</th>'
+            f'{_sortable_th_content(h["label"], right=bool(h.get("right")), hint=h.get("hint"))}</th>'
         )
     th = "".join(th_parts)
 
@@ -2900,6 +2970,7 @@ def _teams_standings_section(
     return f"""
     <div class="section">
       <div class="section-title">{title}</div>
+      {note_html}
       <div class="table-scroll">
       <table class="sortable-table teams-standings-table" data-has-rank-col="1">
         <thead><tr>{th}</tr></thead>
@@ -2959,6 +3030,7 @@ _TEAMS_STANDINGS_CSS = """
 .team-roster-empty { margin: 0; color: #888; font-size: 12px; }
 .team-roster-item--absent { opacity: 0.55; }
 .team-roster-avg--empty { color: #555; font-weight: 500; }
+.team-roster-avg--miss { color: #ff6b81; }
 .player-tag {
     font-size: 8px;
     font-weight: bold;
@@ -6210,6 +6282,7 @@ def _top_player_season_avg_section(
             {"label": "Low", "right": True},
             {"label": "Season"},
             {"label": count_label, "right": True},
+            {"label": "Games", "right": True},
         ]
         rows = []
         for i, row in enumerate(season_rows[:n], 1):
@@ -6219,7 +6292,8 @@ def _top_player_season_avg_section(
             avg = row.get("average", 0)
             high = row.get("highest_game", 0)
             low = row.get("lowest_game", 0)
-            weeks = row.get("weeks_played", row.get("games", 0))
+            weeks = row.get("weeks_played", 0)
+            games = row.get("games_bowled", 0)
             rows.append(
                 [
                     {"val": i, "cls": "right rank"},
@@ -6235,6 +6309,7 @@ def _top_player_season_avg_section(
                     {"val": low, "cls": "right sub-col"},
                     {"val": season, "cls": "sub-col", "sort": season.lower()},
                     {"val": weeks, "cls": "right sub-col"},
+                    {"val": games, "cls": "right sub-col"},
                 ]
             )
         title = f"Top {n} best seasons"
@@ -6251,6 +6326,7 @@ def _top_player_season_avg_section(
         {"label": "High", "right": True},
         {"label": "Low", "right": True},
         {"label": count_label, "right": True},
+        {"label": "Games", "right": True},
     ]
     rows = []
     sorted_players = sorted(
@@ -6260,7 +6336,8 @@ def _top_player_season_avg_section(
         avg = stats.get("average", 0)
         high = stats.get("highest_game", 0)
         low = stats.get("lowest_game", 0)
-        weeks = stats.get("weeks_played", stats.get("games", 0))
+        weeks = stats.get("weeks_played", 0)
+        games = _player_games_bowled_count(stats)
         team = stats.get("team", "")
         rows.append(
             _player_identity_cells(i, name, team)
@@ -6269,6 +6346,7 @@ def _top_player_season_avg_section(
                 {"val": high, "cls": "right green"},
                 {"val": low, "cls": "right sub-col"},
                 {"val": weeks, "cls": "right sub-col"},
+                {"val": games, "cls": "right sub-col"},
             ]
         )
     return _list_section(f"Top {n} best seasons", headers, rows)
@@ -6278,9 +6356,9 @@ def _top_team_games_section(games: list, n: int) -> str:
     headers = [
         {"label": "#", "right": True},
         {"label": "Team"},
+        {"label": "Score", "right": True},
         {"label": "Wk", "right": True},
         {"label": "Game", "right": True},
-        {"label": "Score", "right": True},
     ]
     team_rows: List[Tuple[List[dict], Dict[str, Any]]] = []
     for i, entry in enumerate(games[:n], 1):
@@ -6298,9 +6376,9 @@ def _top_team_games_section(games: list, n: int) -> str:
                     "style": _team_color_style(team),
                     "sort": team.lower(),
                 },
+                {"val": int(score), "cls": "right gold", "sort": int(score)},
                 {"val": week, "cls": "right sub-col"},
                 {"val": game_num, "cls": "right sub-col"},
-                {"val": int(score), "cls": "right gold"},
             ],
             players if isinstance(players, dict) else {},
         ))
@@ -6523,9 +6601,9 @@ def build_top_team_games_html(games: list, season: str, n: int) -> str:
     headers = [
         {"label": "#", "right": True},
         {"label": "Team"},
+        {"label": "Score", "right": True},
         {"label": "Wk", "right": True},
         {"label": "Game", "right": True},
-        {"label": "Score", "right": True},
     ]
     team_rows: List[Tuple[List[dict], Dict[str, Any]]] = []
     for i, entry in enumerate(games[:n], 1):
@@ -6543,9 +6621,9 @@ def build_top_team_games_html(games: list, season: str, n: int) -> str:
                     "style": _team_color_style(team),
                     "sort": team.lower(),
                 },
+                {"val": int(score), "cls": "right gold", "sort": int(score)},
                 {"val": week, "cls": "right sub-col"},
                 {"val": game_num, "cls": "right sub-col"},
-                {"val": int(score), "cls": "right gold"},
             ],
             players if isinstance(players, dict) else {},
         ))
