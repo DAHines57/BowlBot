@@ -203,13 +203,7 @@ def list_season_week_completion(
 
     out: List[dict] = []
     for week in range(1, max_week + 1):
-        week_rows = filter_facts(season_rows, week=week)
-        if week_rows:
-            entry_rows = [fact_to_entry_row(f) for f in week_rows]
-            templated = False
-        else:
-            entry_rows = _template_week_rows(facts, season_num, week)
-            templated = True
+        entry_rows, templated = _full_week_entry_rows(facts, season_num, week)
         comp = assess_week_completion(
             entry_rows,
             templated=templated,
@@ -400,25 +394,10 @@ def fact_to_entry_row(f: dict) -> dict:
     }
 
 
-def _template_week_rows(facts: List[dict], season_num: int, week: int) -> List[dict]:
-    """Roster lines for score entry (membership-aware, else prior-week copy)."""
-    from db.roster_members import template_rows_for_week
-
-    with get_session() as session:
-        has_members = bool(
-            session.scalar(
-                select(func.count())
-                .select_from(TeamRosterMember)
-                .join(Season, TeamRosterMember.season_id == Season.id)
-                .where(Season.number == season_num)
-            )
-        )
-        if has_members:
-            rows = template_rows_for_week(session, season_num, week)
-            session.commit()
-            if rows:
-                return rows
-
+def _template_week_rows_from_facts(
+    facts: List[dict], season_num: int, week: int
+) -> List[dict]:
+    """Blank entry rows copied from prior week in facts (no DB roster)."""
     season_rows = filter_facts(facts, season_num=season_num)
     prior_weeks = sorted(
         {safe_int(f.get("week"), 0) for f in season_rows if safe_int(f.get("week"), 0) < week}
@@ -460,6 +439,72 @@ def _template_week_rows(facts: List[dict], season_num: int, week: int) -> List[d
     return template
 
 
+def _template_week_rows(facts: List[dict], season_num: int, week: int) -> List[dict]:
+    """Roster lines for score entry (membership-aware, else prior-week copy)."""
+    from db.roster_members import template_rows_for_week
+
+    with get_session() as session:
+        has_members = bool(
+            session.scalar(
+                select(func.count())
+                .select_from(TeamRosterMember)
+                .join(Season, TeamRosterMember.season_id == Season.id)
+                .where(Season.number == season_num)
+            )
+        )
+        if has_members:
+            rows = template_rows_for_week(session, season_num, week)
+            session.commit()
+            if rows:
+                return rows
+
+    return _template_week_rows_from_facts(facts, season_num, week)
+
+
+def _entry_row_key(row: dict) -> tuple[str, str]:
+    return (
+        str(row.get("team") or "").strip(),
+        str(row.get("player_display_name") or "").strip(),
+    )
+
+
+def _merge_saved_with_template(
+    saved_rows: List[dict],
+    template_rows: List[dict],
+) -> List[dict]:
+    """Saved rows win; template fills missing (team, player) pairs for partial weeks."""
+    merged: dict[tuple[str, str], dict] = {}
+    for row in saved_rows:
+        team, player = _entry_row_key(row)
+        if team and player:
+            merged[(team, player)] = row
+    for row in template_rows:
+        key = _entry_row_key(row)
+        if key[0] and key[1] and key not in merged:
+            merged[key] = row
+    return sorted(
+        merged.values(),
+        key=lambda r: (str(r.get("team") or ""), str(r.get("player_display_name") or "")),
+    )
+
+
+def _full_week_entry_rows(
+    facts: List[dict],
+    season_num: int,
+    week: int,
+) -> Tuple[List[dict], bool]:
+    """Rows for score entry; templated=True only when nothing saved for this week."""
+    season_rows = filter_facts(facts, season_num=season_num)
+    week_rows = filter_facts(season_rows, week=week)
+    template_rows = _template_week_rows(facts, season_num, week)
+    if not week_rows:
+        return template_rows, True
+    saved_rows = [fact_to_entry_row(f) for f in week_rows]
+    if not template_rows:
+        return saved_rows, False
+    return _merge_saved_with_template(saved_rows, template_rows), False
+
+
 def _facts_for_data(data: LeagueDataSource) -> List[dict]:
     if hasattr(data, "_facts_list"):
         return data._facts_list()
@@ -480,15 +525,7 @@ def get_week_entry(
         return None, "Week must be at least 1."
 
     facts = _facts_for_data(data)
-    season_rows = filter_facts(facts, season_num=season_num)
-
-    week_rows = filter_facts(season_rows, week=week)
-    if week_rows:
-        full_entry_rows = [fact_to_entry_row(f) for f in week_rows]
-        templated = False
-    else:
-        full_entry_rows = _template_week_rows(facts, season_num, week)
-        templated = True
+    full_entry_rows, templated = _full_week_entry_rows(facts, season_num, week)
 
     all_teams = sorted({r["team"] for r in full_entry_rows if r.get("team")})
     db_teams = list_season_teams_from_db(season_num)

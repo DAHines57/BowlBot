@@ -2,6 +2,7 @@
 import pytest
 
 from app import create_app
+import league_admin
 from league_admin import (
     assess_week_completion,
     build_absent_fill_averages,
@@ -14,8 +15,17 @@ from league_admin import (
     parse_week_rows_payload,
     team_show_game5_default,
     _template_week_rows,
+    _template_week_rows_from_facts,
     fact_to_entry_row,
 )
+
+
+@pytest.fixture(autouse=True)
+def _facts_only_week_template(monkeypatch):
+    """Keep unit tests off the live DB roster (season 10 has many teams locally)."""
+    monkeypatch.setattr(
+        league_admin, "_template_week_rows", _template_week_rows_from_facts
+    )
 
 
 def _fact(**kwargs):
@@ -202,6 +212,56 @@ def test_get_week_entry_team_filter():
     assert payload["rows"][0]["player_display_name"] == "Alice"
 
 
+def test_get_week_entry_partial_week_merges_template():
+    """Saving one team must not hide other teams for the same week."""
+    facts = [
+        _fact(week=1, game1=200, game2=200, game3=200, game4=200),
+        _fact(
+            week=1,
+            team="Team B",
+            player_display_name="Bob",
+            opponent="Team A",
+            game1=190,
+            game2=190,
+            game3=190,
+            game4=190,
+        ),
+        _fact(week=2, game1=210, game2=210, game3=210, game4=210),
+    ]
+    data = _FakeData(facts)
+    payload, err = get_week_entry(data, "Season 10", 2)
+    assert err is None
+    assert payload["templated"] is False
+    teams = {r["team"] for r in payload["rows"]}
+    assert teams == {"Team A", "Team B"}
+    bob = next(r for r in payload["rows"] if r["player_display_name"] == "Bob")
+    assert bob["game1"] is None
+    assert payload["completion"]["status"] == "incomplete"
+
+
+def test_get_week_entry_partial_week_team_filter_shows_unsaved_team():
+    facts = [
+        _fact(week=1, game1=200, game2=200, game3=200, game4=200),
+        _fact(
+            week=1,
+            team="Team B",
+            player_display_name="Bob",
+            opponent="Team A",
+            game1=190,
+            game2=190,
+            game3=190,
+            game4=190,
+        ),
+        _fact(week=2, game1=210, game2=210, game3=210, game4=210),
+    ]
+    data = _FakeData(facts)
+    payload, err = get_week_entry(data, "Season 10", 2, team="Team B")
+    assert err is None
+    assert len(payload["rows"]) == 1
+    assert payload["rows"][0]["player_display_name"] == "Bob"
+    assert payload["rows"][0]["game1"] is None
+
+
 def test_assess_week_completion_not_started():
     rows = [fact_to_entry_row(_fact(game1=None, game2=None, game3=None, game4=None, game5=None))]
     comp = assess_week_completion(rows, templated=True, season_teams=["Team A", "Team B"])
@@ -378,7 +438,7 @@ def test_get_week_entry_existing_week():
 
 def test_template_from_prior_season():
     facts = [_fact(season_number=9, week=1), _fact(season_number=9, player_display_name="Carl", week=1)]
-    rows = _template_week_rows(facts, 10, 1)
+    rows = _template_week_rows_from_facts(facts, 10, 1)
     assert len(rows) == 2
 
 

@@ -402,10 +402,7 @@ def admin_week_post():
         return jsonify({"ok": ok, "message": msg}), 200 if ok else 500
 
     if ok:
-        team = (body.get("team") or request.form.get("team") or "").strip()
         q = f"?season={quote(season)}&week={week}&saved=1&msg={quote(msg)}"
-        if team:
-            q += f"&team={quote(team)}"
         return Response("", status=303, headers={"Location": f"/admin/enter{q}"})
     return render_template("error.html", message=msg), 500
 
