@@ -202,6 +202,7 @@ def admin_enter_form():
     session = get_session()
     try:
         db_seasons = list_db_seasons(session)
+        all_players = list_all_player_names(session)
     finally:
         session.close()
 
@@ -247,6 +248,7 @@ def admin_enter_form():
         week_statuses=week_statuses,
         selected_team=team or "",
         team_roster_names=team_roster_names,
+        all_players=all_players,
         show_debug_tools=show_debug_tools,
         game_score_min=GAME_SCORE_MIN,
         game_score_max=GAME_SCORE_MAX,

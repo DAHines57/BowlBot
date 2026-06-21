@@ -230,6 +230,7 @@ class LeagueService:
         return inject_web_chrome(build_bracket_index_html(seasons, embed=embed), embed=embed), ""
 
     def players_page(self, season: str, *, embed: bool = False) -> Tuple[Optional[str], str]:
+        subs_data: Optional[dict] = None
         if season == "all":
             stats = self.data.get_all_time_stats()
             pdata = {
@@ -246,9 +247,35 @@ class LeagueService:
             }
             subtitle = "All Time"
         else:
-            pdata = self.data.get_player_scores(None, season)
+            pdata = self.data.get_player_scores(
+                None, season, include_substitutes=False
+            )
             if isinstance(pdata, dict) and "error" in pdata:
                 return None, pdata["error"]
+            sub_raw = self.data.get_player_scores(
+                None, season, include_substitutes=True
+            )
+            if isinstance(sub_raw, dict) and "error" not in sub_raw:
+                subs_data = {}
+                for name, stats in sub_raw.items():
+                    appearances = stats.get("sub_appearances") or []
+                    if not appearances:
+                        continue
+                    sub_scores: List[int] = []
+                    for appearance in appearances:
+                        for g in appearance.get("game_scores") or []:
+                            sub_scores.append(int(g))
+                    if not sub_scores:
+                        continue
+                    subs_data[name] = {
+                        "team": appearances[-1].get("team") or stats.get("team", ""),
+                        "average": round(sum(sub_scores) / len(sub_scores), 2),
+                        "highest_game": max(sub_scores),
+                        "lowest_game": min(sub_scores),
+                        "weeks_subbed": len(appearances),
+                    }
+                if not subs_data:
+                    subs_data = None
             subtitle = season
         if not pdata:
             return None, "No players found."
@@ -257,13 +284,18 @@ class LeagueService:
         )
         for name, stats in pdata.items():
             stats["par"] = par_map.get(name, 0)
+            if subs_data and name in subs_data:
+                stats["weeks_subbed"] = subs_data[name]["weeks_subbed"]
         if season == "all":
             summary = self.data.get_league_game_stats(all_time=True)
         else:
             summary = self.data.get_league_game_stats(season)
         return (
             inject_web_chrome(
-                build_players_html(pdata, subtitle, summary=summary), embed=embed
+                build_players_html(
+                    pdata, subtitle, summary=summary, subs_data=subs_data
+                ),
+                embed=embed,
             ),
             "",
         )
@@ -378,7 +410,7 @@ class LeagueService:
             }
             label = f"{'Bottom' if worst else 'Top'} {n} — All Time"
         else:
-            raw = self.data.get_player_scores(None, season)
+            raw = self.data.get_player_scores(None, season, include_substitutes=False)
             if isinstance(raw, dict) and "error" in raw:
                 return None, raw["error"]
             sorted_players = sorted(raw.items(), key=lambda x: x[1].get("average", 0), reverse=True)
@@ -401,7 +433,7 @@ class LeagueService:
     def _player_season_avg_rows_all_seasons(self, worst: bool) -> List[dict]:
         rows: List[dict] = []
         for season in self.data.get_seasons():
-            raw = self.data.get_player_scores(None, season)
+            raw = self.data.get_player_scores(None, season, include_substitutes=False)
             if isinstance(raw, dict) and "error" in raw:
                 continue
             for name, stats in raw.items():
@@ -470,7 +502,7 @@ class LeagueService:
         if season == "all":
             player_season_rows = self._player_season_avg_rows_all_seasons(worst)[:n]
         else:
-            raw = self.data.get_player_scores(None, season)
+            raw = self.data.get_player_scores(None, season, include_substitutes=False)
             if isinstance(raw, dict) and "error" in raw:
                 return None, raw["error"]
             sorted_players = sorted(

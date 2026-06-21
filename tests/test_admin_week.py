@@ -4,6 +4,7 @@ import pytest
 from app import create_app
 import league_admin
 from league_admin import (
+    absence_penalty_multiplier,
     assess_week_completion,
     build_absent_fill_averages,
     default_entry_week,
@@ -474,6 +475,52 @@ def test_build_absent_fill_uses_prior_season_when_few_weeks():
     assert avgs["Alice"] == 160
 
 
+def test_build_absent_fill_second_absence_five_percent_penalty():
+    facts = [
+        _fact(week=1, game1=200, game2=200, game3=200, game4=200),
+        _fact(week=2, game1=200, game2=200, game3=200, game4=200),
+        _fact(week=3, game1=200, game2=200, game3=200, game4=200),
+        _fact(week=4, absent=True, game1=200, game2=200, game3=200, game4=200),
+    ]
+    avgs = build_absent_fill_averages(facts, 10, 5, ["Alice"])
+    assert avgs["Alice"] == 190
+
+
+def test_build_absent_fill_third_absence_ten_percent_penalty():
+    facts = [
+        _fact(week=1, game1=200, game2=200, game3=200, game4=200),
+        _fact(week=2, game1=200, game2=200, game3=200, game4=200),
+        _fact(week=3, game1=200, game2=200, game3=200, game4=200),
+        _fact(week=4, absent=True, game1=200, game2=200, game3=200, game4=200),
+        _fact(week=5, absent=True, game1=200, game2=200, game3=200, game4=200),
+    ]
+    avgs = build_absent_fill_averages(facts, 10, 6, ["Alice"])
+    assert avgs["Alice"] == 180
+
+
+def test_absence_penalty_multiplier():
+    assert absence_penalty_multiplier(1) == 1.0
+    assert absence_penalty_multiplier(2) == 0.95
+    assert absence_penalty_multiplier(3) == 0.90
+    assert absence_penalty_multiplier(10) == 0.90
+
+
+def test_build_absent_fill_details_includes_penalty_breakdown():
+    facts = [
+        _fact(week=1, game1=200, game2=200, game3=200, game4=200),
+        _fact(week=2, game1=200, game2=200, game3=200, game4=200),
+        _fact(week=3, game1=200, game2=200, game3=200, game4=200),
+        _fact(week=4, absent=True, game1=200, game2=200, game3=200, game4=200),
+    ]
+    details = league_admin.build_absent_fill_details(facts, 10, 5, ["Alice"])
+    assert details["Alice"] == {
+        "base": 200,
+        "penalty_percent": 95,
+        "fill": 190,
+        "absence_number": 2,
+    }
+
+
 def test_get_week_entry_includes_absent_fill_averages():
     facts = [_fact(game3=200, game4=200)]
     data = _FakeData(facts)
@@ -481,6 +528,8 @@ def test_get_week_entry_includes_absent_fill_averages():
     assert err is None
     assert "absent_fill_averages" in payload
     assert isinstance(payload["absent_fill_averages"], dict)
+    assert "absent_fill_details" in payload
+    assert isinstance(payload["absent_fill_details"], dict)
 
 
 def test_team_show_game5_default():

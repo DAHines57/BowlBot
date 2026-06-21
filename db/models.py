@@ -154,6 +154,10 @@ class PlayerWeek(Base):
 
     absent: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     substitute: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    substitute_scores_count: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    substituted_for: Mapped[Optional[str]] = mapped_column(String(128))
     playoffs: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     opponent: Mapped[Optional[str]] = mapped_column(Text)
 

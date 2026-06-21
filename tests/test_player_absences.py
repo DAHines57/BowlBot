@@ -44,6 +44,40 @@ def test_get_all_time_stats_sums_absences_across_weeks():
     assert alice["absences"] == 2
 
 
+def test_build_players_html_shows_substitutes_tab():
+    html = build_players_html(
+        {
+            "Alice": {
+                "team": "Team A",
+                "average": 200.0,
+                "highest_game": 220,
+                "lowest_game": 180,
+                "weeks_played": 10,
+                "weeks_absent": 0,
+                "std_dev": 10.0,
+                "par": 5,
+                "weeks_subbed": 1,
+            },
+        },
+        "Season 10",
+        subs_data={
+            "Jane": {
+                "team": "Team B",
+                "average": 215.0,
+                "highest_game": 230,
+                "lowest_game": 200,
+                "weeks_subbed": 2,
+            },
+        },
+    )
+    assert "players-subs-toggle" in html
+    assert 'data-panel="subs"' in html
+    assert "sub-badge" in html
+    assert "Jane" in html
+    subs_panel = html.split('data-panel="subs"')[1].split("</table>")[0]
+    assert ">Team<" not in subs_panel
+
+
 def test_build_players_html_main_view_hides_other_stats():
     html = build_players_html(
         {

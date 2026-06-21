@@ -148,6 +148,8 @@ def template_rows_for_week(
                     "game4_absent": False,
                     "game5_absent": False,
                     "substitute": False,
+                    "substitute_scores_count": False,
+                    "substituted_for": None,
                     "playoffs": False,
                     "opponent": None,
                 }

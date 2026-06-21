@@ -5,13 +5,19 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 from stats.facts import (
     add_slot_pins_to_index,
+    counting_sub_replacements_by_team_week,
+    counting_sub_replacements_for_team_week,
+    fact_counts_for_player_profile,
     fact_counts_for_stats,
+    fact_counts_for_team_pins,
     filter_facts,
     games_list_for_player_stats,
     games_list_for_team,
     games_slots,
     name_matches_team,
+    player_profile_games,
     resolve_opponent_on_roster,
+    subs_by_replaced_by_team_week,
     normalize,
 )
 from placement_bracket import winner_loser_from_matchup
@@ -117,11 +123,12 @@ def _facts_by_team_week(
     rows: List[dict],
     *,
     week_label_fn=None,
+    include_substitutes: bool = False,
 ) -> Dict[tuple, List[dict]]:
-    """(team, week_or_label) -> fact rows for that team-week (non-substitutes)."""
+    """(team, week_or_label) -> fact rows for that team-week."""
     buckets: Dict[tuple, List[dict]] = {}
     for f in rows:
-        if f.get("substitute"):
+        if not include_substitutes and f.get("substitute"):
             continue
         team = str(f.get("team") or "").strip()
         if not team:
@@ -132,6 +139,137 @@ def _facts_by_team_week(
         wl = week_label_fn(week) if week_label_fn else week
         buckets.setdefault((team, wl), []).append(f)
     return buckets
+
+
+def _team_week_facts_buckets(
+    rows: List[dict],
+    *,
+    week_label_fn=None,
+) -> Dict[tuple, List[dict]]:
+    """All rows grouped by team-week, including substitute rows."""
+    return _facts_by_team_week(rows, week_label_fn=week_label_fn, include_substitutes=True)
+
+
+def _roster_display_from_week_facts(
+    facts: List[dict],
+    *,
+    game_num: Optional[int] = None,
+) -> Dict[str, dict]:
+    """Player breakdown for team week/game display (includes subs when they count)."""
+    if not facts:
+        return {}
+    team = str(facts[0].get("team") or "").strip()
+    week = safe_int(facts[0].get("week"), 0)
+    repl = counting_sub_replacements_by_team_week(facts).get((team, week), set())
+    subs_map = subs_by_replaced_by_team_week(facts).get((team, week), {})
+    out: Dict[str, dict] = {}
+
+    for f in facts:
+        player = str(f.get("player_display_name") or "").strip()
+        if not player:
+            continue
+        is_sub = bool(f.get("substitute"))
+        is_absent = bool(f.get("absent"))
+        has_sub = player in subs_map
+
+        if is_sub:
+            slots = games_slots(f)
+            if game_num is not None:
+                gi = game_num - 1
+                slot_val = slots[gi] if gi < len(slots) else None
+                score = (
+                    float(slot_val)
+                    if slot_val is not None and float(slot_val) > 0
+                    else None
+                )
+                out[player] = {
+                    "absent": False,
+                    "value": score,
+                    "missed_game": False,
+                    "is_substitute": True,
+                    "sub_for": str(f.get("substituted_for") or "").strip() or None,
+                    "scores_count": bool(f.get("substitute_scores_count")),
+                }
+            else:
+                games = [float(s) for s in slots if s is not None and float(s) > 0]
+                avg = round(sum(games) / len(games), 2) if games else None
+                out[player] = {
+                    "absent": False,
+                    "value": avg,
+                    "is_substitute": True,
+                    "sub_for": str(f.get("substituted_for") or "").strip() or None,
+                    "scores_count": bool(f.get("substitute_scores_count")),
+                }
+            continue
+
+        if has_sub:
+            sub_fact = subs_map[player]
+            counting_sub = bool(sub_fact.get("substitute_scores_count"))
+            if counting_sub:
+                out[player] = {
+                    "absent": True,
+                    "value": None,
+                    "subbed_out": True,
+                    "scores_count": False,
+                }
+            else:
+                slots = games_slots(f)
+                games = [float(s) for s in slots if s is not None and float(s) > 0]
+                avg = round(sum(games) / len(games), 2) if games else None
+                if game_num is not None:
+                    gi = game_num - 1
+                    slot_val = slots[gi] if gi < len(slots) else None
+                    score = (
+                        float(slot_val)
+                        if slot_val is not None and float(slot_val) > 0
+                        else None
+                    )
+                    out[player] = {
+                        "absent": True,
+                        "value": score,
+                        "missed_game": False,
+                        "subbed_out": False,
+                        "scores_count": True,
+                    }
+                else:
+                    out[player] = {
+                        "absent": True,
+                        "value": avg,
+                        "subbed_out": False,
+                        "scores_count": True,
+                    }
+            continue
+
+        flags = _game_absent_flags(f)
+        slots = games_slots(f)
+        if game_num is not None:
+            gi = game_num - 1
+            slot_val = slots[gi] if gi < len(slots) else None
+            miss = gi < len(flags) and flags[gi] and not is_absent
+            score = (
+                float(slot_val)
+                if slot_val is not None and float(slot_val) > 0
+                else None
+            )
+            out[player] = _player_breakdown_entry(
+                absent=is_absent,
+                value=score,
+                missed_game=miss,
+            )
+        else:
+            if is_absent:
+                games = [float(g) for g in games_list_for_team(f) if g > 0]
+            else:
+                games = [float(s) for s in slots if s is not None and float(s) > 0]
+            avg = round(sum(games) / len(games), 2) if games else None
+            missed_games = [] if is_absent else _missed_game_numbers(flags)
+            out[player] = _player_breakdown_entry(
+                absent=is_absent,
+                value=avg,
+                missed_games=missed_games or None,
+            )
+
+    return out
 
 
 def _game_absent_flags(fact: dict) -> List[bool]:
@@ -195,33 +333,13 @@ def _team_game_players_index(
 ) -> Dict[tuple, Dict[str, dict]]:
     """(team, week_or_label, game_num) -> {player: {absent, value}}."""
     out: Dict[tuple, Dict[str, dict]] = {}
-    for (team, wl), facts in _facts_by_team_week(
+    for (team, wl), facts in _team_week_facts_buckets(
         rows, week_label_fn=week_label_fn
     ).items():
-        roster = _roster_from_week_facts(facts)
         for game_num in range(1, 6):
-            key = (team, wl, game_num)
-            players: Dict[str, dict] = {}
-            for player, info in roster.items():
-                slot = (
-                    info["slots"][game_num - 1]
-                    if game_num - 1 < len(info["slots"])
-                    else None
-                )
-                score = float(slot) if slot is not None and slot > 0 else None
-                flags = info.get("game_absent") or [False] * 5
-                missed = (
-                    not info.get("absent")
-                    and game_num - 1 < len(flags)
-                    and flags[game_num - 1]
-                )
-                players[player] = _player_breakdown_entry(
-                    absent=bool(info["absent"]),
-                    value=score,
-                    missed_game=missed,
-                )
+            players = _roster_display_from_week_facts(facts, game_num=game_num)
             if players:
-                out[key] = players
+                out[(team, wl, game_num)] = players
     return out
 
 
@@ -232,22 +350,10 @@ def _team_week_players_index(
 ) -> Dict[tuple, Dict[str, dict]]:
     """(team, week_or_label) -> {player: {absent, value}} (value = week avg)."""
     out: Dict[tuple, Dict[str, dict]] = {}
-    for (team, wl), facts in _facts_by_team_week(
+    for (team, wl), facts in _team_week_facts_buckets(
         rows, week_label_fn=week_label_fn
     ).items():
-        players: Dict[str, dict] = {}
-        for player, info in _roster_from_week_facts(facts).items():
-            games = [s for s in info["slots"] if s is not None and s > 0]
-            avg = round(sum(games) / len(games), 2) if games else None
-            flags = info.get("game_absent") or [False] * 5
-            missed_games = (
-                [] if info.get("absent") else _missed_game_numbers(flags)
-            )
-            players[player] = _player_breakdown_entry(
-                absent=bool(info["absent"]),
-                value=avg,
-                missed_games=missed_games or None,
-            )
+        players = _roster_display_from_week_facts(facts)
         if players:
             out[(team, wl)] = players
     return out
@@ -298,15 +404,17 @@ def _team_game_totals_by_week(
     rows: List[dict],
 ) -> Dict[str, Dict[int, Dict[int, float]]]:
     """team -> week -> game_num (1-5) -> pins."""
+    repl_map = counting_sub_replacements_by_team_week(rows)
     out: Dict[str, Dict[int, Dict[int, float]]] = {}
     for f in rows:
-        if f.get("substitute"):
-            continue
         team = str(f.get("team") or "").strip()
         if not team:
             continue
         week = safe_int(f.get("week"), 0)
         if week <= 0:
+            continue
+        repl = repl_map.get((team, week), set())
+        if not fact_counts_for_team_pins(f, replaced_by_counting_sub=repl):
             continue
         if team not in out:
             out[team] = {}
@@ -433,6 +541,7 @@ def get_team_scores(
         rows = season_rows
 
     team_data: Dict[str, dict] = {}
+    repl_map = counting_sub_replacements_by_team_week(rows)
     for f in rows:
         team = str(f.get("team") or "").strip()
         if not team:
@@ -443,6 +552,9 @@ def get_team_scores(
         player_games = games_list_for_player_stats(f)
         week_total = sum(team_games)
         player = str(f.get("player_display_name") or "").strip()
+        wk = safe_int(f.get("week"), 0)
+        repl = repl_map.get((team, wk), set())
+        counts_for_team = fact_counts_for_team_pins(f, replaced_by_counting_sub=repl)
 
         if team not in team_data:
             team_data[team] = {"players": {}, "weekly_totals": {}}
@@ -452,17 +564,15 @@ def get_team_scores(
                 team_data[team]["players"][player] = {"games": []}
             team_data[team]["players"][player]["games"].extend(player_games)
 
-        if not is_sub:
-            wk = safe_int(f.get("week"), 0)
-            if wk > 0:
-                wt = team_data[team]["weekly_totals"]
-                if wk not in wt:
-                    opp = f.get("opponent")
-                    wt[wk] = {
-                        "pins": 0,
-                        "opponent": str(opp).strip() if opp else None,
-                    }
-                wt[wk]["pins"] += week_total
+        if counts_for_team and wk > 0:
+            wt = team_data[team]["weekly_totals"]
+            if wk not in wt:
+                opp = f.get("opponent")
+                wt[wk] = {
+                    "pins": 0,
+                    "opponent": str(opp).strip() if opp else None,
+                }
+            wt[wk]["pins"] += week_total
 
     game_index = _team_game_totals_by_week(rows)
     team_names = list(team_data.keys())
@@ -557,10 +667,15 @@ def get_team_scores(
                     players_games: Dict[str, List[float]] = {}
                     week_total = 0
                     twgt = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+                    repl = counting_sub_replacements_for_team_week(
+                        rows, team=team, week=week_param
+                    )
                     for f in filter_facts(
                         rows, team=team, week=week_param
                     ):
-                        if f.get("substitute"):
+                        if not fact_counts_for_team_pins(
+                            f, replaced_by_counting_sub=repl
+                        ):
                             continue
                         player = str(f.get("player_display_name") or "Unknown")
                         slots = games_slots(f)
@@ -674,26 +789,16 @@ def get_team_weekly_summary(
     if not team_found:
         return {"error": f"Team '{team_name}' not found in {season}"}
 
-    all_teams: Dict[str, Dict[int, Dict[int, float]]] = {}
-    for f in season_rows:
-        if f.get("substitute"):
-            continue
-        team = str(f.get("team") or "").strip()
-        week = safe_int(f.get("week"), 0)
-        if week <= 0:
-            continue
-        if team not in all_teams:
-            all_teams[team] = {}
-        if week not in all_teams[team]:
-            all_teams[team][week] = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
-        add_slot_pins_to_index(all_teams[team][week], games_slots(f))
+    all_teams = _team_game_totals_by_week(season_rows)
+    repl_map = counting_sub_replacements_by_team_week(season_rows)
 
     weekly_data: Dict[int, dict] = {}
     for f in filter_facts(season_rows, team=team_found):
-        if f.get("substitute"):
-            continue
         week = safe_int(f.get("week"), 0)
         if week <= 0:
+            continue
+        repl = repl_map.get((team_found, week), set())
+        if not fact_counts_for_team_pins(f, replaced_by_counting_sub=repl):
             continue
         if week not in weekly_data:
             opp = f.get("opponent")
@@ -732,10 +837,10 @@ def get_team_weekly_summary(
         team_total = sum(team_games.values())
         opp_total = sum(week_info["opp_game_totals"].values())
         total_games = 0
+        repl = repl_map.get((team_found, week), set())
         for f in filter_facts(season_rows, team=team_found, week=week):
-            if f.get("substitute"):
-                continue
-            total_games += len(games_list_for_team(f))
+            if fact_counts_for_team_pins(f, replaced_by_counting_sub=repl):
+                total_games += len(games_list_for_team(f))
         week_info["avg"] = team_total / total_games if total_games > 0 else 0
         week_info["pins_for"] = int(team_total)
         week_info["pins_against"] = int(opp_total)
@@ -768,42 +873,49 @@ def get_league_stats(
     individual_games: List[tuple] = []
 
     for f in rows:
-        if not fact_counts_for_stats(f):
-            continue
+        is_sub = bool(f.get("substitute"))
+        if is_sub:
+            if not fact_counts_for_player_profile(f):
+                continue
+            player_games = player_profile_games(f)
+        else:
+            if not fact_counts_for_stats(f):
+                continue
+            player_games = games_list_for_player_stats(f)
         team = str(f.get("team") or "").strip()
         if not team:
             continue
         is_absent = bool(f.get("absent"))
         team_games = games_list_for_team(f)
-        player_games = games_list_for_player_stats(f)
-        week_total = sum(team_games)
         player = str(f.get("player_display_name") or "").strip()
         week = safe_int(f.get("week"), 0)
 
         for g in player_games:
-            individual_games.append((player, team, week, g))
+            individual_games.append((player, team, week, g, is_sub))
 
-        if not is_absent and player:
+        if not is_absent and player and player_games:
             if player not in player_averages:
                 player_averages[player] = {
                     "team": team,
                     "games": [],
                     "total_pins": 0,
                 }
-            player_averages[player]["games"].extend(player_games)
-            player_averages[player]["total_pins"] += sum(player_games)
-            if player_games:
-                player_weekly_totals.append(
-                    (
-                        player,
-                        team,
-                        week,
-                        sum(player_games),
-                        len(player_games),
-                    )
+            if not is_sub:
+                player_averages[player]["games"].extend(player_games)
+                player_averages[player]["total_pins"] += sum(player_games)
+            player_weekly_totals.append(
+                (
+                    player,
+                    team,
+                    week,
+                    sum(player_games),
+                    len(player_games),
+                    is_sub,
                 )
+            )
 
-        if week > 0 and week_total > 0:
+        if not is_sub and week > 0 and sum(team_games) > 0:
+            week_total = sum(team_games)
             team_weekly_totals.append((team, week, week_total, len(team_games)))
 
     player_avg_list = []
@@ -894,8 +1006,15 @@ def get_all_time_stats(facts: List[dict]) -> Dict:
             _team_week_players_index(season_rows, week_label_fn=label_fn)
         )
         for f in season_rows:
-            if f.get("substitute"):
-                continue
+            is_sub = bool(f.get("substitute"))
+            if is_sub:
+                if not fact_counts_for_player_profile(f):
+                    continue
+                player_games = player_profile_games(f)
+            else:
+                if not fact_counts_for_stats(f):
+                    continue
+                player_games = games_list_for_player_stats(f)
             team = str(f.get("team") or "").strip()
             if not team:
                 continue
@@ -903,20 +1022,19 @@ def get_all_time_stats(facts: List[dict]) -> Dict:
             label = f"S{season_num} W{week}"
             is_absent = bool(f.get("absent"))
             team_games = games_list_for_team(f)
-            player_games = games_list_for_player_stats(f)
-            week_total = sum(team_games)
             player = str(f.get("player_display_name") or "").strip()
 
             for g in player_games:
-                all_individual_games.append((player, team, label, g))
+                all_individual_games.append((player, team, label, g, is_sub))
 
             if player:
                 if player not in player_totals:
                     player_totals[player] = {"team": team, "games": [], "absences": 0}
                 if is_absent:
                     player_totals[player]["absences"] += 1
-                elif player_games:
+                elif player_games and not is_sub:
                     player_totals[player]["games"].extend(player_games)
+                if not is_absent and player_games:
                     all_player_weeks.append(
                         (
                             player,
@@ -924,10 +1042,12 @@ def get_all_time_stats(facts: List[dict]) -> Dict:
                             label,
                             sum(player_games),
                             len(player_games),
+                            is_sub,
                         )
                     )
 
-            if week > 0 and week_total > 0:
+            if not is_sub and week > 0 and sum(team_games) > 0:
+                week_total = sum(team_games)
                 key = (team, label)
                 if key not in team_week_pins:
                     team_week_pins[key] = [0, 0]
@@ -997,6 +1117,7 @@ def get_player_scores(
     week: Optional[int] = None,
     *,
     season_num: Optional[int] = None,
+    include_substitutes: bool = True,
 ) -> Dict:
     if season_num is None:
         season_num = parse_season_number(season)
@@ -1013,14 +1134,23 @@ def get_player_scores(
 
     player_data: Dict[str, dict] = {}
     for f in rows:
-        if not fact_counts_for_stats(f):
-            continue
+        is_sub = bool(f.get("substitute"))
+        if is_sub:
+            if not include_substitutes:
+                continue
+            if not fact_counts_for_player_profile(f):
+                continue
+            player_games = player_profile_games(f)
+        else:
+            if not fact_counts_for_stats(f):
+                continue
+            player_games = games_list_for_player_stats(f)
         player = str(f.get("player_display_name") or "").strip()
         if not player:
             continue
         team = str(f.get("team") or "Unknown").strip()
         is_absent = bool(f.get("absent"))
-        player_games = games_list_for_player_stats(f)
+        is_sub = bool(f.get("substitute"))
         display_games = games_list_for_team(f) if is_absent else player_games
         wk = safe_int(f.get("week"), 0)
 
@@ -1032,6 +1162,7 @@ def get_player_scores(
                 "weeks": [],
                 "highest_game": 0,
                 "lowest_game": 300,
+                "sub_appearances": [],
             }
 
         week_avg = f.get("week_average")
@@ -1054,14 +1185,28 @@ def get_player_scores(
         else:
             player_data[player]["absent_count"] += 1
 
+        sub_for = str(f.get("substituted_for") or "").strip() or None
         player_data[player]["weeks"].append(
             {
                 "week": wk,
                 "games": display_games if is_absent else player_games,
                 "average": week_avg,
                 "absent": is_absent,
+                "is_substitute": is_sub,
+                "sub_for": sub_for,
             }
         )
+        if is_sub and include_substitutes:
+            player_data[player]["sub_appearances"].append(
+                {
+                    "week": wk,
+                    "team": team,
+                    "sub_for": sub_for,
+                    "average": round(week_avg, 2) if week_avg else 0,
+                    "games": len(player_games),
+                    "game_scores": list(player_games),
+                }
+            )
 
     results: Dict = {}
     for player, data in player_data.items():
@@ -1092,6 +1237,8 @@ def get_player_scores(
             "weeks_absent": data["absent_count"],
             "highest_game": int(highest),
             "lowest_game": int(lowest),
+            "weeks_subbed": len(data.get("sub_appearances") or []),
+            "sub_appearances": list(data.get("sub_appearances") or []),
         }
 
         if week is not None and player_name:
@@ -1148,15 +1295,18 @@ def get_player_game_history(
 
     games: List[dict] = []
     for f in rows:
-        if f.get("substitute") or f.get("absent"):
+        if f.get("absent"):
             continue
         player = str(f.get("player_display_name") or "").strip()
         if not player or not name_matches_team(player_name, player):
             continue
+        if not fact_counts_for_player_profile(f):
+            continue
+        is_sub = bool(f.get("substitute"))
         sn = safe_int(f.get("season_number"), 0)
         wk = safe_int(f.get("week"), 0)
         slabel = str(f.get("season_label") or f"S{sn}")
-        for gi, score in enumerate(games_list_for_player_stats(f), start=1):
+        for gi, score in enumerate(player_profile_games(f), start=1):
             games.append(
                 {
                     "score": int(round(score)),
@@ -1164,6 +1314,7 @@ def get_player_game_history(
                     "game": gi,
                     "season_number": sn,
                     "season_label": slabel,
+                    "is_substitute": is_sub,
                 }
             )
 
@@ -1516,6 +1667,7 @@ def get_week_summary(
     if not rows:
         return {"error": f"Season '{season}' not found"}
 
+    subs_map = subs_by_replaced_by_team_week(rows)
     players = []
 
     for f in rows:
@@ -1523,7 +1675,65 @@ def get_week_summary(
         if not player:
             continue
         team = str(f.get("team") or "Unknown").strip()
+        is_sub = bool(f.get("substitute"))
         is_absent = bool(f.get("absent"))
+        team_subs = subs_map.get((team, week), {})
+
+        if is_sub:
+            games = [int(g) for g in games_list_for_team(f)]
+            sub_for = str(f.get("substituted_for") or "").strip() or None
+            players.append(
+                {
+                    "name": player,
+                    "team": team,
+                    "games": games,
+                    "avg": round(sum(games) / len(games), 1) if games else 0,
+                    "high": max(games) if games else 0,
+                    "low": min(games) if games else 0,
+                    "absent": False,
+                    "is_substitute": True,
+                    "sub_for": sub_for,
+                }
+            )
+            continue
+
+        if player in team_subs:
+            sub_fact = team_subs[player]
+            counting_sub = bool(sub_fact.get("substitute_scores_count"))
+            if counting_sub:
+                games = [int(g) for g in games_list_for_team(f)]
+                players.append(
+                    {
+                        "name": player,
+                        "team": team,
+                        "games": games,
+                        "avg": round(sum(games) / len(games), 1) if games else 0,
+                        "high": max(games) if games else 0,
+                        "low": min(games) if games else 0,
+                        "absent": True,
+                        "is_substitute": False,
+                        "sub_for": None,
+                        "subbed_out": True,
+                    }
+                )
+            else:
+                games = [int(g) for g in games_list_for_team(f)]
+                players.append(
+                    {
+                        "name": player,
+                        "team": team,
+                        "games": games,
+                        "avg": round(sum(games) / len(games), 1) if games else 0,
+                        "high": max(games) if games else 0,
+                        "low": min(games) if games else 0,
+                        "absent": True,
+                        "is_substitute": False,
+                        "sub_for": None,
+                        "subbed_out": False,
+                    }
+                )
+            continue
+
         games = [int(g) for g in games_list_for_player_stats(f)]
         if is_absent:
             games = [int(g) for g in games_list_for_team(f)]
@@ -1537,10 +1747,12 @@ def get_week_summary(
                 "high": max(games) if games else 0,
                 "low": min(games) if games else 0,
                 "absent": is_absent,
+                "is_substitute": False,
+                "sub_for": None,
             }
         )
 
-    players.sort(key=lambda x: x["avg"], reverse=True)
+    players.sort(key=lambda x: -x["avg"])
     stats = get_league_game_stats(facts, season_num=season_num, week=week)
     return {
         "season": season,
@@ -1568,6 +1780,8 @@ def get_week_matchups(
         return {"error": f"Season '{season}' not found"}
 
     teams: Dict[str, dict] = {}
+    repl_map = counting_sub_replacements_by_team_week(rows)
+    subs_map = subs_by_replaced_by_team_week(rows)
     for f in rows:
         team = str(f.get("team") or "").strip()
         player = str(f.get("player_display_name") or "").strip()
@@ -1577,6 +1791,11 @@ def get_week_matchups(
         is_absent = bool(f.get("absent"))
         is_sub = bool(f.get("substitute"))
         opponent = str(f.get("opponent") or "").strip()
+        repl = repl_map.get((team, week), set())
+        counts_pins = fact_counts_for_team_pins(f, replaced_by_counting_sub=repl)
+        team_subs = subs_map.get((team, week), {})
+        counting_sub = player in repl
+        has_sub = player in team_subs
 
         if team not in teams:
             teams[team] = {
@@ -1586,18 +1805,47 @@ def get_week_matchups(
                 "players": [],
             }
 
-        if not is_sub:
+        if is_sub:
+            sub_for = str(f.get("substituted_for") or "").strip() or None
             teams[team]["players"].append(
                 {
                     "name": player,
                     "games": games_slots(f),
-                    "absent": is_absent,
-                    "game_absent": [
-                        bool(f.get(f"game{n}_absent")) and not is_absent
-                        for n in range(1, 6)
-                    ],
+                    "absent": False,
+                    "game_absent": [False] * 5,
+                    "is_substitute": True,
+                    "sub_for": sub_for,
+                    "scores_count": bool(f.get("substitute_scores_count")),
                 }
             )
+            if counts_pins:
+                slots = games_slots(f)
+                for i, g in enumerate(slots):
+                    if g is None:
+                        continue
+                    gi = int(g)
+                    while len(teams[team]["game_pins"]) <= i:
+                        teams[team]["game_pins"].append(0)
+                    teams[team]["game_pins"][i] += gi
+            continue
+
+        display_games = games_slots(f)
+        teams[team]["players"].append(
+            {
+                "name": player,
+                "games": display_games,
+                "absent": is_absent or has_sub,
+                "game_absent": [False] * 5 if counting_sub else [
+                    bool(f.get(f"game{n}_absent")) and not is_absent
+                    for n in range(1, 6)
+                ],
+                "is_substitute": False,
+                "sub_for": None,
+                "scores_count": counts_pins,
+                "subbed_out": counting_sub,
+            }
+        )
+        if counts_pins:
             teams[team]["player_count"] += 1
             slots = games_slots(f)
             for i, g in enumerate(slots):
@@ -1643,6 +1891,7 @@ def get_week_matchups(
                         "game_pins": td["game_pins"],
                         "wins": 0,
                         "result": "—",
+                        "players": list(td.get("players", [])),
                     },
                     "away": None,
                 }

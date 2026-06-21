@@ -68,6 +68,17 @@
     .game-miss { display: flex; flex-direction: column; align-items: center; gap: 0.2rem; margin-top: 0.2rem; font-size: 0.65rem; color: var(--muted); cursor: pointer; }
     .game-miss input { margin: 0; }
     tr.week-absent .game-miss { opacity: 0.35; pointer-events: none; }
+    .player-name-cell { line-height: 1.35; }
+    .absent-fill-hint {
+      display: block;
+      margin-top: 0.15rem;
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: var(--mint);
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+    }
+    .absent-fill-hint[hidden] { display: none !important; }
     .team-block.hide-game5 .game5-col { display: none; }
     .scan-table.hide-game5 .game5-col { display: none; }
     .actions { margin-top: 1.25rem; display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
@@ -99,6 +110,16 @@
     .scan-table input[type="number"] { width: 3rem; }
     .scan-table select { background: #12101a; border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 0.25rem; font-size: 0.8rem; max-width: 11rem; }
     .scan-table tr.duplicate-assign td { background: rgba(255, 107, 129, 0.12); }
+    .sub-section { margin-top: 0.65rem; display: none; }
+    .sub-section.visible { display: block; }
+    .sub-section-title { font-size: 0.78rem; font-weight: 600; color: var(--muted); margin: 0 0 0.35rem 0.15rem; }
+    .sub-table { font-size: 0.82rem; }
+    .sub-table td input[type="text"],
+    .sub-table td select { background: #12101a; border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 0.35rem 0.45rem; font-size: 0.85rem; min-width: 6rem; }
+    .sub-pick-select { min-width: 8rem; max-width: 11rem; }
+    tr.sub-row td:first-child { border-left: 3px solid var(--muted); }
+    tr.sub-row .sub-label { font-size: 0.7rem; color: var(--muted); display: block; }
+    .remove-sub-btn { background: transparent; border: none; color: var(--danger); font-size: 0.75rem; padding: 0.2rem 0.35rem; cursor: pointer; }
     .scan-status { font-size: 0.85rem; color: var(--muted); min-height: 1.2em; }
     .scan-status.error { color: var(--danger); }
     .scan-loading { display: none; align-items: center; gap: 0.65rem; margin: 0.35rem 0 0.5rem; }
@@ -188,7 +209,7 @@
     {% endif %}
 
     {% if entry.rows %}
-    <form id="save-form" method="post" action="{{ url_for('admin.admin_week_post') }}">
+    <form id="save-form" method="post" action="{{ url_for('admin.admin_week_post') }}" autocomplete="off">
       <input type="hidden" name="payload" id="payload-field">
       <input type="hidden" name="team" value="{{ selected_team }}">
 
@@ -246,7 +267,10 @@
       {% for team_name, team_rows in entry.teams_grouped %}
       {% set team_opp = entry.team_opponents.get(team_name, '') %}
       {% set show_g5 = entry.team_game5_visible.get(team_name, false) %}
-      <div class="team-block{% if not show_g5 %} hide-game5{% endif %}" data-team="{{ team_name }}">
+      {% set roster_rows = team_rows | rejectattr('substitute') | list %}
+      {% set sub_rows = team_rows | selectattr('substitute') | list %}
+      {% set roster_names = roster_rows | map(attribute='player_display_name') | list %}
+      <div class="team-block{% if not show_g5 %} hide-game5{% endif %}" data-team="{{ team_name }}" data-roster-names='{{ roster_names | tojson }}'>
         <div class="team-bar">
           <span class="team-title">{{ team_name }}</span>
           <label>Opponent
@@ -268,15 +292,18 @@
             <tr>
               <th>Player</th>
               <th title="Whole week out">Week<br>out</th>
+              <th title="Substitute entered for this player">Sub</th>
               <th>G1</th><th>G2</th><th>G3</th><th>G4</th>
               <th class="game5-col">G5</th>
             </tr>
           </thead>
-          <tbody>
-            {% for row in team_rows %}
-            <tr data-row data-team="{{ team_name }}" data-player="{{ row.player_display_name }}" data-substitute="{{ 'true' if row.substitute else 'false' }}" class="{% if row.missing_games %}row-incomplete {% endif %}{% if row.absent %}week-absent{% endif %}"{% if row.missing_games %} title="{{ row.missing_games }} game(s) missing"{% endif %}>
-              <td>{{ row.player_display_name }}</td>
+          <tbody class="roster-rows">
+            {% for row in roster_rows %}
+            {% set subs_for_player = sub_rows | selectattr('substituted_for', 'equalto', row.player_display_name) | list %}
+            <tr data-row data-team="{{ team_name }}" data-player="{{ row.player_display_name }}" data-substitute="false"{% if row.absent %} data-week-out="true"{% endif %} class="roster-row{% if row.missing_games %} row-incomplete {% endif %}{% if row.absent %}week-absent{% endif %}"{% if row.missing_games %} title="{{ row.missing_games }} game(s) missing"{% endif %}>
+              <td class="player-name-cell">{{ row.player_display_name }}<span class="absent-fill-hint" hidden></span></td>
               <td class="flags"><label><input type="checkbox" class="absent" {% if row.absent %}checked{% endif %}></label></td>
+              <td class="flags"><label><input type="checkbox" class="subbed" {% if subs_for_player %}checked{% endif %}></label></td>
               {% for gn, g, miss in [
                 (1, row.game1, row.game1_absent),
                 (2, row.game2, row.game2_absent),
@@ -296,6 +323,66 @@
             {% endfor %}
           </tbody>
         </table>
+        </div>
+        <div class="sub-section{% if sub_rows %} visible{% endif %}">
+          <p class="sub-section-title">Substitutes</p>
+          <div class="table-scroll">
+          <table class="sub-table">
+            <thead>
+              <tr>
+                <th>Sub</th>
+                <th>Sub for</th>
+                <th title="Sub pins count for team total (instead of regular's book average)">Use<br>sub score</th>
+                <th>G1</th><th>G2</th><th>G3</th><th>G4</th>
+                <th class="game5-col">G5</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody class="sub-rows">
+              {% for row in sub_rows %}
+              <tr data-row data-team="{{ team_name }}" data-player="{{ row.player_display_name }}" data-substitute="true" data-sub-for="{{ row.substituted_for or '' }}" class="sub-row">
+                <td>
+                  <span class="sub-label">Sub</span>
+                  <select class="sub-pick-select" aria-label="Sub player">
+                    <option value="">— select —</option>
+                    {% if row.player_display_name and row.player_display_name not in all_players %}
+                    <option value="{{ row.player_display_name }}" selected>{{ row.player_display_name }}</option>
+                    {% endif %}
+                    {% for pname in all_players %}
+                    <option value="{{ pname }}" {% if pname == row.player_display_name %}selected{% endif %}>{{ pname }}</option>
+                    {% endfor %}
+                    <option value="__NEW__">New player…</option>
+                  </select>
+                  <input type="text" class="sub-pick-new" placeholder="New name" autocomplete="off" {% if row.player_display_name not in all_players %}value="{{ row.player_display_name }}"{% else %}style="display:none"{% endif %}>
+                </td>
+                <td>
+                  <select class="sub-for" aria-label="Sub for">
+                    <option value="">— pick —</option>
+                    {% for name in roster_names %}
+                    <option value="{{ name }}" {% if row.substituted_for == name %}selected{% endif %}>{{ name }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td class="flags"><label><input type="checkbox" class="sub-count" {% if row.substitute_scores_count %}checked{% endif %}></label></td>
+                {% for gn, g in [
+                  (1, row.game1),
+                  (2, row.game2),
+                  (3, row.game3),
+                  (4, row.game4),
+                ] %}
+                <td class="game-cell">
+                  <input type="number" min="{{ game_score_min }}" max="{{ game_score_max }}" step="1" class="game game-main" value="{{ g if g is not none else '' }}">
+                </td>
+                {% endfor %}
+                <td class="game-cell game5-col">
+                  <input type="number" min="{{ game_score_min }}" max="{{ game_score_max }}" step="1" class="game game5" value="{{ row.game5 if row.game5 is not none else '' }}">
+                </td>
+                <td><button type="button" class="remove-sub-btn" title="Remove sub">✕</button></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          </div>
         </div>
       </div>
       {% endfor %}
@@ -332,7 +419,10 @@
       var SCAN_URL = {{ url_for('admin.admin_week_scan') | tojson }};
       var TEAM_ROSTER = {{ team_roster_names | tojson }};
       var ABSENT_FILL = {{ entry.absent_fill_averages | tojson }};
+      var ABSENT_FILL_META = {{ entry.absent_fill_details | tojson }};
       var TEAM_GAME5 = {{ (entry.team_game5_visible or {}) | tojson }};
+      var ALL_PLAYERS = {{ all_players | tojson }};
+      if (!Array.isArray(ALL_PLAYERS)) ALL_PLAYERS = [];
       var scanRows = [];
 
       function validateGameInput(inp, tr) {
@@ -390,7 +480,8 @@
 
       function fillAbsentScores(tr, force) {
         var player = tr.getAttribute("data-player");
-        var avg = player && ABSENT_FILL[player];
+        var fill = ABSENT_FILL && typeof ABSENT_FILL === "object" ? ABSENT_FILL : {};
+        var avg = player ? fill[player] : null;
         if (avg == null) return;
         if (!force) {
           var hasScore = false;
@@ -407,20 +498,146 @@
         tr.removeAttribute("title");
       }
 
+      function updateAbsentFillHint(tr, on) {
+        var hint = tr.querySelector(".absent-fill-hint");
+        if (!hint) return;
+        if (!on) {
+          hint.hidden = true;
+          hint.textContent = "";
+          return;
+        }
+        var player = tr.getAttribute("data-player");
+        var meta = ABSENT_FILL_META && player ? ABSENT_FILL_META[player] : null;
+        if (!meta || meta.base == null) {
+          hint.hidden = true;
+          return;
+        }
+        hint.textContent = meta.base + " \u00d7 " + meta.penalty_percent + "%";
+        hint.hidden = false;
+      }
+
       function setWeekAbsentRow(tr, on) {
         tr.classList.toggle("week-absent", on);
+        tr.setAttribute("data-week-out", on ? "true" : "false");
         tr.querySelectorAll("input.game-absent").forEach(function (cb) {
           if (on) cb.checked = false;
           cb.disabled = on;
         });
+        updateAbsentFillHint(tr, on);
+      }
+
+      function isWeekOut(tr) {
+        if (tr.getAttribute("data-week-out") === "true") return true;
+        var absentCb = tr.querySelector("input.absent");
+        return !!(absentCb && absentCb.checked);
+      }
+
+      function syncWeekOutRowFromDom(tr) {
+        var absentInp = tr.querySelector("input.absent");
+        if (!absentInp) return false;
+        if (tr.getAttribute("data-week-out") === "true" && !absentInp.checked) {
+          absentInp.checked = true;
+        }
+        var on = isWeekOut(tr);
+        setWeekAbsentRow(tr, on);
+        return on;
+      }
+
+      function applyWeekOutUi(tr) {
+        if (!syncWeekOutRowFromDom(tr)) return;
+        fillAbsentScores(tr, false);
+        refreshGameMissRow(tr);
       }
 
       function fillGameAbsentScore(inp, tr) {
         var player = tr.getAttribute("data-player");
-        var avg = player && ABSENT_FILL[player];
+        var fill = ABSENT_FILL && typeof ABSENT_FILL === "object" ? ABSENT_FILL : {};
+        var avg = player ? fill[player] : null;
         if (avg == null) return;
         if (inp.value.trim() === "") inp.value = String(avg);
         validateGameInput(inp, tr);
+      }
+
+      function findSubRowForPlayer(block, playerName) {
+        if (!block || !playerName) return null;
+        var found = null;
+        block.querySelectorAll("tr.sub-row").forEach(function (tr) {
+          var sel = tr.querySelector(".sub-for");
+          var slot = (sel && sel.value.trim()) || (tr.getAttribute("data-sub-for") || "").trim();
+          if (slot === playerName) found = tr;
+        });
+        return found;
+      }
+
+      function ensureWeekOut(tr) {
+        var absentInp = tr.querySelector("input.absent");
+        if (!absentInp) return;
+        if (!absentInp.checked) absentInp.checked = true;
+        setWeekAbsentRow(tr, true);
+        fillAbsentScores(tr, true);
+        refreshGameMissRow(tr);
+      }
+
+      function updateSubSectionVisibility(block) {
+        var section = block.querySelector(".sub-section");
+        if (!section) return;
+        var hasSubs = block.querySelectorAll("tr.sub-row").length > 0;
+        var hasSubbed = false;
+        block.querySelectorAll("tr.roster-row input.subbed").forEach(function (cb) {
+          if (cb.checked) hasSubbed = true;
+        });
+        section.classList.toggle("visible", hasSubs || hasSubbed);
+      }
+
+      function refreshSubbedUi(block) {
+        if (!block) return;
+        updateSubSectionVisibility(block);
+      }
+
+      function setSubbedForPlayer(block, playerName, on) {
+        if (!block || !playerName) return;
+        block.querySelectorAll("tr.roster-row").forEach(function (tr) {
+          if (tr.getAttribute("data-player") === playerName) {
+            var cb = tr.querySelector("input.subbed");
+            if (cb) cb.checked = on;
+          }
+        });
+        refreshSubbedUi(block);
+      }
+
+      function bindSubbedRow(tr) {
+        var subbedCb = tr.querySelector("input.subbed");
+        if (!subbedCb) return;
+        subbedCb.addEventListener("change", function () {
+          var block = tr.closest(".team-block");
+          if (!block) return;
+          var player = tr.getAttribute("data-player");
+          if (subbedCb.checked) {
+            ensureWeekOut(tr);
+            if (!findSubRowForPlayer(block, player)) {
+              addSubRow(block, { subFor: player });
+            }
+            var section = block.querySelector(".sub-section");
+            if (section) section.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            var subTr = findSubRowForPlayer(block, player);
+            if (subTr) {
+              var sel = subTr.querySelector(".sub-pick-select");
+              if (sel) sel.focus();
+            }
+          } else {
+            removeSubForPlayer(block, player);
+          }
+          refreshSubbedUi(block);
+        });
+        if (subbedCb.checked) {
+          var block = tr.closest(".team-block");
+          var player = tr.getAttribute("data-player");
+          ensureWeekOut(tr);
+          if (block && !findSubRowForPlayer(block, player)) {
+            addSubRow(block, { subFor: player });
+          }
+          refreshSubbedUi(block);
+        }
       }
 
       function bindAbsentRow(tr) {
@@ -429,10 +646,19 @@
         absentInp.addEventListener("change", function () {
           setWeekAbsentRow(tr, absentInp.checked);
           if (absentInp.checked) fillAbsentScores(tr, true);
+          else {
+            var block = tr.closest(".team-block");
+            var player = tr.getAttribute("data-player");
+            if (block) {
+              removeSubForPlayer(block, player);
+              var subbedCb = tr.querySelector("input.subbed");
+              if (subbedCb) subbedCb.checked = false;
+              refreshSubbedUi(block);
+            }
+          }
           refreshGameMissRow(tr);
         });
-        setWeekAbsentRow(tr, absentInp.checked);
-        if (absentInp.checked) fillAbsentScores(tr, false);
+        applyWeekOutUi(tr);
       }
 
       function refreshGameMissRow(tr) {
@@ -457,6 +683,272 @@
         refreshGameMissRow(tr);
       }
 
+      function bindGameInputs(tr) {
+        tr.querySelectorAll("input.game").forEach(function (inp) {
+          inp.addEventListener("input", function () { validateGameInput(inp, tr); });
+          inp.addEventListener("blur", function () { validateGameInput(inp, tr); });
+        });
+      }
+
+      function rosterNamesForBlock(block) {
+        var raw = block.getAttribute("data-roster-names") || "[]";
+        try {
+          var parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length) return parsed;
+        } catch (e) { /* fall through */ }
+        var names = [];
+        block.querySelectorAll('tr[data-row][data-substitute="false"]').forEach(function (tr) {
+          var n = tr.getAttribute("data-player");
+          if (n) names.push(n);
+        });
+        return names;
+      }
+
+      function buildSubPickSelect(selected) {
+        var sel = document.createElement("select");
+        sel.className = "sub-pick-select";
+        sel.setAttribute("aria-label", "Sub player");
+        var opt0 = document.createElement("option");
+        opt0.value = "";
+        opt0.textContent = "— select —";
+        sel.appendChild(opt0);
+        if (selected && ALL_PLAYERS.indexOf(selected) < 0) {
+          var cur = document.createElement("option");
+          cur.value = selected;
+          cur.textContent = selected;
+          cur.selected = true;
+          sel.appendChild(cur);
+        }
+        ALL_PLAYERS.forEach(function (n) {
+          var o = document.createElement("option");
+          o.value = n;
+          o.textContent = n;
+          if (n === selected) o.selected = true;
+          sel.appendChild(o);
+        });
+        var neu = document.createElement("option");
+        neu.value = "__NEW__";
+        neu.textContent = "New player…";
+        sel.appendChild(neu);
+        return sel;
+      }
+
+      function bindSubPickCell(tr) {
+        var sel = tr.querySelector(".sub-pick-select");
+        var newInp = tr.querySelector(".sub-pick-new");
+        if (!sel) return;
+        sel.addEventListener("change", function () {
+          if (!newInp) return;
+          if (sel.value === "__NEW__") {
+            newInp.style.display = "block";
+            newInp.focus();
+          } else {
+            newInp.style.display = "none";
+            newInp.value = "";
+          }
+          tr.setAttribute("data-player", subPlayerNameFromRow(tr));
+        });
+        if (newInp) {
+          newInp.addEventListener("input", function () {
+            tr.setAttribute("data-player", newInp.value.trim());
+          });
+        }
+      }
+
+      function subPlayerNameFromRow(tr) {
+        var sel = tr.querySelector(".sub-pick-select");
+        var newInp = tr.querySelector(".sub-pick-new");
+        if (sel && sel.value === "__NEW__" && newInp) return newInp.value.trim();
+        if (sel && sel.value && sel.value !== "__NEW__") return sel.value.trim();
+        return tr.getAttribute("data-player") || "";
+      }
+
+      function removeSubForPlayer(block, playerName) {
+        if (!playerName) return;
+        block.querySelectorAll("tr.sub-row").forEach(function (tr) {
+          var sel = tr.querySelector(".sub-for");
+          if (sel && sel.value === playerName) tr.remove();
+        });
+      }
+
+      function takenSubForSlots(block, exceptTr) {
+        var taken = [];
+        block.querySelectorAll("tr.sub-row").forEach(function (tr) {
+          if (tr === exceptTr) return;
+          var sel = tr.querySelector(".sub-for");
+          var slot = (sel && sel.value.trim()) || (tr.getAttribute("data-sub-for") || "").trim();
+          if (slot) taken.push(slot);
+        });
+        return taken;
+      }
+
+      function buildSubForSelect(names, selected, taken) {
+        var sel = document.createElement("select");
+        sel.className = "sub-for";
+        sel.setAttribute("aria-label", "Sub for");
+        var opt0 = document.createElement("option");
+        opt0.value = "";
+        opt0.textContent = "— pick —";
+        sel.appendChild(opt0);
+        names.forEach(function (n) {
+          var o = document.createElement("option");
+          o.value = n;
+          o.textContent = n;
+          if (n === selected) o.selected = true;
+          if (taken.indexOf(n) >= 0 && n !== selected) o.disabled = true;
+          sel.appendChild(o);
+        });
+        return sel;
+      }
+
+      function refreshSubForOptions(block) {
+        var names = rosterNamesForBlock(block);
+        block.querySelectorAll("tr.sub-row").forEach(function (tr) {
+          var sel = tr.querySelector(".sub-for");
+          if (!sel) return;
+          var cur = sel.value;
+          var taken = takenSubForSlots(block, tr);
+          var parent = sel.parentNode;
+          var nu = buildSubForSelect(names, cur, taken);
+          parent.replaceChild(nu, sel);
+          nu.addEventListener("change", function () {
+            tr.setAttribute("data-sub-for", nu.value);
+            refreshSubForOptions(block);
+            refreshSubbedUi(block);
+          });
+        });
+      }
+
+      function appendGameCell(tr, value, extraClass) {
+        var td = document.createElement("td");
+        td.className = "game-cell" + (extraClass ? " " + extraClass : "");
+        var inp = document.createElement("input");
+        inp.type = "number";
+        inp.min = String(GAME_MIN);
+        inp.max = String(GAME_MAX);
+        inp.step = "1";
+        inp.className = "game " + (extraClass === "game5-col" ? "game5" : "game-main");
+        if (value != null && value !== "") inp.value = String(value);
+        td.appendChild(inp);
+        tr.appendChild(td);
+      }
+
+      function createSubRow(block, data) {
+        data = data || {};
+        var team = block.getAttribute("data-team");
+        var tr = document.createElement("tr");
+        tr.className = "sub-row";
+        tr.setAttribute("data-row", "");
+        tr.setAttribute("data-team", team);
+        tr.setAttribute("data-substitute", "true");
+        tr.setAttribute("data-player", data.player || "");
+        tr.setAttribute("data-sub-for", data.subFor || "");
+
+        var nameTd = document.createElement("td");
+        var label = document.createElement("span");
+        label.className = "sub-label";
+        label.textContent = "Sub";
+        nameTd.appendChild(label);
+        var pickSel = buildSubPickSelect(data.player || "");
+        nameTd.appendChild(pickSel);
+        var newInp = document.createElement("input");
+        newInp.type = "text";
+        newInp.className = "sub-pick-new";
+        newInp.placeholder = "New name";
+        newInp.autocomplete = "off";
+        if (data.player && ALL_PLAYERS.indexOf(data.player) < 0) {
+          newInp.value = data.player;
+          newInp.style.display = "block";
+        } else {
+          newInp.style.display = "none";
+        }
+        nameTd.appendChild(newInp);
+        tr.appendChild(nameTd);
+
+        var forTd = document.createElement("td");
+        forTd.appendChild(
+          buildSubForSelect(
+            rosterNamesForBlock(block),
+            data.subFor || "",
+            takenSubForSlots(block, null)
+          )
+        );
+        tr.appendChild(forTd);
+
+        var countTd = document.createElement("td");
+        countTd.className = "flags";
+        var countLbl = document.createElement("label");
+        var countCb = document.createElement("input");
+        countCb.type = "checkbox";
+        countCb.className = "sub-count";
+        if (data.count) countCb.checked = true;
+        countLbl.appendChild(countCb);
+        countTd.appendChild(countLbl);
+        tr.appendChild(countTd);
+
+        appendGameCell(tr, data.game1, "");
+        appendGameCell(tr, data.game2, "");
+        appendGameCell(tr, data.game3, "");
+        appendGameCell(tr, data.game4, "");
+        appendGameCell(tr, data.game5, "game5-col");
+
+        var rmTd = document.createElement("td");
+        var rmBtn = document.createElement("button");
+        rmBtn.type = "button";
+        rmBtn.className = "remove-sub-btn";
+        rmBtn.title = "Remove sub";
+        rmBtn.textContent = "✕";
+        rmTd.appendChild(rmBtn);
+        tr.appendChild(rmTd);
+        return tr;
+      }
+
+      function bindSubRow(tr, block) {
+        var removeBtn = tr.querySelector(".remove-sub-btn");
+        if (removeBtn) {
+          removeBtn.addEventListener("click", function () {
+            var subForSel = tr.querySelector(".sub-for");
+            var subFor = (subForSel && subForSel.value.trim()) || (tr.getAttribute("data-sub-for") || "").trim();
+            tr.remove();
+            if (subFor) setSubbedForPlayer(block, subFor, false);
+            refreshSubForOptions(block);
+            refreshSubbedUi(block);
+          });
+        }
+        bindSubPickCell(tr);
+        bindGameInputs(tr);
+      }
+
+      function addSubRow(block, data) {
+        var tbody = block.querySelector(".sub-rows");
+        if (!tbody) return null;
+        var tr = createSubRow(block, data || {});
+        tbody.appendChild(tr);
+        bindSubRow(tr, block);
+        refreshSubForOptions(block);
+        refreshSubbedUi(block);
+        return tr;
+      }
+
+      function initSubRows() {
+        document.querySelectorAll(".team-block").forEach(function (block) {
+          block.querySelectorAll("tr.sub-row").forEach(function (tr) {
+            bindSubRow(tr, block);
+          });
+          refreshSubForOptions(block);
+          refreshSubbedUi(block);
+        });
+      }
+
+      function refreshAllWeekOutUi() {
+        document.querySelectorAll(".team-block").forEach(function (block) {
+          block.querySelectorAll("tr.roster-row").forEach(function (tr) {
+            applyWeekOutUi(tr);
+          });
+          refreshSubbedUi(block);
+        });
+      }
+
       var saveSuccess = document.getElementById("save-success");
       if (saveSuccess) {
         saveSuccess.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -468,14 +960,14 @@
         }
       }
 
-      document.querySelectorAll("tr[data-row]").forEach(function (tr) {
+      document.querySelectorAll("tr[data-row][data-substitute=\"false\"]").forEach(function (tr) {
         bindAbsentRow(tr);
+        bindSubbedRow(tr);
         bindGameAbsentBoxes(tr);
-        tr.querySelectorAll("input.game").forEach(function (inp) {
-          inp.addEventListener("input", function () { validateGameInput(inp, tr); });
-          inp.addEventListener("blur", function () { validateGameInput(inp, tr); });
-        });
+        bindGameInputs(tr);
       });
+      initSubRows();
+      refreshAllWeekOutUi();
       initTeamGame5Toggles();
 
       function randomDebugScore() {
@@ -997,6 +1489,19 @@
           firstBad.focus();
           return;
         }
+        var subErr = null;
+        document.querySelectorAll("tr.sub-row").forEach(function (tr) {
+          if (subErr) return;
+          var name = subPlayerNameFromRow(tr);
+          var subForSel = tr.querySelector(".sub-for");
+          var subFor = subForSel ? subForSel.value.trim() : "";
+          if (!name) subErr = "Each sub must select a player.";
+          else if (!subFor) subErr = "Each sub must pick who they subbed for.";
+        });
+        if (subErr) {
+          alert(subErr);
+          return;
+        }
         var weekPlayoffs = document.getElementById("week-playoffs").checked;
         var teamOpponents = {};
         document.querySelectorAll(".team-block").forEach(function (block) {
@@ -1018,12 +1523,19 @@
             var v = inp.value.trim();
             games.push(v === "" ? null : parseInt(v, 10));
           });
+          var isSub = tr.getAttribute("data-substitute") === "true";
+          var absentInp = tr.querySelector("input.absent");
+          var weekOut = absentInp ? absentInp.checked : false;
           var misses = tr.querySelectorAll("input.game-absent");
-          var weekOut = tr.querySelector("input.absent").checked;
           var team = tr.getAttribute("data-team");
+          var subForSel = tr.querySelector(".sub-for");
+          var subCountCb = tr.querySelector(".sub-count");
+          var playerName = isSub
+            ? subPlayerNameFromRow(tr)
+            : tr.getAttribute("data-player");
           rows.push({
             team: team,
-            player_display_name: tr.getAttribute("data-player"),
+            player_display_name: playerName,
             opponent: teamOpponents[team] || null,
             game1: games[0], game2: games[1], game3: games[2], game4: games[3], game5: games[4],
             absent: weekOut,
@@ -1032,7 +1544,9 @@
             game3_absent: !weekOut && misses[2] && misses[2].checked,
             game4_absent: !weekOut && misses[3] && misses[3].checked,
             game5_absent: !weekOut && misses[4] && misses[4].checked,
-            substitute: tr.getAttribute("data-substitute") === "true"
+            substitute: isSub,
+            substituted_for: isSub && subForSel ? (subForSel.value.trim() || null) : null,
+            substitute_scores_count: isSub && subCountCb ? subCountCb.checked : false
           });
         });
         document.getElementById("payload-field").value = JSON.stringify({

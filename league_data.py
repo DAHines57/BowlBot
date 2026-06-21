@@ -154,6 +154,8 @@ class DbLeagueData(LeagueDataSource):
         player_name: Optional[str] = None,
         season: Optional[str] = None,
         week: Optional[int] = None,
+        *,
+        include_substitutes: bool = True,
     ) -> Dict:
         if season is None:
             season = self.get_current_season()
@@ -164,6 +166,7 @@ class DbLeagueData(LeagueDataSource):
             season,
             week,
             season_num=season_num,
+            include_substitutes=include_substitutes,
         )
 
     def get_player_game_history(

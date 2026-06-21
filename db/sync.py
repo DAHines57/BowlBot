@@ -103,6 +103,8 @@ def _replace_season_rows(
                 game4_absent=row.get("game4_absent", False),
                 game5_absent=row.get("game5_absent", False),
                 substitute=row["substitute"],
+                substitute_scores_count=row.get("substitute_scores_count", False),
+                substituted_for=row.get("substituted_for"),
                 playoffs=row["playoffs"],
                 opponent=row["opponent"],
                 source_row_fingerprint=row["source_row_fingerprint"],

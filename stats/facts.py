@@ -84,12 +84,87 @@ def fact_has_play_activity(fact: dict) -> bool:
 
 
 def fact_counts_for_stats(fact: dict) -> bool:
-    """Whether a fact row should affect season stats and player summaries."""
+    """Whether a fact row should affect roster season stats (not sub appearances)."""
     if fact.get("substitute"):
         return False
     if not fact_in_roster_window(fact):
         return False
     return fact_has_play_activity(fact)
+
+
+def fact_counts_for_player_profile(fact: dict) -> bool:
+    """Whether a row counts on a player's profile (includes sub games)."""
+    if fact.get("absent"):
+        return False
+    if fact.get("substitute"):
+        return len(games_list_for_team(fact)) > 0
+    if not fact_in_roster_window(fact):
+        return False
+    return fact_has_play_activity(fact)
+
+
+def player_profile_games(fact: dict) -> List[float]:
+    """Game scores that count toward a player's profile average/history."""
+    if fact.get("substitute"):
+        return games_list_for_team(fact)
+    return games_list_for_player_stats(fact)
+
+
+def subs_by_replaced_by_team_week(
+    rows: Iterable[dict],
+) -> Dict[tuple[str, int], Dict[str, dict]]:
+    """(team, week) -> {replaced_roster_name: sub fact row}."""
+    out: Dict[tuple[str, int], Dict[str, dict]] = {}
+    for f in rows:
+        if not f.get("substitute"):
+            continue
+        team = str(f.get("team") or "").strip()
+        week = safe_int(f.get("week"), 0)
+        who = str(f.get("substituted_for") or "").strip()
+        if team and week > 0 and who:
+            out.setdefault((team, week), {})[who] = f
+    return out
+
+
+def counting_sub_replacements_by_team_week(
+    rows: Iterable[dict],
+) -> Dict[tuple[str, int], set[str]]:
+    """(team, week) -> roster names replaced by a counting sub that week."""
+    out: Dict[tuple[str, int], set[str]] = {}
+    for f in rows:
+        if not f.get("substitute") or not f.get("substitute_scores_count"):
+            continue
+        team = str(f.get("team") or "").strip()
+        week = safe_int(f.get("week"), 0)
+        who = str(f.get("substituted_for") or "").strip()
+        if team and week > 0 and who:
+            out.setdefault((team, week), set()).add(who)
+    return out
+
+
+def counting_sub_replacements_for_team_week(
+    rows: Iterable[dict],
+    *,
+    team: str,
+    week: int,
+) -> set[str]:
+    """Roster names on one team-week replaced by a counting sub."""
+    return counting_sub_replacements_by_team_week(rows).get((team, week), set())
+
+
+def fact_counts_for_team_pins(
+    fact: dict,
+    *,
+    replaced_by_counting_sub: Optional[set[str]] = None,
+) -> bool:
+    """Whether a row's pin totals count toward team totals and matchups."""
+    if fact.get("substitute"):
+        return bool(fact.get("substitute_scores_count"))
+    player = str(fact.get("player_display_name") or "").strip()
+    repl = replaced_by_counting_sub or set()
+    if player and player in repl:
+        return False
+    return True
 
 
 def add_slot_pins_to_index(

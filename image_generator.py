@@ -206,6 +206,75 @@ tbody td.right { text-align: right; }
     vertical-align: middle;
     margin-left: 4px;
 }
+.sub-badge {
+    display: inline-block;
+    background: #1a2e2a;
+    color: #50fa7b;
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    letter-spacing: 1px;
+    vertical-align: middle;
+    margin-left: 4px;
+}
+.sub-for-badge {
+    font-size: 9px;
+    color: #9a96a8;
+    margin-left: 2px;
+}
+tbody tr.sub-row { opacity: 0.92; }
+.week-summary-section .section-head,
+.players-stats-section .section-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px 14px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid #2a2050;
+    padding-bottom: 6px;
+}
+.week-summary-section .section-head .section-title,
+.players-stats-section .section-head .section-title {
+    margin-bottom: 0;
+    border-bottom: none;
+    padding-bottom: 0;
+}
+.stats-panel-actions,
+.players-stats-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+}
+.summary-stats-toggle,
+.players-stats-toggle {
+    font: inherit;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid #4a4068;
+    background: #1e1a32;
+    color: #c4b8e8;
+    cursor: pointer;
+}
+.summary-stats-toggle:hover,
+.players-stats-toggle:hover {
+    border-color: #7c6ec4;
+    color: #fff;
+}
+.summary-stats-toggle[aria-pressed="true"],
+.players-stats-toggle[aria-pressed="true"] {
+    border-color: #7c6ec4;
+    background: #2d1b69;
+    color: #ffb86c;
+}
+.summary-stats-panel[hidden],
+.players-stats-panel[hidden] { display: none !important; }
 
 /* League stats */
 .stats-grid {
@@ -352,8 +421,10 @@ _SUMMARY_INNER_FR = """  <div class="header">
 
   {league_summary_blocks}
 
-  <div class="section">
-    <div class="section-title">Leaderboard</div>
+  <div class="section week-summary-section">
+    <div class="section-head">
+      <div class="section-title">Leaderboard</div>
+    </div>
     <div class="table-scroll">
     <table class="sortable-table" data-has-rank-col="1">
       <thead>
@@ -460,34 +531,42 @@ def _build_league_summary_blocks(data: dict) -> str:
 def _week_summary_player_rows(data: dict) -> str:
     rows = []
     rank = 0
-    for p in data.get("players", []):
+    players = list(data.get("players", []))
+    for p in players:
         absent = p.get("absent", False)
-        if not absent:
-            rank += 1
-            rank_str = str(rank)
-        else:
-            rank_str = "—"
+        is_sub = p.get("is_substitute", False)
+        subbed_out = p.get("subbed_out", False)
+        rank += 1
+        rank_str = str(rank)
 
-        absent_badge = '<span class="absent-badge">ABSENT</span>' if absent else ""
-        row_class = 'class="absent"' if absent else ""
-        avg_str = f"{p['avg']:.1f}" if p["avg"] else "—"
-        high_str = str(p["high"]) if p["high"] else "—"
+        badges = ""
+        if is_sub:
+            sub_for = p.get("sub_for")
+            badges = '<span class="sub-badge">SUB</span>'
+            if sub_for:
+                badges += f' <span class="sub-for-badge">for {_short_name(str(sub_for))}</span>'
+        elif absent or subbed_out:
+            badges = '<span class="absent-badge">ABSENT</span>'
+
+        row_class = 'class="absent"' if (absent or subbed_out) and not is_sub else ('class="sub-row"' if is_sub else "")
+        avg_str = f"{p['avg']:.1f}" if p.get("avg") else "—"
+        high_str = str(p["high"]) if p.get("high") else "—"
         low_str = str(p["low"]) if p.get("low") else "—"
 
         team_style = _team_color_style(p["team"])
-        rank_sort = rank if not absent else 99999
+        rank_sort = rank
         avg_sort = p["avg"] if p.get("avg") else -1
         high_sort = p["high"] if p.get("high") else -1
         low_sort = p["low"] if p.get("low") else -1
-        orig_rank = (
-            f' data-orig-rank="{html_module.escape(rank_str, quote=True)}"'
-            if not absent
-            else ""
-        )
+        if absent and not is_sub:
+            avg_str = f"{p['avg']:.1f}" if p.get("avg") else "—"
+            high_str = low_str = "—"
+            high_sort = low_sort = -1
+        orig_rank = f' data-orig-rank="{html_module.escape(rank_str, quote=True)}"'
         rows.append(f"""
         <tr {row_class}>
           <td class="right rank" data-sort="{rank_sort}"{orig_rank}>{rank_str}</td>
-          <td class="player-col" data-sort="{html_module.escape(p["name"].lower(), quote=True)}">{_short_name(p['name'])}{absent_badge}</td>
+          <td class="player-col" data-sort="{html_module.escape(p["name"].lower(), quote=True)}">{_short_name(p['name'])}{badges}</td>
           <td class="team-col" data-sort="{html_module.escape(p["team"].lower(), quote=True)}" style="{team_style}">{p['team']}</td>
           <td class="right" data-sort="{avg_sort}">{avg_str}</td>
           <td class="right" data-sort="{high_sort}">{high_str}</td>
@@ -508,7 +587,11 @@ def _build_week_summary_inner(data: dict) -> str:
 def _week_summary_page_html(inner: str) -> str:
     """Weekly recap document with client-side table sorting."""
     doc = _WEEK_SUMMARY_DOC.format(css=_CSS, inner=inner)
-    return doc.replace("</body>", _LIST_SORT_SCRIPT + "\n</body>", 1)
+    return doc.replace(
+        "</body>",
+        _LIST_SORT_SCRIPT + "\n</body>",
+        1,
+    )
 
 
 def build_html(data: dict) -> str:
@@ -744,6 +827,19 @@ body {
     margin-right: 4px;
     vertical-align: middle;
 }
+.player-tag--sub { color: #50fa7b; }
+.sub-for-inline {
+    font-size: 9px;
+    color: #9a96a8;
+    font-weight: normal;
+}
+.player-score-table tr.player-score-separator td {
+    padding: 0;
+    height: 0;
+    line-height: 0;
+    border: none;
+    border-top: 1px solid #3a3060;
+}
 .player-side-empty { font-size: 12px; color: #444; padding: 8px 0; }
 """
 
@@ -793,9 +889,16 @@ def _matchup_winner_summary_html(m: dict) -> str:
 
 
 def _matchup_player_name_html(p: dict, *, away: bool) -> str:
-    """Short display name; away-side absent tag sits left of the name."""
+    """Short display name; absent/sub tags beside the name."""
     name = html_module.escape(_short_name(str(p.get("name", ""))))
-    tag = '<span class="player-tag">ABS</span>' if p.get("absent") else ""
+    tag = ""
+    if p.get("is_substitute"):
+        sub_for = p.get("sub_for")
+        if sub_for:
+            name = f"{name} <span class=\"sub-for-inline\">({_short_name(str(sub_for))})</span>"
+        tag = '<span class="player-tag player-tag--sub">SUB</span>'
+    elif p.get("absent") or p.get("subbed_out"):
+        tag = '<span class="player-tag">ABS</span>'
     if away:
         return f"{tag}{' ' if tag else ''}{name}"
     return f"{name}{' ' if tag else ''}{tag}"
@@ -819,16 +922,35 @@ def _matchup_game_cells_html(
     return "".join(cells)
 
 
+def _matchup_player_score_counted(p: dict) -> bool:
+    if p.get("subbed_out"):
+        return False
+    if p.get("is_substitute"):
+        return bool(p.get("scores_count"))
+    return True
+
+
 def _matchup_player_table_html(players: list, num_games: int, *, away: bool) -> str:
     if not players:
         return ""
+    counting = [p for p in players if _matchup_player_score_counted(p)]
+    non_counting = [p for p in players if not _matchup_player_score_counted(p)]
+    sorted_players = sorted(
+        counting,
+        key=lambda p: str(p.get("name", "")).lower(),
+    ) + sorted(
+        non_counting,
+        key=lambda p: str(p.get("name", "")).lower(),
+    )
     g_hdrs = "".join(f'<th class="pst-g">G{i + 1}</th>' for i in range(num_games))
     if away:
         thead = f"<thead><tr>{g_hdrs}<th class=\"pst-name\"></th></tr></thead>"
     else:
         thead = f"<thead><tr><th class=\"pst-name\"></th>{g_hdrs}</tr></thead>"
     body_rows = []
-    for p in players:
+    col_span = num_games + 1
+
+    def append_player_row(p: dict) -> None:
         games = p.get("games") or []
         name_td = f'<td class="pst-name">{_matchup_player_name_html(p, away=away)}</td>'
         game_tds = _matchup_game_cells_html(games, num_games, p.get("game_absent"))
@@ -836,6 +958,15 @@ def _matchup_player_table_html(players: list, num_games: int, *, away: bool) -> 
             body_rows.append(f"<tr>{game_tds}{name_td}</tr>")
         else:
             body_rows.append(f"<tr>{name_td}{game_tds}</tr>")
+
+    for p in counting:
+        append_player_row(p)
+    if counting and non_counting:
+        body_rows.append(
+            f'<tr class="player-score-separator"><td colspan="{col_span}"></td></tr>'
+        )
+    for p in non_counting:
+        append_player_row(p)
     cls = "player-score-table--away" if away else "player-score-table--home"
     return (
         f'<table class="player-score-table {cls}">'
@@ -1056,6 +1187,28 @@ tbody td.right { text-align: right; }
 .sub-col { color: #888; font-size: 12px; }
 .gold { color: #ffb86c; font-weight: bold; }
 .green { color: #50fa7b; }
+.sub-badge {
+    display: inline-block;
+    background: #1a2e2a;
+    color: #50fa7b;
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    letter-spacing: 1px;
+    vertical-align: middle;
+    margin-left: 4px;
+}
+.absent-badge {
+    display: inline-block;
+    background: #2e1a1a;
+    color: #ff6b81;
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    letter-spacing: 1px;
+    vertical-align: middle;
+    margin-left: 4px;
+}
 .record { font-weight: bold; color: #fff; }
 .standings-champion {
     margin-right: 0.2em;
@@ -1312,6 +1465,19 @@ _PLAYER_DETAIL_CSS_EXTRA = """
     stroke: #6ec4e8; stroke-width: 1.25; stroke-dasharray: 3 4; opacity: 0.85;
 }
 .player-chart-dot { fill: #50fa7b; stroke: #0d0c14; stroke-width: 1; pointer-events: none; }
+.player-chart-point--sub .player-chart-dot { fill: #50fa7b; stroke: #2d6a4a; stroke-width: 2; }
+.player-chart-tip-sub {
+    display: inline-block;
+    margin-left: 4px;
+    background: #1a2e2a;
+    color: #50fa7b;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 3px;
+    letter-spacing: 0.08em;
+    vertical-align: middle;
+}
 """
 
 _PLAYER_CHART_TIP_SCRIPT = r"""<script>
@@ -1363,6 +1529,10 @@ _PLAYER_CHART_TIP_SCRIPT = r"""<script>
       var week = g.getAttribute("data-week") || "";
       var game = g.getAttribute("data-game") || "";
       var idx = g.getAttribute("data-index") || "";
+      var isSub = g.getAttribute("data-sub") === "1";
+      var subBadge = isSub
+        ? ' <span class="player-chart-tip-sub">SUB</span>'
+        : "";
       tip.innerHTML =
         '<div class="player-chart-tip-score">' +
         score +
@@ -1374,6 +1544,7 @@ _PLAYER_CHART_TIP_SCRIPT = r"""<script>
         " \u00b7 Game " +
         game +
         (idx ? " \u00b7 #" + idx : "") +
+        subBadge +
         "</div>" +
         '<span class="player-chart-tip-vs ' +
         vsCls +
@@ -2213,12 +2384,18 @@ def _player_game_chart_html(
         wk = pt.get("week", "")
         g = pt.get("game", "")
         sl_attr = html_module.escape(sl, quote=True)
-        aria = html_module.escape(f"Game {g}, week {wk}, {score} pins")
+        is_sub = bool(pt.get("is_substitute"))
+        sub_note = " (sub)" if is_sub else ""
+        aria = html_module.escape(
+            f"Game {g}, week {wk}, {score} pins{sub_note}"
+        )
+        pt_cls = "player-chart-point player-chart-point--sub" if is_sub else "player-chart-point"
+        sub_attr = ' data-sub="1"' if is_sub else ""
         cx, cy = x_at(i), y_at(score)
         dots.append(
-            f'<g class="player-chart-point" tabindex="0" role="graphics-symbol" '
+            f'<g class="{pt_cls}" tabindex="0" role="graphics-symbol" '
             f'aria-label="{aria}" data-score="{score}" data-season="{sl_attr}" '
-            f'data-week="{wk}" data-game="{g}" data-index="{i + 1}">'
+            f'data-week="{wk}" data-game="{g}" data-index="{i + 1}"{sub_attr}>'
             f'<circle class="player-chart-hit" cx="{cx:.1f}" cy="{cy:.1f}" r="14"/>'
             f'<circle class="player-chart-dot" cx="{cx:.1f}" cy="{cy:.1f}" r="3.5"/>'
             f"</g>"
@@ -2615,23 +2792,41 @@ _PLAYERS_STATS_TOGGLE_SCRIPT = (
     "<script>\n"
     "(function () {\n"
     '  document.querySelectorAll(".players-stats-section").forEach(function (sec) {\n'
-    '    var btn = sec.querySelector(".players-stats-toggle");\n'
+    '    var otherBtn = sec.querySelector(".players-other-toggle");\n'
+    '    var subsBtn = sec.querySelector(".players-subs-toggle");\n'
     '    var helpBtn = sec.querySelector(".players-par-help");\n'
     '    var dialog = sec.querySelector(".players-par-dialog");\n'
     '    var main = sec.querySelector(\'[data-panel="main"]\');\n'
     '    var other = sec.querySelector(\'[data-panel="other"]\');\n'
-    "    if (!btn || !main || !other) return;\n"
-    "    function setView(onOther) {\n"
-    "      other.hidden = !onOther;\n"
-    "      main.hidden = onOther;\n"
-    '      btn.setAttribute("aria-pressed", onOther ? "true" : "false");\n'
-    '      btn.textContent = onOther ? "Main stats" : "Other stats";\n'
-    "      if (helpBtn) helpBtn.hidden = !onOther;\n"
-    "      if (dialog && dialog.open && !onOther) dialog.close();\n"
+    '    var subs = sec.querySelector(\'[data-panel="subs"]\');\n'
+    "    if (!main || !other) return;\n"
+    '    var current = "main";\n'
+    "    function showPanel(panel) {\n"
+    "      current = panel;\n"
+    "      main.hidden = panel !== \"main\";\n"
+    "      other.hidden = panel !== \"other\";\n"
+    "      if (subs) subs.hidden = panel !== \"subs\";\n"
+    '      if (otherBtn) {\n'
+    '        otherBtn.setAttribute("aria-pressed", panel === "other" ? "true" : "false");\n'
+    '        otherBtn.textContent = panel === "other" ? "Main stats" : "Other stats";\n'
+    "      }\n"
+    '      if (subsBtn) {\n'
+    '        subsBtn.setAttribute("aria-pressed", panel === "subs" ? "true" : "false");\n'
+    '        subsBtn.textContent = panel === "subs" ? "Main stats" : "Subs";\n'
+    "      }\n"
+    "      if (helpBtn) helpBtn.hidden = panel !== \"other\";\n"
+    "      if (dialog && dialog.open && panel !== \"other\") dialog.close();\n"
     "    }\n"
-    '    btn.addEventListener("click", function () {\n'
-    "      setView(other.hidden);\n"
-    "    });\n"
+    "    if (otherBtn) {\n"
+    '      otherBtn.addEventListener("click", function () {\n'
+    '        showPanel(current === "other" ? "main" : "other");\n'
+    "      });\n"
+    "    }\n"
+    "    if (subsBtn && subs) {\n"
+    '      subsBtn.addEventListener("click", function () {\n'
+    '        showPanel(current === "subs" ? "main" : "subs");\n'
+    "      });\n"
+    "    }\n"
     "    if (helpBtn && dialog) {\n"
     '      helpBtn.addEventListener("click", function () {\n'
     "        if (typeof dialog.showModal === \"function\") dialog.showModal();\n"
@@ -2646,17 +2841,34 @@ _PLAYERS_STATS_TOGGLE_SCRIPT = (
 )
 
 
-def _player_identity_cells(i: int, name: str, team: str) -> List[dict]:
-    return [
+def _player_name_display(name: str, *, sub_badge: bool = False) -> str:
+    label = _short_name(name)
+    if sub_badge:
+        label += ' <span class="sub-badge">SUB</span>'
+    return label
+
+
+def _player_identity_cells(
+    i: int, name: str, team: str, *, sub_badge: bool = False, include_team: bool = True
+) -> List[dict]:
+    cells = [
         {"val": i, "cls": "right rank"},
-        {"val": _short_name(name), "cls": "name-col", "sort": name.lower()},
         {
-            "val": team,
-            "cls": "sub-col",
-            "style": _team_color_style(team),
-            "sort": team.lower(),
+            "val": _player_name_display(name, sub_badge=sub_badge),
+            "cls": "name-col",
+            "sort": name.lower(),
         },
     ]
+    if include_team:
+        cells.append(
+            {
+                "val": team,
+                "cls": "sub-col",
+                "style": _team_color_style(team),
+                "sort": team.lower(),
+            }
+        )
+    return cells
 
 
 def _format_par(value: int) -> str:
@@ -2692,6 +2904,7 @@ def build_players_html(
     ascending: bool = False,
     *,
     summary: Optional[dict] = None,
+    subs_data: Optional[dict] = None,
 ) -> str:
     all_time = season in ("All Time",) or "All Time" in season
     count_label = "Games" if all_time else "Weeks"
@@ -2724,6 +2937,15 @@ def build_players_html(
     )
     main_rows: List[List[dict]] = []
     other_rows: List[List[dict]] = []
+    subs_rows: List[List[dict]] = []
+    subs_headers = [
+        {"label": "#", "right": True},
+        {"label": "Player"},
+        {"label": "Avg", "right": True},
+        {"label": "High", "right": True},
+        {"label": "Low", "right": True},
+        {"label": "Weeks subbed", "right": True},
+    ]
     sorted_players = sorted(
         data.items(), key=lambda x: x[1].get("average", 0), reverse=not ascending
     )
@@ -2738,7 +2960,8 @@ def build_players_html(
         games = _player_par_game_count(stats, all_time)
         par_per_game, par_per_game_sort = _format_par_per_game(par, games)
         team = stats.get("team", "")
-        ident = _player_identity_cells(i, name, team)
+        sub_badge = bool(stats.get("weeks_subbed"))
+        ident = _player_identity_cells(i, name, team, sub_badge=sub_badge)
         main_rows.append(
             ident
             + [
@@ -2767,6 +2990,42 @@ def build_players_html(
             {"val": absences, "cls": "right sub-col", "sort": absences},
         )
         other_rows.append(ident + other_cells)
+    if subs_data:
+        sorted_subs = sorted(
+            subs_data.items(),
+            key=lambda x: x[1].get("average", 0),
+            reverse=not ascending,
+        )
+        for i, (name, stats) in enumerate(sorted_subs, 1):
+            avg = stats.get("average", 0)
+            high = stats.get("highest_game", 0)
+            low = stats.get("lowest_game", 0)
+            weeks_subbed = stats.get("weeks_subbed", 0)
+            team = stats.get("team", "")
+            subs_rows.append(
+                _player_identity_cells(i, name, team, sub_badge=True, include_team=False)
+                + [
+                    {"val": f"{avg:.1f}", "cls": "right gold", "sort": avg},
+                    {"val": high, "cls": "right green"},
+                    {"val": low, "cls": "right sub-col"},
+                    {"val": weeks_subbed, "cls": "right sub-col", "sort": weeks_subbed},
+                ]
+            )
+    subs_toggle_btn = ""
+    subs_panel_html = ""
+    if subs_data:
+        subs_toggle_btn = """
+          <button type="button" class="players-stats-toggle players-subs-toggle" aria-pressed="false">
+            Subs
+          </button>"""
+        subs_panel_html = (
+            """
+      <div class="players-stats-panel" data-panel="subs" hidden>
+        """
+            + _render_sortable_table(subs_headers, subs_rows)
+            + """
+      </div>"""
+        )
     par_help_btn = """
           <button type="button" class="players-par-help" hidden>
             What is PAR?
@@ -2790,8 +3049,8 @@ def build_players_html(
     <div class="section players-stats-section">
       <div class="section-head">
         <div class="section-title">Season Averages</div>
-        <div class="players-stats-actions">{par_help_btn}
-          <button type="button" class="players-stats-toggle" aria-pressed="false">
+        <div class="players-stats-actions">{par_help_btn}{subs_toggle_btn}
+          <button type="button" class="players-stats-toggle players-other-toggle" aria-pressed="false">
             Other stats
           </button>
         </div>
@@ -2806,7 +3065,9 @@ def build_players_html(
         + _render_sortable_table(other_headers, other_rows)
         + par_dialog
         + """
-      </div>
+      </div>"""
+        + subs_panel_html
+        + """
     </div>"""
     )
     css = _LIST_CSS + _PLAYERS_STATS_TOGGLE_CSS
@@ -2843,7 +3104,9 @@ def _team_name_cell_expandable(name: str, champion_team: Optional[str] = None) -
 def _team_roster_breakdown_sort_key(item: Tuple[str, Any]) -> tuple:
     pname, info = item
     if isinstance(info, dict):
-        if info.get("absent"):
+        if info.get("subbed_out") or (
+            info.get("is_substitute") and not info.get("scores_count")
+        ):
             return (2, 0.0, pname.lower())
         val = info.get("value")
         if val is None:
@@ -2853,9 +3116,13 @@ def _team_roster_breakdown_sort_key(item: Tuple[str, Any]) -> tuple:
 
 
 def _roster_absence_tags(info: dict) -> str:
-    """Whole-week ABS, or ABS G1 / ABS G1,2,3 for per-game book averages."""
+    """Whole-week ABS, per-game ABS, or SUB badge for counting substitutes."""
+    if info.get("is_substitute"):
+        return ' <span class="sub-badge">SUB</span>'
+    if info.get("subbed_out"):
+        return ' <span class="absent-badge">ABS</span>'
     if info.get("absent"):
-        return ' <span class="player-tag">ABS</span>'
+        return ' <span class="absent-badge">ABS</span>'
     missed = info.get("missed_games") or []
     if not missed:
         return ""
@@ -6223,10 +6490,19 @@ def _top_player_games_section(games: list, n: int) -> str:
         {"label": "Wk", "right": True},
     ]
     rows = []
-    for i, (player, team, week, score) in enumerate(games[:n], 1):
+    for i, entry in enumerate(games[:n], 1):
+        if len(entry) >= 5:
+            player, team, week, score, is_sub = entry[:5]
+        else:
+            player, team, week, score = entry[:4]
+            is_sub = False
         rows.append([
             {"val": i, "cls": "right rank"},
-            {"val": _short_name(player), "cls": "name-col", "sort": player.lower()},
+            {
+                "val": _player_name_display(player, sub_badge=bool(is_sub)),
+                "cls": "name-col",
+                "sort": player.lower(),
+            },
             {"val": team, "cls": "sub-col", "style": _team_color_style(team), "sort": team.lower()},
             {"val": int(score), "cls": "right gold"},
             {"val": week, "cls": "right sub-col"},
@@ -6246,7 +6522,10 @@ def _top_player_weeks_section(weeks: list, n: int) -> str:
     ]
     rows = []
     for i, week_data in enumerate(weeks[:n], 1):
-        if len(week_data) == 5:
+        is_sub = False
+        if len(week_data) >= 6:
+            player, team, week, total, num_games, is_sub = week_data[:6]
+        elif len(week_data) == 5:
             player, team, week, total, num_games = week_data
         else:
             player, team, week, total = week_data
@@ -6254,7 +6533,11 @@ def _top_player_weeks_section(weeks: list, n: int) -> str:
         week_avg = total / num_games if num_games else 0
         rows.append([
             {"val": i, "cls": "right rank"},
-            {"val": _short_name(player), "cls": "name-col", "sort": player.lower()},
+            {
+                "val": _player_name_display(player, sub_badge=bool(is_sub)),
+                "cls": "name-col",
+                "sort": player.lower(),
+            },
             {"val": team, "cls": "sub-col", "style": _team_color_style(team), "sort": team.lower()},
             {"val": f"{week_avg:.1f}", "cls": "right gold", "sort": week_avg},
             {"val": week, "cls": "right sub-col"},
@@ -6739,13 +7022,22 @@ def build_top_games_html(games: list, season: str, n: int) -> str:
         {"label": "Score", "right": True},
     ]
     rows = []
-    for i, (player, team, week, score) in enumerate(games[:n], 1):
+    for i, entry in enumerate(games[:n], 1):
+        if len(entry) >= 5:
+            player, team, week, score, is_sub = entry[:5]
+        else:
+            player, team, week, score = entry[:4]
+            is_sub = False
         rows.append([
-            {"val": i,                   "cls": "right rank"},
-            {"val": _short_name(player), "cls": "name-col", "sort": player.lower()},
-            {"val": team,                "cls": "sub-col", "style": _team_color_style(team), "sort": team.lower()},
-            {"val": week,                "cls": "right sub-col"},
-            {"val": int(score),          "cls": "right gold"},
+            {"val": i, "cls": "right rank"},
+            {
+                "val": _player_name_display(player, sub_badge=bool(is_sub)),
+                "cls": "name-col",
+                "sort": player.lower(),
+            },
+            {"val": team, "cls": "sub-col", "style": _team_color_style(team), "sort": team.lower()},
+            {"val": week, "cls": "right sub-col"},
+            {"val": int(score), "cls": "right gold"},
         ])
     section = _list_section(f"Top {n} Individual Games", headers, rows)
     return _render_list_page(
@@ -6767,20 +7059,27 @@ def build_top_weeks_html(weeks: list, season: str, n: int) -> str:
     ]
     rows = []
     for i, week_data in enumerate(weeks[:n], 1):
-        if len(week_data) == 5:
+        is_sub = False
+        if len(week_data) >= 6:
+            player, team, week, total, num_games, is_sub = week_data[:6]
+        elif len(week_data) == 5:
             player, team, week, total, num_games = week_data
         else:
             player, team, week, total = week_data
             num_games = 0
         week_avg = total / num_games if num_games else 0
         rows.append([
-            {"val": i,                   "cls": "right rank"},
-            {"val": _short_name(player), "cls": "name-col", "sort": player.lower()},
-            {"val": team,                "cls": "sub-col", "style": _team_color_style(team), "sort": team.lower()},
-            {"val": week,                "cls": "right sub-col"},
-            {"val": f"{week_avg:.1f}",   "cls": "right gold", "sort": week_avg},
-            {"val": num_games,           "cls": "right sub-col"},
-            {"val": int(total),          "cls": "right sub-col", "sort": total},
+            {"val": i, "cls": "right rank"},
+            {
+                "val": _player_name_display(player, sub_badge=bool(is_sub)),
+                "cls": "name-col",
+                "sort": player.lower(),
+            },
+            {"val": team, "cls": "sub-col", "style": _team_color_style(team), "sort": team.lower()},
+            {"val": week, "cls": "right sub-col"},
+            {"val": f"{week_avg:.1f}", "cls": "right gold", "sort": week_avg},
+            {"val": num_games, "cls": "right sub-col"},
+            {"val": int(total), "cls": "right sub-col", "sort": total},
         ])
     section = _list_section(f"Top {n} Player Weeks", headers, rows)
     return _render_list_page(

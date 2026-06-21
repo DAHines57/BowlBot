@@ -72,6 +72,8 @@ def load_all_facts(session: Optional[Session] = None) -> List[dict]:
                     "game4_absent": bool(pw.game4_absent),
                     "game5_absent": bool(pw.game5_absent),
                     "substitute": bool(pw.substitute),
+                    "substitute_scores_count": bool(pw.substitute_scores_count),
+                    "substituted_for": pw.substituted_for,
                     "playoffs": bool(pw.playoffs),
                     "opponent": canonical_team_name(
                         pw.opponent, season_num=season.number

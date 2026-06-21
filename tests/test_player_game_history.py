@@ -51,6 +51,60 @@ def test_get_player_game_history_all_time_cross_season():
     assert hist[0]["season_number"] == 8
 
 
+def test_get_player_game_history_marks_substitute_games():
+    facts = [
+        _fact("Alice", 1),
+        {
+            **_fact("Alice", 2),
+            "substitute": True,
+            "substituted_for": "Bob",
+            "game1": 230,
+            "game2": 225,
+            "game3": 220,
+            "game4": 215,
+        },
+    ]
+    hist = get_player_game_history(facts, "Alice", "Season 9", season_num=9, limit=30)
+    regular = [g for g in hist if not g.get("is_substitute")]
+    sub = [g for g in hist if g.get("is_substitute")]
+    assert len(regular) == 4
+    assert len(sub) == 4
+    assert sub[0]["week"] == 2
+    assert sub[0]["score"] == 230
+
+
+def test_build_player_detail_html_chart_shows_sub_indicator():
+    html = build_player_detail_html(
+        page_title="Alice",
+        subtitle="Alice · Season 9",
+        team="Team A",
+        stats_title="Season stats",
+        stat_rows=[("Average", "210.0", "gold")],
+        game_history=[
+            {
+                "score": 210,
+                "week": 1,
+                "game": 1,
+                "season_label": "Season 9",
+                "season_number": 9,
+                "is_substitute": False,
+            },
+            {
+                "score": 225,
+                "week": 2,
+                "game": 1,
+                "season_label": "Season 9",
+                "season_number": 9,
+                "is_substitute": True,
+            },
+        ],
+        chart_scope="Season 9",
+    )
+    assert 'data-sub="1"' in html
+    assert "player-chart-point--sub" in html
+    assert "player-chart-tip-sub" in html
+
+
 def test_build_player_detail_html_includes_chart():
     html = build_player_detail_html(
         page_title="Alice",

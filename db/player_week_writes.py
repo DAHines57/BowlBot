@@ -91,6 +91,12 @@ def _normalize_row(row: dict[str, Any], season_num: int, roster: List[str]) -> d
         "game4_absent": game_absent[3],
         "game5_absent": game_absent[4],
         "substitute": bool(row.get("substitute")),
+        "substitute_scores_count": bool(row.get("substitute_scores_count")),
+        "substituted_for": (
+            str(row["substituted_for"]).strip()
+            if row.get("substituted_for")
+            else None
+        ),
         "playoffs": bool(row.get("playoffs")),
         "opponent": opponent,
     }
@@ -149,6 +155,8 @@ def upsert_player_week(
             game4_absent=normalized["game4_absent"],
             game5_absent=normalized["game5_absent"],
             substitute=normalized["substitute"],
+            substitute_scores_count=normalized["substitute_scores_count"],
+            substituted_for=normalized["substituted_for"],
             playoffs=normalized["playoffs"],
             opponent=normalized["opponent"],
             source_row_fingerprint=None,
@@ -174,6 +182,8 @@ def upsert_player_week(
     existing.game4_absent = normalized["game4_absent"]
     existing.game5_absent = normalized["game5_absent"]
     existing.substitute = normalized["substitute"]
+    existing.substitute_scores_count = normalized["substitute_scores_count"]
+    existing.substituted_for = normalized["substituted_for"]
     existing.playoffs = normalized["playoffs"]
     existing.opponent = normalized["opponent"]
     session.flush()
@@ -219,6 +229,54 @@ def sync_week_team_opponents(
                 updated += 1
     session.flush()
     return updated
+
+
+def delete_substitute_rows_not_in_save(
+    session: Session,
+    season_number: int,
+    week: int,
+    rows: List[dict[str, Any]],
+    *,
+    sheet_key: Optional[str] = None,
+) -> int:
+    """Remove substitute rows for saved teams that were omitted from the payload."""
+    label = sheet_key or f"Season {season_number}"
+    season = _get_or_create_season(session, label, season_number)
+    keep_by_team: dict[str, set[str]] = {}
+    teams: set[str] = set()
+    for row in rows:
+        team = canonical_team_name(str(row["team"]).strip(), season_num=season_number)
+        player = str(row.get("player_display_name") or "").strip()
+        if not team:
+            continue
+        teams.add(team)
+        if not row.get("substitute"):
+            continue
+        keep_by_team.setdefault(team, set())
+        if player:
+            keep_by_team[team].add(player)
+
+    if not teams:
+        return 0
+
+    deleted = 0
+    for team_name in teams:
+        team_id = _get_or_create_team(session, season.id, team_name)
+        keep = keep_by_team.get(team_name, set())
+        existing = session.scalars(
+            select(PlayerWeek).where(
+                PlayerWeek.season_id == season.id,
+                PlayerWeek.week == week,
+                PlayerWeek.team_id == team_id,
+                PlayerWeek.substitute.is_(True),
+            )
+        ).all()
+        for pw in existing:
+            if pw.player_display_name not in keep:
+                session.delete(pw)
+                deleted += 1
+    session.flush()
+    return deleted
 
 
 def save_week_rows(

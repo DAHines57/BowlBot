@@ -37,6 +37,8 @@ def test_normalize_row_canonical_team_and_opponent():
         "game5": None,
         "absent": False,
         "substitute": False,
+        "substitute_scores_count": False,
+        "substituted_for": None,
         "playoffs": False,
         "opponent": "team b",
     }
@@ -44,3 +46,26 @@ def test_normalize_row_canonical_team_and_opponent():
     assert out["team"] == "Team A"
     assert out["opponent"] == "Team B"
     assert out["week_average"] == pytest.approx(205.0)
+
+
+def test_normalize_row_substitute_fields():
+    row = {
+        "team": "Team A",
+        "player_display_name": "Jane",
+        "week": 2,
+        "game1": 200,
+        "game2": 210,
+        "game3": None,
+        "game4": None,
+        "game5": None,
+        "absent": False,
+        "substitute": True,
+        "substitute_scores_count": True,
+        "substituted_for": "Alice",
+        "playoffs": False,
+        "opponent": None,
+    }
+    out = _normalize_row(row, 9, ["Team A"])
+    assert out["substitute"] is True
+    assert out["substitute_scores_count"] is True
+    assert out["substituted_for"] == "Alice"

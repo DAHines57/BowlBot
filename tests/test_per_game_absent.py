@@ -153,8 +153,8 @@ def test_team_week_roster_html_shows_abs_game_tags():
         }
     )
     assert "ABS G1,3" in html
-    assert html.count("player-tag") == 2
-    assert "ABS</span>" in html
+    assert html.count("player-tag") == 1
+    assert 'class="absent-badge">ABS</span>' in html
 
 
 def test_team_roster_html_marks_missed_game_red():

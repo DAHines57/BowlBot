@@ -7,7 +7,6 @@ from sqlalchemy import func, select
 
 from db.data_ownership import is_season_db_managed
 from db.models import Season, TeamRosterMember
-from db.player_week_writes import save_week_rows, sync_week_team_opponents
 from db.session import get_session
 from league_data import LeagueDataSource
 from stats import compute
@@ -295,6 +294,45 @@ def playoff_weeks_by_season(
 ABSENT_FILL_MIN_PLAYED_WEEKS = 3
 
 
+def absence_penalty_multiplier(absence_number: int) -> float:
+    """Season absence index (1-based): 1st=100%, 2nd=95%, 3+=90%."""
+    if absence_number <= 1:
+        return 1.0
+    if absence_number == 2:
+        return 0.95
+    return 0.90
+
+
+def absence_penalty_percent(absence_number: int) -> int:
+    """Display percentage for book average (1st=100%, 2nd=95%, 3+=90%)."""
+    if absence_number <= 1:
+        return 100
+    if absence_number == 2:
+        return 95
+    return 90
+
+
+def apply_absence_penalty_to_average(base_avg: float, absence_number: int) -> int:
+    """Truncate penalized per-game book average (same as absent fill)."""
+    return int(base_avg * absence_penalty_multiplier(absence_number))
+
+
+def _player_whole_week_absences_before(
+    rows: List[dict], player: str, before_week: int
+) -> int:
+    """Whole-week absences strictly before ``before_week`` (roster rows only)."""
+    count = 0
+    for f in rows:
+        if str(f.get("player_display_name") or "").strip() != player:
+            continue
+        if f.get("substitute") or not f.get("absent"):
+            continue
+        wk = safe_int(f.get("week"), 0)
+        if 0 < wk < before_week:
+            count += 1
+    return count
+
+
 def _player_played_weeks_before(
     rows: List[dict], player: str, before_week: int
 ) -> int:
@@ -326,13 +364,17 @@ def _player_pin_average(rows: List[dict], player: str) -> Optional[float]:
     return sum(games) / len(games)
 
 
-def build_absent_fill_averages(
+def build_absent_fill_details(
     facts: List[dict],
     season_num: int,
     week: int,
     players: List[str],
-) -> dict[str, int]:
-    """Truncated per-game pin average to pre-fill absent rows on score entry."""
+) -> dict[str, dict]:
+    """Book-average fill metadata for absent rows on score entry.
+
+    Returns per player: base (truncated book avg), penalty_percent, fill score,
+    and absence_number (1-based within the season).
+    """
     season_rows = filter_facts(facts, season_num=season_num)
     prior_rows_by_season: dict[int, List[dict]] = {}
     for f in facts:
@@ -342,7 +384,7 @@ def build_absent_fill_averages(
         prior_rows_by_season.setdefault(sn, []).append(f)
     prior_season_nums = sorted(prior_rows_by_season.keys(), reverse=True)
 
-    out: dict[str, int] = {}
+    out: dict[str, dict] = {}
     for raw_name in players:
         player = str(raw_name or "").strip()
         if not player:
@@ -350,9 +392,7 @@ def build_absent_fill_averages(
         played = _player_played_weeks_before(season_rows, player, week)
         if played >= ABSENT_FILL_MIN_PLAYED_WEEKS:
             scope = [
-                f
-                for f in season_rows
-                if safe_int(f.get("week"), 0) < week
+                f for f in season_rows if safe_int(f.get("week"), 0) < week
             ]
         else:
             scope = []
@@ -362,9 +402,43 @@ def build_absent_fill_averages(
                     scope = candidate
                     break
         avg = _player_pin_average(scope, player)
-        if avg is not None:
-            out[player] = int(avg)
+        if avg is None:
+            continue
+        prior_absences = _player_whole_week_absences_before(
+            season_rows, player, week
+        )
+        absence_number = prior_absences + 1
+        base = int(avg)
+        penalty_percent = absence_penalty_percent(absence_number)
+        out[player] = {
+            "base": base,
+            "penalty_percent": penalty_percent,
+            "fill": apply_absence_penalty_to_average(avg, absence_number),
+            "absence_number": absence_number,
+        }
     return out
+
+
+def build_absent_fill_averages(
+    facts: List[dict],
+    season_num: int,
+    week: int,
+    players: List[str],
+) -> dict[str, int]:
+    """Truncated per-game book average to pre-fill absent rows on score entry.
+
+    Applies league absence penalties to the pulled average for the week being
+    entered: 1st absence 0%, 2nd 5%, 3rd and later 10%.
+
+    Base average uses the current season after three played weeks; otherwise
+    the most recent prior season with scores for that player.
+    """
+    return {
+        player: detail["fill"]
+        for player, detail in build_absent_fill_details(
+            facts, season_num, week, players
+        ).items()
+    }
 
 
 def team_show_game5_default(team_rows: List[dict]) -> bool:
@@ -390,6 +464,8 @@ def fact_to_entry_row(f: dict) -> dict:
         "game4_absent": bool(f.get("game4_absent")),
         "game5_absent": bool(f.get("game5_absent")),
         "substitute": bool(f.get("substitute")),
+        "substitute_scores_count": bool(f.get("substitute_scores_count")),
+        "substituted_for": str(f.get("substituted_for") or "").strip() or None,
         "playoffs": bool(f.get("playoffs")),
     }
 
@@ -484,7 +560,11 @@ def _merge_saved_with_template(
             merged[key] = row
     return sorted(
         merged.values(),
-        key=lambda r: (str(r.get("team") or ""), str(r.get("player_display_name") or "")),
+        key=lambda r: (
+            str(r.get("team") or ""),
+            bool(r.get("substitute")),
+            str(r.get("player_display_name") or ""),
+        ),
     )
 
 
@@ -565,9 +645,12 @@ def get_week_entry(
             if str(r.get("player_display_name") or "").strip()
         }
     )
-    absent_fill_averages = build_absent_fill_averages(
+    absent_fill_details = build_absent_fill_details(
         facts, season_num, week, players
     )
+    absent_fill_averages = {
+        player: detail["fill"] for player, detail in absent_fill_details.items()
+    }
     team_game5_visible = {
         team_name: team_show_game5_default(team_rows)
         for team_name, team_rows in teams_grouped
@@ -587,6 +670,7 @@ def get_week_entry(
             "templated": templated,
             "completion": completion,
             "absent_fill_averages": absent_fill_averages,
+            "absent_fill_details": absent_fill_details,
             "team_game5_visible": team_game5_visible,
         },
         None,
@@ -645,6 +729,39 @@ def mirror_team_opponents(team_opponents: dict[str, str]) -> dict[str, str]:
     return mirrored
 
 
+def _validate_substitute_rows(parsed: List[dict]) -> Optional[str]:
+    """Validate sub rows: sub-for required, roster match, no duplicate slots."""
+    roster_by_team: dict[str, set[str]] = {}
+    for row in parsed:
+        if row.get("substitute"):
+            continue
+        team = str(row.get("team") or "").strip()
+        player = str(row.get("player_display_name") or "").strip()
+        if team and player:
+            roster_by_team.setdefault(team, set()).add(player)
+
+    sub_for_by_team: dict[str, set[str]] = {}
+    for i, row in enumerate(parsed):
+        if not row.get("substitute"):
+            continue
+        team = str(row.get("team") or "").strip()
+        player = str(row.get("player_display_name") or "").strip()
+        sub_for = str(row.get("substituted_for") or "").strip()
+        label = f"rows[{i}] ({player or 'sub'})"
+        if not sub_for:
+            return f"{label}: substitute rows require substituted_for."
+        roster = roster_by_team.get(team, set())
+        if sub_for not in roster:
+            return f"{label}: substituted_for {sub_for!r} is not on the team roster."
+        taken = sub_for_by_team.setdefault(team, set())
+        if sub_for in taken:
+            return f"{label}: duplicate substitute for {sub_for!r} on {team!r}."
+        taken.add(sub_for)
+        if row.get("substitute_scores_count") and not sub_for:
+            return f"{label}: substitute_scores_count requires substituted_for."
+    return None
+
+
 def parse_week_rows_payload(body: dict) -> Tuple[Optional[List[dict]], Optional[str]]:
     raw_rows = body.get("rows")
     if not isinstance(raw_rows, list) or not raw_rows:
@@ -676,6 +793,13 @@ def parse_week_rows_payload(body: dict) -> Tuple[Optional[List[dict]], Optional[
             opponent = None
         absent = _bool_field(raw.get("absent"))
         substitute = _bool_field(raw.get("substitute"))
+        substitute_scores_count = (
+            _bool_field(raw.get("substitute_scores_count")) if substitute else False
+        )
+        substituted_for = str(raw.get("substituted_for") or "").strip() or None
+        if not substitute:
+            substitute_scores_count = False
+            substituted_for = None
         label = f"rows[{i}] ({player})"
         games: dict[str, Optional[float]] = {}
         game_absent: dict[str, bool] = {}
@@ -704,9 +828,14 @@ def parse_week_rows_payload(body: dict) -> Tuple[Optional[List[dict]], Optional[
                 "game4_absent": game_absent["game4_absent"],
                 "game5_absent": game_absent["game5_absent"],
                 "substitute": substitute,
+                "substitute_scores_count": substitute_scores_count,
+                "substituted_for": substituted_for,
                 "playoffs": week_playoffs,
             }
         )
+    err = _validate_substitute_rows(parsed)
+    if err:
+        return None, err
     return parsed, None
 
 
@@ -739,9 +868,22 @@ def save_week_entry(
     sheet_key = (
         season_label if season_label.startswith("Season") else f"Season {season_num}"
     )
+    from db.player_week_writes import (
+        delete_substitute_rows_not_in_save,
+        save_week_rows,
+        sync_week_team_opponents,
+    )
+
     session = get_session()
     try:
         count = save_week_rows(
+            session,
+            season_num,
+            week,
+            rows,
+            sheet_key=sheet_key,
+        )
+        deleted_subs = delete_substitute_rows_not_in_save(
             session,
             season_num,
             week,
@@ -766,6 +908,8 @@ def save_week_entry(
         if row.get(f"game{n}_absent")
     )
     summary = f"Saved {count} row(s) for {season_label} week {week}."
+    if deleted_subs:
+        summary += f" Removed {deleted_subs} sub row(s)."
     if miss_flags:
         summary += f" {miss_flags} missed-game flag(s) recorded."
 
