@@ -133,6 +133,21 @@ def week_results():
     return Response(html, mimetype="text/html; charset=utf-8")
 
 
+@bp.route("/week/teams")
+def week_teams():
+    svc = _svc()
+    if not svc:
+        return _no_svc()
+    season = _season_arg()
+    if season == "all":
+        season = svc.data.get_current_season()
+    week = _week_arg()
+    html, err = svc.weekly_teams_page(season, week, embed=_embed_flag())
+    if err:
+        return render_template("error.html", message=err), 400
+    return Response(html, mimetype="text/html; charset=utf-8")
+
+
 @bp.route("/playoffs")
 def playoffs():
     svc = _svc()

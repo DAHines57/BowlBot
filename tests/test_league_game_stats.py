@@ -203,3 +203,22 @@ def test_get_league_game_stats_season_totals_includes_week():
     stats = get_league_game_stats(facts, season_num=9)
     assert stats["high_game"]["week"] == 5
     assert stats["low_game"]["week"] == 2
+
+
+def test_build_teams_html_through_week_subtitle():
+    from image_generator import build_teams_html
+    from stats.compute import get_team_scores
+
+    facts = [
+        _fact("Alice", 1, games=(200, 200, 200, 200)),
+        _fact("Bob", 1, games=(180, 180, 180, 180), team="Team B"),
+        _fact("Alice", 2, games=(210, 210, 210, 210)),
+        _fact("Bob", 2, games=(190, 190, 190, 190), team="Team B"),
+    ]
+    data = get_team_scores(facts, season="Season 9", through_week=1, season_num=9)
+    html = build_teams_html(
+        data, "Season 9", subtitle="Season 9 &nbsp;·&nbsp; through week 1"
+    )
+    assert "through week 1" in html
+    assert "Standings" in html
+    assert "Team A" in html

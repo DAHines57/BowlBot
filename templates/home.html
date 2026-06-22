@@ -1005,6 +1005,7 @@
               <div class="btn-grid cols-2">
                 <a class="btn btn--spark btn-this-week" href="#" onclick="go('/week/summary', 'Weekly summary'); return false;">Weekly summary</a>
                 <a class="btn btn--spark btn-this-week" href="#" onclick="go('/week/results', 'Weekly matchups'); return false;">Weekly matchups</a>
+                <a class="btn btn--spark btn-this-week" href="#" style="grid-column: 1 / -1;" onclick="go('/week/teams', 'Standings (through week)'); return false;">Standings (through week)</a>
               </div>
             </div>
             <div class="report-group report-group--season">
@@ -1012,7 +1013,7 @@
               <p class="report-group-hint">Season only — no week. <em>All seasons</em> = all-time where available.</p>
               <div class="btn-grid cols-2">
                 <a class="btn btn--spark" href="#" onclick="goSeasonTotals('/players', 'All players'); return false;">All players</a>
-                <a class="btn btn--spark btn-season-only" href="#" onclick="goSeasonTotals('/teams', 'Team standings'); return false;">Team standings</a>
+                <a class="btn btn--spark btn-season-only" href="#" onclick="goSeasonTotals('/teams', 'Full season standings'); return false;">Full season standings</a>
                 <a class="btn btn--ghost btn--spark" href="#" onclick="goSeasonTotals('/top/player-scores', 'Best player scores'); return false;">Best player scores</a>
                 <a class="btn btn--ghost btn--spark" href="#" onclick="goSeasonTotals('/top/team-scores', 'Best team scores'); return false;">Best team scores</a>
                 <a id="btn-playoffs" class="btn btn--ghost btn--spark" href="#" style="grid-column: 1 / -1;" hidden onclick="goSeasonTotals('/bracket', 'Playoffs'); return false;">Playoffs (bracket &amp; scores)</a>

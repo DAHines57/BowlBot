@@ -3336,7 +3336,11 @@ _TEAMS_EXPAND_SCRIPT = r"""<script>
 
 
 def build_teams_html(
-    data: dict, season: str, *, champion_team: Optional[str] = None
+    data: dict,
+    season: str,
+    *,
+    champion_team: Optional[str] = None,
+    subtitle: Optional[str] = None,
 ) -> str:
     headers = [
         {"label": "#", "right": True},
@@ -3376,7 +3380,7 @@ def build_teams_html(
     return _render_list_page(
         css=_LIST_CSS + _TEAMS_STANDINGS_CSS,
         title="🏆 TEAMS",
-        subtitle=season,
+        subtitle=subtitle or season,
         sections=section,
         extra_script=_TEAMS_EXPAND_SCRIPT,
     )

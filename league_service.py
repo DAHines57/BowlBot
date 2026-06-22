@@ -171,6 +171,30 @@ class LeagueService:
             return None, f"No matchups for week {wk}."
         return inject_web_chrome(build_matchups_html(data), embed=embed), ""
 
+    def weekly_teams_page(
+        self,
+        season: str,
+        week: Optional[Union[int, str]] = None,
+        *,
+        embed: bool = False,
+    ) -> Tuple[Optional[str], str]:
+        if season == "all":
+            season = self.data.get_current_season()
+        wk = week if week is not None else self.data.get_latest_week(season)
+        try:
+            wk = int(wk)
+        except (TypeError, ValueError):
+            return None, "Invalid week."
+        data = self.data.get_team_scores(None, season, through_week=wk)
+        if isinstance(data, dict) and "error" in data:
+            return None, data["error"]
+        if not data:
+            return None, f"No team data through week {wk}."
+        subtitle = f"{season} &nbsp;·&nbsp; through week {wk}"
+        return inject_web_chrome(
+            build_teams_html(data, season, subtitle=subtitle), embed=embed
+        ), ""
+
     def playoff_results_page(self, season: str, *, embed: bool = False) -> Tuple[Optional[str], str]:
         """Same page as the bracket view: seeds, bracket, and stacked playoff week cards."""
         return self.playoff_bracket_page(season, embed=embed)
