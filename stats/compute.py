@@ -11,12 +11,14 @@ from stats.facts import (
     fact_counts_for_stats,
     fact_counts_for_team_pins,
     filter_facts,
+    filter_facts_season_week_range,
     games_list_for_player_stats,
     games_list_for_team,
     games_slots,
     name_matches_team,
     player_profile_games,
     resolve_opponent_on_roster,
+    season_week_tuple,
     subs_by_replaced_by_team_week,
     normalize,
 )
@@ -1397,16 +1399,17 @@ def compute_player_par(
     season: Optional[str] = None,
     *,
     season_num: Optional[int] = None,
+    rows: Optional[List[dict]] = None,
 ) -> Dict[str, int]:
-    """Total PAR per player for one season or career (sum of seasonal PAR)."""
+    """Total PAR per player for one season, career, or an explicit fact row subset."""
     if season_num is None and season not in (None, "", "all"):
         season_num = parse_season_number(season)
 
     full_avg, ytd_avg = build_par_baselines(facts)
     par_totals: Dict[str, int] = {}
 
-    def accumulate(rows: Iterable[dict]) -> None:
-        for f in rows:
+    def accumulate(acc_rows: Iterable[dict]) -> None:
+        for f in acc_rows:
             player = str(f.get("player_display_name") or "").strip()
             if not player:
                 continue
@@ -1418,7 +1421,9 @@ def compute_player_par(
             for score in _par_player_game_scores(f):
                 par_totals[player] = par_totals.get(player, 0) + int(round(score - baseline))
 
-    if season_num is not None:
+    if rows is not None:
+        accumulate(rows)
+    elif season_num is not None:
         accumulate(filter_facts(facts, season_num=season_num))
     else:
         by_season: Dict[int, List[dict]] = {}
@@ -1431,6 +1436,307 @@ def compute_player_par(
             accumulate(by_season[sn])
 
     return par_totals
+
+
+def range_label(
+    *,
+    mode: str,
+    from_season: Optional[int] = None,
+    from_week: Optional[int] = None,
+    to_season: Optional[int] = None,
+    to_week: Optional[int] = None,
+) -> str:
+    """Human label for a stats range."""
+    if mode == "all_time":
+        return "All-time"
+    if mode == "season" and to_season is not None:
+        return season_label(int(to_season))
+    if (
+        mode == "week"
+        and from_season is not None
+        and from_week is not None
+        and from_season == to_season
+        and from_week == to_week
+    ):
+        return f"S{int(from_season)} W{int(from_week)}"
+    if (
+        from_season is not None
+        and from_week is not None
+        and to_season is not None
+        and to_week is not None
+    ):
+        if from_season == to_season and from_week == to_week:
+            return f"S{int(from_season)} W{int(from_week)}"
+        if from_season == to_season:
+            return f"S{int(from_season)} W{int(from_week)}–W{int(to_week)}"
+        return (
+            f"S{int(from_season)} W{int(from_week)} – "
+            f"S{int(to_season)} W{int(to_week)}"
+        )
+    return "Range"
+
+
+def get_players_range_summary(
+    facts: List[dict],
+    *,
+    mode: str,
+    from_season: Optional[int] = None,
+    from_week: Optional[int] = None,
+    to_season: Optional[int] = None,
+    to_week: Optional[int] = None,
+    exclude_playoffs: bool = False,
+) -> dict:
+    """Player leaderboard aggregates for a week, season, custom range, or all-time.
+
+    When the range is a single week, each player includes ``games`` for that week.
+    Multi-week / all-time ranges omit per-game lists.
+    Playoff games are included by default (same as season roster / player profile).
+    """
+    single_week = (
+        mode == "week"
+        or (
+            from_season is not None
+            and from_week is not None
+            and to_season is not None
+            and to_week is not None
+            and season_week_tuple(from_season, from_week)
+            == season_week_tuple(to_season, to_week)
+        )
+    )
+
+    if mode == "all_time":
+        rows = [f for f in facts if not (exclude_playoffs and f.get("playoffs"))]
+        label = "All-time"
+    elif mode == "season" and to_season is not None:
+        rows = filter_facts(
+            facts, season_num=int(to_season), exclude_playoffs=exclude_playoffs
+        )
+        label = range_label(mode="season", to_season=to_season)
+        from_season = to_season
+        from_week = 1
+        weeks = sorted({safe_int(f.get("week"), 0) for f in rows if safe_int(f.get("week"), 0) > 0})
+        to_week = weeks[-1] if weeks else 1
+    else:
+        if (
+            from_season is None
+            or from_week is None
+            or to_season is None
+            or to_week is None
+        ):
+            return {"error": "Range requires from/to season and week."}
+        rows = filter_facts_season_week_range(
+            facts,
+            from_season=int(from_season),
+            from_week=int(from_week),
+            to_season=int(to_season),
+            to_week=int(to_week),
+            exclude_playoffs=exclude_playoffs,
+        )
+        label = range_label(
+            mode=mode if mode in ("week", "custom", "season") else "custom",
+            from_season=from_season,
+            from_week=from_week,
+            to_season=to_season,
+            to_week=to_week,
+        )
+
+    if not rows and mode != "all_time":
+        return {"error": f"No data for {label}."}
+
+    # Aggregate like get_player_scores over the filtered rows
+    player_data: Dict[str, dict] = {}
+    sub_data: Dict[str, dict] = {}
+    for f in rows:
+        is_sub = bool(f.get("substitute"))
+        player = str(f.get("player_display_name") or "").strip()
+        if not player:
+            continue
+        team = str(f.get("team") or "Unknown").strip()
+        wk = safe_int(f.get("week"), 0)
+        sn = safe_int(f.get("season_number"), 0)
+
+        if is_sub:
+            # Multi-week/all-time: collect for Subs panel (single-week uses week summary).
+            if single_week:
+                continue
+            if not fact_counts_for_player_profile(f):
+                continue
+            player_games = player_profile_games(f)
+            if not player_games:
+                continue
+            if player not in sub_data:
+                sub_data[player] = {
+                    "team": team,
+                    "scores": [],
+                    "appearances": 0,
+                }
+            sub_data[player]["team"] = team
+            sub_data[player]["scores"].extend(int(g) for g in player_games)
+            sub_data[player]["appearances"] += 1
+            continue
+
+        if not fact_counts_for_stats(f):
+            continue
+        is_absent = bool(f.get("absent"))
+        player_games = games_list_for_player_stats(f)
+        display_games = games_list_for_team(f) if is_absent else player_games
+
+        if player not in player_data:
+            player_data[player] = {
+                "team": team,
+                "scores": [],
+                "absent_count": 0,
+                "weeks": [],
+                "highest_game": 0,
+                "lowest_game": 300,
+                "week_games": None,
+            }
+
+        if not is_absent:
+            player_data[player]["scores"].extend(player_games)
+            for game_score in player_games:
+                if game_score > player_data[player]["highest_game"]:
+                    player_data[player]["highest_game"] = game_score
+                if game_score < player_data[player]["lowest_game"]:
+                    player_data[player]["lowest_game"] = game_score
+        else:
+            player_data[player]["absent_count"] += 1
+
+        player_data[player]["weeks"].append((sn, wk))
+        if single_week:
+            player_data[player]["week_games"] = (
+                [int(g) for g in display_games] if is_absent else [int(g) for g in player_games]
+            )
+            player_data[player]["week_absent"] = is_absent
+
+    par_map = compute_player_par(facts, rows=rows)
+
+    players = []
+    for player, data in player_data.items():
+        scores = data["scores"]
+        avg = sum(scores) / len(scores) if scores else 0
+        std_dev = 0.0
+        if scores and len(scores) > 1:
+            variance = sum((x - avg) ** 2 for x in scores) / len(scores)
+            std_dev = variance**0.5
+        highest = data.get("highest_game", 0)
+        lowest = data.get("lowest_game", 300)
+        if scores:
+            if highest == 0:
+                highest = max(scores)
+            if lowest == 300:
+                lowest = min(scores)
+        else:
+            highest = 0
+            lowest = 0
+        weeks_played = len(data["weeks"]) - data["absent_count"]
+        is_absent_week = bool(single_week and data.get("week_absent"))
+        weeks_subbed = int((sub_data.get(player) or {}).get("appearances") or 0)
+        entry = {
+            "name": player,
+            "team": data["team"],
+            "avg": round(avg, 1) if scores else 0,
+            "high": int(highest) if highest else 0,
+            "low": int(lowest) if lowest else 0,
+            "absent": is_absent_week,
+            "is_substitute": False,
+            "sub_for": None,
+            "weeks_played": weeks_played,
+            "weeks_absent": data["absent_count"],
+            "weeks_subbed": weeks_subbed,
+            "std_dev": round(std_dev, 2),
+            "par": int(par_map.get(player, 0)),
+            "games_played": len(scores),
+            "scores": list(scores),
+        }
+        if single_week:
+            entry["games"] = list(data.get("week_games") or [])
+            if is_absent_week and not entry["games"]:
+                entry["avg"] = round(avg, 1) if scores else 0
+        players.append(entry)
+
+    substitutes = []
+    for player, data in sub_data.items():
+        # A roster player who also substituted is already represented once above.
+        if player in player_data:
+            continue
+        scores = data["scores"]
+        if not scores:
+            continue
+        avg = sum(scores) / len(scores)
+        weeks_subbed = int(data.get("appearances") or 0)
+        substitutes.append(
+            {
+                "name": player,
+                "team": data.get("team") or "",
+                "avg": round(avg, 1),
+                "high": int(max(scores)),
+                "low": int(min(scores)),
+                "absent": False,
+                "is_substitute": True,
+                "sub_for": None,
+                "weeks_played": weeks_subbed,
+                "weeks_absent": None,
+                "weeks_subbed": weeks_subbed,
+                "std_dev": None,
+                "par": None,
+                "games_played": len(scores),
+                "scores": list(scores),
+                "range_stats": {
+                    "average": round(avg, 1),
+                    "highest_game": int(max(scores)),
+                    "lowest_game": int(min(scores)),
+                    "weeks_played": weeks_subbed,
+                    "weeks_absent": None,
+                    "std_dev": None,
+                    "par": None,
+                    "games_played": len(scores),
+                    "games": len(scores),
+                    "scores": list(scores),
+                },
+            }
+        )
+    substitutes.sort(key=lambda x: -x["avg"])
+    # One sorted leaderboard: roster players + substitute-only appearances.
+    players.extend(substitutes)
+    players.sort(key=lambda x: -x["avg"])
+
+    # League highlight stats over the same rows (include substitute games).
+    if mode == "all_time":
+        league = get_league_game_stats(facts, exclude_substitutes=False)
+    elif single_week and from_season is not None and from_week is not None:
+        league = get_league_game_stats(
+            facts,
+            season_num=int(from_season),
+            week=int(from_week),
+            exclude_substitutes=False,
+        )
+    elif mode == "season" and to_season is not None:
+        league = get_league_game_stats(
+            facts, season_num=int(to_season), exclude_substitutes=False
+        )
+    else:
+        # Custom multi-week: compute from filtered rows
+        league = get_league_game_stats(rows, exclude_substitutes=False)
+
+    return {
+        "range": {
+            "mode": mode,
+            "label": label,
+            "single_week": bool(single_week),
+            "from_season": from_season,
+            "from_week": from_week,
+            "to_season": to_season,
+            "to_week": to_week,
+        },
+        "season": label,
+        "week": from_week if single_week else "",
+        "players": players,
+        **{k: league.get(k) for k in (
+            "high_game", "low_game", "league_avg", "total_players",
+            "games_200_plus", "total_games",
+        )},
+    }
 
 
 def get_latest_week(
@@ -1577,7 +1883,12 @@ def get_league_game_stats(
             continue
         team = str(f.get("team") or "Unknown").strip()
         is_absent = bool(f.get("absent"))
-        games = [int(g) for g in games_list_for_player_stats(f)]
+        if f.get("substitute"):
+            if not fact_counts_for_player_profile(f):
+                continue
+            games = [int(g) for g in player_profile_games(f)]
+        else:
+            games = [int(g) for g in games_list_for_player_stats(f)]
         if not is_absent:
             non_absent_players.add(player)
             if games:
@@ -1687,6 +1998,7 @@ def get_week_summary(
                     "name": player,
                     "team": team,
                     "games": games,
+                    "game_absent": [False] * len(games),
                     "avg": round(sum(games) / len(games), 1) if games else 0,
                     "high": max(games) if games else 0,
                     "low": min(games) if games else 0,
@@ -1700,59 +2012,53 @@ def get_week_summary(
         if player in team_subs:
             sub_fact = team_subs[player]
             counting_sub = bool(sub_fact.get("substitute_scores_count"))
-            if counting_sub:
-                games = [int(g) for g in games_list_for_team(f)]
-                players.append(
-                    {
-                        "name": player,
-                        "team": team,
-                        "games": games,
-                        "avg": round(sum(games) / len(games), 1) if games else 0,
-                        "high": max(games) if games else 0,
-                        "low": min(games) if games else 0,
-                        "absent": True,
-                        "is_substitute": False,
-                        "sub_for": None,
-                        "subbed_out": True,
-                    }
-                )
-            else:
-                games = [int(g) for g in games_list_for_team(f)]
-                players.append(
-                    {
-                        "name": player,
-                        "team": team,
-                        "games": games,
-                        "avg": round(sum(games) / len(games), 1) if games else 0,
-                        "high": max(games) if games else 0,
-                        "low": min(games) if games else 0,
-                        "absent": True,
-                        "is_substitute": False,
-                        "sub_for": None,
-                        "subbed_out": False,
-                    }
-                )
+            games = [int(g) for g in games_list_for_team(f)]
+            players.append(
+                {
+                    "name": player,
+                    "team": team,
+                    "games": games,
+                    "game_absent": [False] * len(games),
+                    "avg": round(sum(games) / len(games), 1) if games else 0,
+                    "high": max(games) if games else 0,
+                    "low": min(games) if games else 0,
+                    "absent": True,
+                    "is_substitute": False,
+                    "sub_for": None,
+                    "subbed_out": bool(counting_sub),
+                }
+            )
             continue
 
-        games = [int(g) for g in games_list_for_player_stats(f)]
+        display_games = [int(g) for g in games_list_for_team(f)]
         if is_absent:
-            games = [int(g) for g in games_list_for_team(f)]
+            # Whole-week absent: show book scores, no per-game miss styling.
+            games = display_games
+            game_absent = [False] * len(games)
+            scored = games
+        else:
+            games = display_games
+            flags = _game_absent_flags(f)
+            game_absent = [bool(flags[i]) if i < len(flags) else False for i in range(len(games))]
+            scored = [int(g) for g in games_list_for_player_stats(f)]
 
         players.append(
             {
                 "name": player,
                 "team": team,
                 "games": games,
-                "avg": round(sum(games) / len(games), 1) if games else 0,
-                "high": max(games) if games else 0,
-                "low": min(games) if games else 0,
+                "game_absent": game_absent,
+                "avg": round(sum(scored) / len(scored), 1) if scored else 0,
+                "high": max(scored) if scored else 0,
+                "low": min(scored) if scored else 0,
                 "absent": is_absent,
                 "is_substitute": False,
                 "sub_for": None,
             }
         )
 
-    players.sort(key=lambda x: -x["avg"])
+    # Everyone (actives, subs, absents by book avg) in one avg leaderboard.
+    players.sort(key=lambda x: -x.get("avg", 0))
     stats = get_league_game_stats(facts, season_num=season_num, week=week)
     return {
         "season": season,

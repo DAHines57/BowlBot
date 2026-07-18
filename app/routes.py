@@ -108,6 +108,50 @@ def week_summary():
     svc = _svc()
     if not svc:
         return _no_svc()
+
+    range_mode = (request.args.get("range") or "").strip().lower() or None
+    if range_mode in ("all", "alltime"):
+        range_mode = "all_time"
+
+    def _int_arg(name: str):
+        raw = request.args.get(name)
+        if raw is None or str(raw).strip() == "":
+            return None
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return None
+
+    from stats.compute import parse_season_number
+
+    def _season_num_arg(name: str):
+        raw = request.args.get(name)
+        if raw is None or str(raw).strip() == "":
+            return None
+        # Accept "Season 14" or "14"
+        n = parse_season_number(str(raw))
+        if n is not None:
+            return n
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return None
+
+    if range_mode:
+        html, err = svc.weekly_summary_page(
+            "",
+            None,
+            embed=_embed_flag(),
+            range_mode=range_mode,
+            from_season=_season_num_arg("from_season"),
+            from_week=_int_arg("from_week"),
+            to_season=_season_num_arg("to_season"),
+            to_week=_int_arg("to_week"),
+        )
+        if err:
+            return render_template("error.html", message=err), 400
+        return Response(html, mimetype="text/html; charset=utf-8")
+
     season = _season_arg()
     if season == "all":
         season = svc.data.get_current_season()

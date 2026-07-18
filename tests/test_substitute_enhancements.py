@@ -139,6 +139,7 @@ def test_week_summary_absent_sorts_by_avg_not_last():
         for p in summary["players"]
         if not p.get("is_substitute")
     ]
+    # Absents keep book avg and sort in the normal leaderboard order.
     assert main_names.index("Bob") < main_names.index("Carol")
     assert main_names.index("Carol") < main_names.index("Dave")
 
@@ -290,7 +291,8 @@ def test_week_summary_html_shows_substitutes_in_leaderboard():
     ]
     summary = get_week_summary(facts, 1, "Season 10", season_num=10)
     html = build_html(summary)
-    assert 'data-panel="subs"' not in html
+    assert 'class="players-stats-toggle players-subs-toggle"' not in html
+    assert 'data-panel="subs" hidden' not in html
     assert "Jane" in html
     assert "sub-badge" in html
     assert "for Alice" in html or "sub-for-badge" in html

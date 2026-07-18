@@ -204,6 +204,24 @@ class DbLeagueData(LeagueDataSource):
             self._facts_list(), week, season, season_num=season_num
         )
 
+    def get_players_range_summary(
+        self,
+        *,
+        mode: str,
+        from_season: Optional[int] = None,
+        from_week: Optional[int] = None,
+        to_season: Optional[int] = None,
+        to_week: Optional[int] = None,
+    ) -> dict:
+        return compute.get_players_range_summary(
+            self._facts_list(),
+            mode=mode,
+            from_season=from_season,
+            from_week=from_week,
+            to_season=to_season,
+            to_week=to_week,
+        )
+
     def get_league_game_stats(
         self, season: Optional[str] = None, *, all_time: bool = False
     ) -> dict:

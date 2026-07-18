@@ -147,6 +147,38 @@ def test_get_week_summary_uses_same_league_stats():
     assert week["total_players"] == 2
 
 
+def test_league_stats_include_substitute_games():
+    from stats.compute import get_players_range_summary
+
+    facts = [
+        _fact("Alice", 1, absent=True, games=(160, 160, 160, 160)),
+        {
+            **_fact("Jane", 1, games=(220, 210, 200, 215), team="Team A"),
+            "substitute": True,
+            "substituted_for": "Alice",
+            "substitute_scores_count": True,
+        },
+        _fact("Bob", 1, games=(150, 150, 150, 150), team="Team B"),
+    ]
+    week = get_league_game_stats(facts, season_num=9, week=1)
+    # Alice absent (no games) + Jane sub (4) + Bob (4) = 8 games, 2 players
+    assert week["total_games"] == 8
+    assert week["total_players"] == 2
+    assert week["games_200_plus"] == 4
+    assert week["high_game"]["player"] == "Jane"
+    assert week["high_game"]["score"] == 220
+
+    excluded = get_league_game_stats(
+        facts, season_num=9, week=1, exclude_substitutes=True
+    )
+    assert excluded["total_games"] == 4
+    assert excluded["total_players"] == 1
+
+    season = get_players_range_summary(facts, mode="season", to_season=9)
+    assert season["total_games"] == 8
+    assert season["total_players"] == 2
+
+
 def test_build_players_html_season_shows_week_on_highlights():
     html = build_players_html(
         {"Alice": {"team": "A", "average": 200, "highest_game": 220, "lowest_game": 180, "weeks_played": 3, "weeks_absent": 0, "std_dev": 1}},

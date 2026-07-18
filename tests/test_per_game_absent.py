@@ -171,6 +171,46 @@ def test_team_roster_html_marks_missed_game_red():
     assert "186" in html
 
 
+def test_week_summary_includes_missed_game_flags():
+    from stats.compute import get_week_summary
+
+    facts = [
+        _fact(
+            "Alice",
+            1,
+            games=(190, 220, 210, 200),
+            game_absent=[True, False, False, False, False],
+        ),
+        _fact("Bob", 1, games=(200, 200, 200, 200)),
+    ]
+    summary = get_week_summary(facts, 1, "Season 10", season_num=10)
+    alice = next(p for p in summary["players"] if p["name"] == "Alice")
+    assert alice["games"] == [190, 220, 210, 200]
+    assert alice["game_absent"] == [True, False, False, False]
+    # Avg/high/low exclude the book-average slot.
+    assert alice["avg"] == pytest.approx((220 + 210 + 200) / 3, rel=1e-3)
+    assert alice["high"] == 220
+    assert alice["low"] == 200
+
+
+def test_week_summary_html_marks_missed_game_red():
+    from image_generator import build_html
+    from stats.compute import get_week_summary
+
+    facts = [
+        _fact(
+            "Alice",
+            1,
+            games=(190, 220, 210, 200),
+            game_absent=[True, False, False, False, False],
+        ),
+    ]
+    html = build_html(get_week_summary(facts, 1, "Season 10", season_num=10))
+    assert 'class="dv dv--miss"' in html
+    assert html.count('class="dv dv--miss"') == 1
+    assert ">190<" in html
+
+
 def test_whole_week_absent_still_excludes_player_average():
     facts = [
         _fact("Alice", 1, games=(200, 200, 200, 200), absent=True),

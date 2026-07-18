@@ -238,6 +238,193 @@
       line-height: 1.4;
     }
 
+    .dest-nav {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.4rem;
+      margin-bottom: 0.85rem;
+    }
+    .dest-nav button {
+      font: inherit;
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      padding: 0.55rem 0.45rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: rgba(45, 27, 105, 0.35);
+      color: #c8b4ff;
+      cursor: pointer;
+      transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease), color var(--dur) var(--ease);
+    }
+    .dest-nav button:hover {
+      border-color: #5a4a80;
+      color: var(--text);
+    }
+    .dest-nav button.is-active {
+      border-color: rgba(80, 250, 123, 0.45);
+      background: rgba(80, 250, 123, 0.1);
+      color: #7bffc9;
+    }
+    .dest-panel { display: none; }
+    .dest-panel.is-active { display: block; }
+    .view-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+    .view-grid .btn.is-active {
+      border-color: rgba(255, 184, 108, 0.55);
+      box-shadow: 0 0 0 1px rgba(255, 184, 108, 0.25);
+    }
+    .range-presets {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-bottom: 0.85rem;
+    }
+    .range-presets button {
+      flex: 1 1 auto;
+      min-width: 4.5rem;
+      font: inherit;
+      font-size: 0.78rem;
+      font-weight: 650;
+      letter-spacing: 0.02em;
+      padding: 0.45rem 0.5rem;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+      background: rgba(45, 27, 105, 0.35);
+      color: #c8b4ff;
+      cursor: pointer;
+    }
+    .range-presets button:hover {
+      border-color: #5a4a80;
+      color: var(--text);
+    }
+    .range-presets button.is-active {
+      border-color: rgba(80, 250, 123, 0.45);
+      background: rgba(80, 250, 123, 0.1);
+      color: #7bffc9;
+    }
+    .week-pick {
+      margin-bottom: 0.85rem;
+    }
+    .week-pick .row {
+      display: flex;
+      flex-direction: row;
+      gap: 0.55rem;
+      margin-bottom: 0;
+      align-items: end;
+    }
+    .week-pick .field {
+      flex: 1 1 0;
+      min-width: 0;
+    }
+    .week-pick .field--season {
+      flex: 1.15 1 0;
+    }
+    .week-pick .field--week {
+      flex: 0.85 1 0;
+    }
+    .week-pick label.field-hint {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 0.3rem;
+    }
+    .week-pick select {
+      font-size: 0.9rem;
+      padding: 0.5rem 0.45rem;
+    }
+    .range-pill-btn {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      padding: 0.65rem 0.8rem;
+      font: inherit;
+      font-size: 0.92rem;
+      font-weight: 650;
+      color: #7bffc9;
+      text-align: left;
+      background: rgba(80, 250, 123, 0.08);
+      border: 1px solid rgba(80, 250, 123, 0.35);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+    }
+    .range-pill-btn:hover,
+    .range-pill-btn[aria-expanded="true"] {
+      background: rgba(80, 250, 123, 0.14);
+      border-color: rgba(80, 250, 123, 0.55);
+    }
+    .range-pill-btn.is-custom {
+      color: #ffd19a;
+      background: rgba(255, 184, 108, 0.1);
+      border-color: rgba(255, 184, 108, 0.45);
+    }
+    .range-pill-btn .range-pill-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .range-pill-btn .range-pill-chev {
+      flex: 0 0 auto;
+      color: #6a6280;
+      font-size: 0.75rem;
+      transition: transform 0.15s ease;
+    }
+    .range-pill-btn[aria-expanded="true"] .range-pill-chev {
+      transform: rotate(90deg);
+      color: #ffb86c;
+    }
+    .range-panel {
+      margin-top: 0.55rem;
+      padding: 0.7rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(20, 16, 36, 0.65);
+    }
+    .range-panel[hidden] { display: none !important; }
+    .range-custom-title {
+      display: block;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.45rem;
+    }
+    .range-custom-hint {
+      margin: 0 0 0.45rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+    .range-custom .row { margin-bottom: 0.45rem; }
+    .range-custom .range-apply { margin-top: 0.55rem; margin-bottom: 0.15rem; }
+    .range-custom .row:last-of-type { margin-bottom: 0.75rem; }
+    .range-custom .row.row--compact { margin-bottom: 0.75rem; }
+    .range-apply {
+      width: 100%;
+      font: inherit;
+      font-size: 0.82rem;
+      font-weight: 650;
+      padding: 0.5rem 0.65rem;
+      border-radius: 7px;
+      border: 1px solid rgba(255, 184, 108, 0.45);
+      background: rgba(255, 184, 108, 0.1);
+      color: #ffd19a;
+      cursor: pointer;
+    }
+    .range-apply:hover {
+      border-color: rgba(255, 184, 108, 0.7);
+      background: rgba(255, 184, 108, 0.16);
+    }
+
     .btn.is-unavailable {
       opacity: 0.38;
       filter: grayscale(0.4);
@@ -254,7 +441,6 @@
       box-shadow: none !important;
     }
 
-    .field--week.is-disabled,
     .field--team-lookup.is-disabled {
       opacity: 0.45;
       pointer-events: none;
@@ -577,12 +763,54 @@
       gap: 0.85rem;
     }
 
+    .context-card .week-pick .row,
+    .context-card .row.row--compact {
+      flex-direction: row;
+      gap: 0.55rem;
+      align-items: flex-end;
+    }
+
+    .context-card .week-pick .field,
+    .context-card .row.row--compact .field {
+      flex: 1 1 0;
+      min-width: 0;
+    }
+
+    .context-card .week-pick .field--season,
+    .context-card .row.row--compact .field--season {
+      flex: 1.2 1 0;
+    }
+
+    .context-card .week-pick .field--week,
+    .context-card .row.row--compact .field--week {
+      flex: 0.8 1 0;
+    }
+
+    .context-card .week-pick label.field-hint,
+    .context-card .row.row--compact label.field-hint {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 0.3rem;
+    }
+
+    .context-card .week-pick select,
+    .context-card .row.row--compact select {
+      font-size: 0.9rem;
+      padding: 0.5rem 0.45rem;
+    }
+
     @media (min-width: 600px) {
       .context-card .row {
         flex-direction: row;
         gap: 1rem;
       }
       .context-card .field { flex: 1; min-width: 0; }
+      .context-card .week-pick .row,
+      .context-card .row.row--compact {
+        flex-direction: row;
+      }
     }
 
     label.field-hint {
@@ -939,8 +1167,8 @@
 <body>
   <div class="shell">
     <header class="hero">
-      <h1><span class="hero-ico" aria-hidden="true">🎳</span>Monday Night Friends</h1>
-      <p class="sub">Set <strong style="color:#50fa7b;font-weight:600;">season &amp; week</strong> at the top, then pick a report — green labels use the week; blue labels use season only.</p>
+      <h1>Monday Night Friends</h1>
+      <p class="sub">Pick <strong style="color:#50fa7b;font-weight:600;">Players, Teams, or Matchups</strong>, set season &amp; week, then choose a view.</p>
     </header>
 
     <div class="mobile-toolbar" aria-label="Mobile navigation">
@@ -948,7 +1176,7 @@
         <span class="nav-toggle-icon" aria-hidden="true"></span>
         <span>Menu</span>
       </button>
-      <button type="button" class="context-pill" id="context-pill" title="Open menu to change season and week">
+      <button type="button" class="context-pill" id="context-pill" title="Open menu to change filter">
         <span id="context-pill-text">…</span>
       </button>
     </div>
@@ -965,29 +1193,84 @@
         </div>
         <div class="panels">
           <section class="card card--context context-card">
-            <details class="panel-details panel-details--context">
+            <details class="panel-details panel-details--context" open>
               <summary class="panel-summary panel-summary--context">
                 <span class="panel-summary-text">
-                  <span>Season &amp; week</span>
+                  <span>Filter</span>
                   <span class="context-summary-sub" id="context-summary-sub"></span>
                 </span>
               </summary>
               <div class="panel-details-body">
-            <span class="field-label field-label--desktop-only">Season &amp; week</span>
+            <span class="field-label field-label--desktop-only">Filter</span>
             <form id="ctx" onsubmit="return false;">
-              <div class="row">
-                <div class="field">
-                  <label class="field-hint" for="season_sel">Season</label>
-                  <select id="season_sel" name="season_sel">
-                    {% for s in seasons %}
-                    <option value="{{ s }}" {% if s == current_season %}selected{% endif %}>{{ s }}</option>
-                    {% endfor %}
-                    <option value="all">All seasons</option>
-                  </select>
+              <div class="range-presets" role="group" aria-label="Filter presets">
+                <button type="button" data-range-preset="week">This week</button>
+                <button type="button" data-range-preset="season">Season</button>
+                <button type="button" data-range-preset="all_time" id="range-preset-all-time">All-time</button>
+              </div>
+              <div class="week-pick" id="week-pick">
+                <div class="row">
+                  <div class="field field--season">
+                    <label class="field-hint" for="from_season_sel">Season</label>
+                    <select id="from_season_sel" aria-label="Season">
+                      {% for s in seasons %}
+                      <option value="{{ s }}" {% if s == current_season %}selected{% endif %}>{% set parts = s.split() %}S{{ parts[-1] if parts else s }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div class="field field--week">
+                    <label class="field-hint" for="from_week_sel">Week</label>
+                    <select id="from_week_sel" aria-label="Week"></select>
+                  </div>
                 </div>
-                <div class="field field--week" id="week_field">
-                  <label class="field-hint" for="week_sel">Week</label>
-                  <select id="week_sel" name="week_sel" title="Weeks in the selected season"></select>
+              </div>
+              <span class="field-label">Custom range</span>
+              <button type="button" class="range-pill-btn" id="range-pill-btn" aria-expanded="false" aria-controls="range-panel">
+                <span class="range-pill-label" id="range-pill-label">Custom range…</span>
+                <span class="range-pill-chev" aria-hidden="true">▸</span>
+              </button>
+              <div class="range-panel" id="range-panel" hidden>
+                <div class="range-custom" id="range-custom-players">
+                  <p class="range-custom-hint">From the season &amp; week above through:</p>
+                  <div class="row row--compact">
+                    <div class="field field--season">
+                      <label class="field-hint" for="to_season_sel">Season</label>
+                      <select id="to_season_sel" aria-label="To season">
+                        {% for s in seasons %}
+                        <option value="{{ s }}" {% if s == current_season %}selected{% endif %}>{% set parts = s.split() %}S{{ parts[-1] if parts else s }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="field field--week">
+                      <label class="field-hint" for="to_week_sel">Week</label>
+                      <select id="to_week_sel" aria-label="To week"></select>
+                    </div>
+                  </div>
+                  <button type="button" class="range-apply" id="range-custom-apply">Apply range</button>
+                </div>
+                <div class="range-custom" id="range-custom-teams" hidden>
+                  <span class="range-custom-title">One season</span>
+                  <div class="row">
+                    <div class="field">
+                      <label class="field-hint" for="teams_season_sel">Season</label>
+                      <select id="teams_season_sel">
+                        {% for s in seasons %}
+                        <option value="{{ s }}" {% if s == current_season %}selected{% endif %}>{% set parts = s.split() %}S{{ parts[-1] if parts else s }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                  </div>
+                  <div class="row row--compact">
+                    <div class="field field--week">
+                      <label class="field-hint" for="teams_from_week_sel">From</label>
+                      <select id="teams_from_week_sel" aria-label="From week"></select>
+                    </div>
+                    <div class="field field--week">
+                      <label class="field-hint" for="teams_to_week_sel">To</label>
+                      <select id="teams_to_week_sel" aria-label="To week"></select>
+                    </div>
+                  </div>
+                  <button type="button" class="range-apply" id="range-custom-apply-teams">Apply custom range</button>
                 </div>
               </div>
             </form>
@@ -996,51 +1279,46 @@
           </section>
 
           <section class="card card--reports">
-            <details class="panel-details">
-              <summary class="panel-summary">Reports</summary>
+            <details class="panel-details" open>
+              <summary class="panel-summary">Browse</summary>
               <div class="panel-details-body">
-            <div class="report-group report-group--week">
-              <span class="report-group-label">This week</span>
-              <p class="report-group-hint">Season + week above (pick the week to preview).</p>
-              <div class="btn-grid cols-2">
-                <a class="btn btn--spark btn-this-week" href="#" onclick="go('/week/summary', 'Weekly summary'); return false;">Weekly summary</a>
-                <a class="btn btn--spark btn-this-week" href="#" onclick="go('/week/results', 'Weekly matchups'); return false;">Weekly matchups</a>
-                <a class="btn btn--spark btn-this-week" href="#" style="grid-column: 1 / -1;" onclick="go('/week/teams', 'Standings (through week)'); return false;">Standings (through week)</a>
-              </div>
+            <div class="dest-nav" role="tablist" aria-label="Main sections">
+              <button type="button" class="is-active" data-dest="players" role="tab" aria-selected="true">Players</button>
+              <button type="button" data-dest="teams" role="tab" aria-selected="false">Teams</button>
+              <button type="button" data-dest="matchups" role="tab" aria-selected="false">Matchups</button>
             </div>
-            <div class="report-group report-group--season">
-              <span class="report-group-label">Season totals</span>
-              <p class="report-group-hint">Season only — no week. <em>All seasons</em> = all-time where available.</p>
-              <div class="btn-grid cols-2">
-                <a class="btn btn--spark" href="#" onclick="goSeasonTotals('/players', 'All players'); return false;">All players</a>
-                <a class="btn btn--spark btn-season-only" href="#" onclick="goSeasonTotals('/teams', 'Full season standings'); return false;">Full season standings</a>
-                <a class="btn btn--ghost btn--spark" href="#" onclick="goSeasonTotals('/top/player-scores', 'Best player scores'); return false;">Best player scores</a>
-                <a class="btn btn--ghost btn--spark" href="#" onclick="goSeasonTotals('/top/team-scores', 'Best team scores'); return false;">Best team scores</a>
-                <a id="btn-playoffs" class="btn btn--ghost btn--spark" href="#" style="grid-column: 1 / -1;" hidden onclick="goSeasonTotals('/bracket', 'Playoffs'); return false;">Playoffs (bracket &amp; scores)</a>
-              </div>
-            </div>
-              </div>
-            </details>
-          </section>
 
-          <section class="card">
-            <details class="panel-details">
-              <summary class="panel-summary">Lookups</summary>
-              <div class="panel-details-body">
-            <span class="field-label field-label--desktop-only">Lookups</span>
-            <p class="card-hint" style="margin-top:0;">Pick a name — preview opens automatically. Players work with <strong>All seasons</strong>; teams need a specific season.</p>
-            <div class="stack-v">
-              <div class="field">
-                <label class="field-hint" for="player_sel">Player</label>
+            <div class="dest-panel is-active" data-dest-panel="players">
+              <div class="view-grid" data-dest-views="players">
+                <a class="btn btn--spark is-active" href="#" data-view="week">Players</a>
+                <a class="btn btn--ghost btn--spark" href="#" data-view="best">Best player scores</a>
+              </div>
+              <div class="field" style="margin-top:0.75rem;">
+                <label class="field-hint" for="player_sel">Find player</label>
                 <select id="player_sel" aria-label="Choose player">
                   <option value="">Choose player…</option>
                 </select>
               </div>
-              <div class="field field--team-lookup" id="team_lookup_field">
-                <label class="field-hint" for="team_sel">Team (weekly breakdown)</label>
+            </div>
+
+            <div class="dest-panel" data-dest-panel="teams">
+              <div class="view-grid" data-dest-views="teams">
+                <a class="btn btn--spark is-active" href="#" data-view="standings">Standings</a>
+                <a class="btn btn--ghost btn--spark" href="#" data-view="best">Best team scores</a>
+                <a id="btn-playoffs" class="btn btn--ghost btn--spark" href="#" data-view="playoffs" hidden>Playoffs</a>
+              </div>
+              <div class="field field--team-lookup" id="team_lookup_field" style="margin-top:0.75rem;">
+                <label class="field-hint" for="team_sel">Team weekly breakdown</label>
                 <select id="team_sel" aria-label="Choose team">
                   <option value="">Choose team…</option>
                 </select>
+              </div>
+            </div>
+
+            <div class="dest-panel" data-dest-panel="matchups">
+              <div class="view-grid" data-dest-views="matchups">
+                <a class="btn btn--spark is-active" href="#" data-view="week">This week’s matchups</a>
+                <a class="btn btn--ghost btn--spark" href="#" data-view="all_weeks">All weeks (season)</a>
               </div>
             </div>
               </div>
@@ -1080,21 +1358,344 @@
   <script type="application/json" id="playoff-weeks-data">{{ playoff_weeks_by_season | tojson }}</script>
   <script type="application/json" id="lookup-catalog-data">{{ lookup_catalog | tojson }}</script>
   <script type="application/json" id="initial-latest-data">{{ latest_week | tojson }}</script>
+  <script type="application/json" id="current-season-data">{{ current_season | tojson }}</script>
   <script>
     (function () {
-      var STORAGE_KEY = "bowlbot-home-v1";
+      var STORAGE_KEY = "bowlbot-home-v4";
+      var STORAGE_KEY_LEGACY = "bowlbot-home-v3";
       var lastPreview = null;
       var replayTimer = null;
+      var activeDest = "players";
+      var activeViews = {
+        players: "week",
+        teams: "standings",
+        matchups: "week",
+      };
       var narrowMq = window.matchMedia("(max-width: 899px)");
       var panelDetails = function () {
         return document.querySelectorAll(".sidebar .panel-details");
       };
 
+      var WEEKS = JSON.parse(document.getElementById("weeks-data").textContent);
+      var PLAYOFF_WEEKS = JSON.parse(document.getElementById("playoff-weeks-data").textContent);
+      var LOOKUP = JSON.parse(document.getElementById("lookup-catalog-data").textContent);
+      var INITIAL_LATEST = JSON.parse(document.getElementById("initial-latest-data").textContent);
+      var DEFAULT_SEASON = JSON.parse(document.getElementById("current-season-data").textContent);
+
+      var SEASON_KEYS = Object.keys(WEEKS || {}).filter(function (k) { return k && k !== "all"; });
+      if (DEFAULT_SEASON && SEASON_KEYS.indexOf(DEFAULT_SEASON) < 0) {
+        SEASON_KEYS.unshift(DEFAULT_SEASON);
+      }
+
+      var rangeState = {
+        mode: "week",
+        fromSeason: DEFAULT_SEASON,
+        fromWeek: Number(INITIAL_LATEST) || 1,
+        toSeason: DEFAULT_SEASON,
+        toWeek: Number(INITIAL_LATEST) || 1,
+      };
+
+      function latestWeekFor(seasonKey) {
+        var list = (WEEKS[seasonKey] || []).slice().sort(function (a, b) { return b - a; });
+        if (!list.length) return 1;
+        if (seasonKey === DEFAULT_SEASON && INITIAL_LATEST) return Number(INITIAL_LATEST) || list[0];
+        return list[0];
+      }
+
+      function earliestWeekFor(seasonKey) {
+        var list = (WEEKS[seasonKey] || []).slice().sort(function (a, b) { return a - b; });
+        return list.length ? list[0] : 1;
+      }
+
+      function shortSeason(label) {
+        var m = String(label || "").match(/(\d+)/);
+        return m ? ("S" + m[1]) : String(label || "");
+      }
+
+      function teamsRangeMode() {
+        return activeDest === "teams";
+      }
+
+      function teamsAllowsAllTime() {
+        return teamsRangeMode() && activeViews.teams === "best";
+      }
+
       function contextLabel() {
-        var s = getSeason();
-        var w = getWeek();
-        if (s === "all") return "All seasons";
-        return s + " · Week " + w;
+        var mode = rangeState.mode;
+        if (mode === "all_time") return "All-time";
+        if (teamsRangeMode() && (activeViews.teams === "standings" || activeViews.teams === "playoffs")) {
+          if (mode === "season") {
+            return rangeState.toSeason + " · through W" + latestWeekFor(rangeState.toSeason);
+          }
+          return (
+            shortSeason(rangeState.toSeason) +
+            " · through W" + rangeState.toWeek
+          );
+        }
+        if (mode === "season") return rangeState.toSeason;
+        if (mode === "week") {
+          return shortSeason(rangeState.toSeason) + " W" + rangeState.toWeek;
+        }
+        if (
+          rangeState.fromSeason === rangeState.toSeason &&
+          Number(rangeState.fromWeek) === Number(rangeState.toWeek)
+        ) {
+          return shortSeason(rangeState.toSeason) + " W" + rangeState.toWeek;
+        }
+        if (rangeState.fromSeason === rangeState.toSeason) {
+          return (
+            shortSeason(rangeState.toSeason) +
+            " W" + rangeState.fromWeek + "–W" + rangeState.toWeek
+          );
+        }
+        return (
+          shortSeason(rangeState.fromSeason) + " W" + rangeState.fromWeek +
+          " – " + shortSeason(rangeState.toSeason) + " W" + rangeState.toWeek
+        );
+      }
+
+      /* Focus season/week for Teams / Matchups (end of range; current season when all-time). */
+      function effectiveSeason() {
+        if (rangeState.mode === "all_time") {
+          if (teamsAllowsAllTime()) return "all";
+          return DEFAULT_SEASON;
+        }
+        return rangeState.toSeason || DEFAULT_SEASON;
+      }
+
+      function getWeek() {
+        if (rangeState.mode === "all_time") return String(latestWeekFor(DEFAULT_SEASON));
+        if (rangeState.mode === "season") return String(latestWeekFor(rangeState.toSeason));
+        return String(rangeState.toWeek);
+      }
+
+      function snapRangeToSingleSeason() {
+        var season = rangeState.toSeason || DEFAULT_SEASON;
+        var week = Number(rangeState.toWeek) || latestWeekFor(season);
+        if (rangeState.mode === "all_time" && !teamsAllowsAllTime()) {
+          rangeState = {
+            mode: "week",
+            fromSeason: season,
+            fromWeek: week,
+            toSeason: season,
+            toWeek: week,
+          };
+          return;
+        }
+        if (rangeState.fromSeason !== rangeState.toSeason) {
+          rangeState = {
+            mode: Number(rangeState.fromWeek) === week ? "week" : "custom",
+            fromSeason: season,
+            fromWeek: 1,
+            toSeason: season,
+            toWeek: week,
+          };
+        }
+      }
+
+      function fillWeekSelect(sel, seasonKey, preserveValue, shortLabel) {
+        var list = (WEEKS[seasonKey] || []).slice().sort(function (a, b) { return a - b; });
+        sel.innerHTML = "";
+        list.forEach(function (w) {
+          var o = document.createElement("option");
+          o.value = String(w);
+          o.textContent = shortLabel ? ("W" + w) : ("Week " + w);
+          sel.appendChild(o);
+        });
+        var ok = function (v) {
+          return v != null && v !== "" && [].some.call(sel.options, function (op) { return op.value === String(v); });
+        };
+        if (ok(preserveValue)) {
+          sel.value = String(preserveValue);
+        } else if (list.length && seasonKey === DEFAULT_SEASON && ok(INITIAL_LATEST)) {
+          sel.value = String(INITIAL_LATEST);
+        } else if (list.length) {
+          sel.value = String(list[0]);
+        }
+      }
+
+      function syncCustomSelectsFromState() {
+        var fs = document.getElementById("from_season_sel");
+        var ts = document.getElementById("to_season_sel");
+        if (fs && rangeState.fromSeason) fs.value = rangeState.fromSeason;
+        if (ts && rangeState.toSeason) ts.value = rangeState.toSeason;
+        var focusWeek = rangeState.fromWeek;
+        if (rangeState.mode === "season" || rangeState.mode === "all_time") {
+          focusWeek = rangeState.toWeek;
+        }
+        fillWeekSelect(document.getElementById("from_week_sel"), fs.value, focusWeek, true);
+        fillWeekSelect(document.getElementById("to_week_sel"), ts.value, rangeState.toWeek, true);
+
+        var teamsSeason = document.getElementById("teams_season_sel");
+        if (teamsSeason) {
+          teamsSeason.value = rangeState.toSeason || DEFAULT_SEASON;
+          var seasonKey = teamsSeason.value;
+          var fromW = Number(rangeState.fromWeek) || earliestWeekFor(seasonKey);
+          var toW = Number(rangeState.toWeek) || latestWeekFor(seasonKey);
+          // Single-week state: seed custom controls with full season span (earliest → latest).
+          if (fromW === toW) {
+            fromW = earliestWeekFor(seasonKey);
+            toW = latestWeekFor(seasonKey);
+          }
+          fillWeekSelect(
+            document.getElementById("teams_from_week_sel"),
+            seasonKey,
+            fromW,
+            true
+          );
+          fillWeekSelect(
+            document.getElementById("teams_to_week_sel"),
+            seasonKey,
+            toW,
+            true
+          );
+        }
+      }
+
+      function syncPresetButtons() {
+        document.querySelectorAll("[data-range-preset]").forEach(function (btn) {
+          btn.classList.toggle("is-active", btn.getAttribute("data-range-preset") === rangeState.mode);
+        });
+      }
+
+      function syncTeamsRangePanel() {
+        var playersCustom = document.getElementById("range-custom-players");
+        var teamsCustom = document.getElementById("range-custom-teams");
+        var allTimeBtn = document.getElementById("range-preset-all-time");
+        var onTeams = teamsRangeMode();
+        if (playersCustom) playersCustom.hidden = onTeams;
+        if (teamsCustom) teamsCustom.hidden = !onTeams;
+        if (allTimeBtn) {
+          var allowAll = !onTeams || teamsAllowsAllTime();
+          allTimeBtn.hidden = !allowAll;
+          setBtnUnavailable(allTimeBtn, !allowAll);
+        }
+      }
+
+      function applyPreset(mode) {
+        if (mode === "all_time" && teamsRangeMode() && !teamsAllowsAllTime()) return;
+        var seasonSel = document.getElementById("from_season_sel");
+        var focusSeason = teamsRangeMode()
+          ? (rangeState.toSeason || DEFAULT_SEASON)
+          : ((seasonSel && seasonSel.value) || DEFAULT_SEASON);
+        var focusWeek = latestWeekFor(focusSeason);
+        if (mode === "week") {
+          // "This week" always jumps to the league's current season/week.
+          focusSeason = DEFAULT_SEASON;
+          focusWeek = latestWeekFor(focusSeason);
+          rangeState = {
+            mode: "week",
+            fromSeason: focusSeason,
+            fromWeek: focusWeek,
+            toSeason: focusSeason,
+            toWeek: focusWeek,
+          };
+        } else if (mode === "season") {
+          rangeState = {
+            mode: "season",
+            fromSeason: focusSeason,
+            fromWeek: 1,
+            toSeason: focusSeason,
+            toWeek: latestWeekFor(focusSeason),
+          };
+        } else if (mode === "all_time") {
+          rangeState = {
+            mode: "all_time",
+            fromSeason: focusSeason,
+            fromWeek: 1,
+            toSeason: focusSeason,
+            toWeek: focusWeek,
+          };
+        }
+        syncCustomSelectsFromState();
+        syncPresetButtons();
+        updateRangeUi();
+        persistHomeState();
+        scheduleReload();
+      }
+
+      function applySingleWeek() {
+        var season = document.getElementById("from_season_sel").value || DEFAULT_SEASON;
+        var week = Number(document.getElementById("from_week_sel").value) || 1;
+        rangeState = {
+          mode: "week",
+          fromSeason: season,
+          fromWeek: week,
+          toSeason: season,
+          toWeek: week,
+        };
+        syncCustomSelectsFromState();
+        syncPresetButtons();
+        updateRangeUi();
+        persistHomeState();
+        scheduleReload();
+      }
+
+      function applySeasonFromPick() {
+        var season = document.getElementById("from_season_sel").value || DEFAULT_SEASON;
+        rangeState = {
+          mode: "season",
+          fromSeason: season,
+          fromWeek: 1,
+          toSeason: season,
+          toWeek: latestWeekFor(season),
+        };
+        syncCustomSelectsFromState();
+        syncPresetButtons();
+        updateRangeUi();
+        persistHomeState();
+        scheduleReload();
+      }
+
+      function applyCustomRange() {
+        var fromSeason = document.getElementById("from_season_sel").value;
+        var toSeason = document.getElementById("to_season_sel").value;
+        var fromWeek = Number(document.getElementById("from_week_sel").value) || 1;
+        var toWeek = Number(document.getElementById("to_week_sel").value) || 1;
+        var single = fromSeason === toSeason && fromWeek === toWeek;
+        rangeState = {
+          mode: single ? "week" : "custom",
+          fromSeason: fromSeason,
+          fromWeek: fromWeek,
+          toSeason: toSeason,
+          toWeek: toWeek,
+        };
+        syncPresetButtons();
+        updateRangeUi();
+        persistHomeState();
+        scheduleReload();
+      }
+
+      function applyTeamsCustomRange() {
+        var season = document.getElementById("teams_season_sel").value || DEFAULT_SEASON;
+        var fromWeek = Number(document.getElementById("teams_from_week_sel").value) || 1;
+        var toWeek = Number(document.getElementById("teams_to_week_sel").value) || 1;
+        if (fromWeek > toWeek) {
+          var tmp = fromWeek;
+          fromWeek = toWeek;
+          toWeek = tmp;
+        }
+        var single = fromWeek === toWeek;
+        rangeState = {
+          mode: single ? "week" : "custom",
+          fromSeason: season,
+          fromWeek: fromWeek,
+          toSeason: season,
+          toWeek: toWeek,
+        };
+        syncCustomSelectsFromState();
+        syncPresetButtons();
+        updateRangeUi();
+        persistHomeState();
+        scheduleReload();
+      }
+
+      function setRangePanelOpen(open) {
+        var panel = document.getElementById("range-panel");
+        var btn = document.getElementById("range-pill-btn");
+        if (!panel || !btn) return;
+        panel.hidden = !open;
+        btn.setAttribute("aria-expanded", open ? "true" : "false");
       }
 
       function ensureDrawerPanelsOpen() {
@@ -1138,17 +1739,12 @@
       }
 
       function syncPanelDetails() {
-        /* <details> must stay open when summary is hidden (drawer + desktop). */
         ensureDrawerPanelsOpen();
         if (!narrowMq.matches) closeNav();
       }
 
       function collapsePanelsForPreview() {
-        if (narrowMq.matches) {
-          closeNav();
-          return;
-        }
-        /* Desktop summaries are hidden; closing <details> hides all sidebar content. */
+        if (narrowMq.matches) closeNav();
       }
 
       if (typeof narrowMq.addEventListener === "function") {
@@ -1157,19 +1753,6 @@
         narrowMq.addListener(syncPanelDetails);
       }
       bindMobileNav();
-
-      var WEEKS = JSON.parse(document.getElementById("weeks-data").textContent);
-      var PLAYOFF_WEEKS = JSON.parse(document.getElementById("playoff-weeks-data").textContent);
-      var LOOKUP = JSON.parse(document.getElementById("lookup-catalog-data").textContent);
-      var INITIAL_LATEST = JSON.parse(document.getElementById("initial-latest-data").textContent);
-
-      function getSeason() {
-        return document.getElementById("season_sel").value;
-      }
-
-      function getWeek() {
-        return document.getElementById("week_sel").value;
-      }
 
       function seasonHasPlayoffs(season) {
         if (!season || season === "all") return false;
@@ -1180,8 +1763,24 @@
       function readStoredHome() {
         try {
           var raw = sessionStorage.getItem(STORAGE_KEY);
-          if (!raw) return null;
-          return JSON.parse(raw);
+          if (raw) return JSON.parse(raw);
+          var legacy = sessionStorage.getItem(STORAGE_KEY_LEGACY);
+          if (!legacy) return null;
+          var old = JSON.parse(legacy);
+          var season = old.season && old.season !== "all" ? old.season : DEFAULT_SEASON;
+          var week = Number(old.week) || latestWeekFor(season);
+          return {
+            range: {
+              mode: old.season === "all" ? "all_time" : "week",
+              fromSeason: season,
+              fromWeek: week,
+              toSeason: season,
+              toWeek: week,
+            },
+            dest: old.dest,
+            views: old.views,
+            preview: old.preview,
+          };
         } catch (err) {
           return null;
         }
@@ -1196,8 +1795,15 @@
 
       function persistHomeState() {
         writeStoredHome({
-          season: getSeason(),
-          week: getWeek(),
+          range: {
+            mode: rangeState.mode,
+            fromSeason: rangeState.fromSeason,
+            fromWeek: rangeState.fromWeek,
+            toSeason: rangeState.toSeason,
+            toWeek: rangeState.toWeek,
+          },
+          dest: activeDest,
+          views: activeViews,
           preview: lastPreview,
         });
       }
@@ -1213,36 +1819,18 @@
         var label = contextLabel();
         var sub = document.getElementById("context-summary-sub");
         var pill = document.getElementById("context-pill-text");
+        var rangePill = document.getElementById("range-pill-label");
+        var rangeBtn = document.getElementById("range-pill-btn");
         if (sub) sub.textContent = label;
         if (pill) pill.textContent = label;
-      }
-
-      function weekListKey() {
-        return getSeason();
-      }
-
-      function rebuildWeekSelect(preserveValue) {
-        var sel = document.getElementById("week_sel");
-        var key = weekListKey();
-        var list = (WEEKS[key] || []).slice().sort(function (a, b) { return b - a; });
-        sel.innerHTML = "";
-        list.forEach(function (w) {
-          var o = document.createElement("option");
-          o.value = String(w);
-          o.textContent = "Week " + w;
-          sel.appendChild(o);
-        });
-        var ok = function (v) {
-          return v && v !== "all" && [].some.call(sel.options, function (op) { return op.value === v; });
-        };
-        if (preserveValue && ok(preserveValue)) {
-          sel.value = preserveValue;
-        } else if (list.length && ok(String(INITIAL_LATEST))) {
-          sel.value = String(INITIAL_LATEST);
-        } else if (list.length) {
-          sel.value = String(list[0]);
+        if (rangePill) {
+          rangePill.textContent =
+            rangeState.mode === "custom" ? label : "Custom range…";
         }
-        syncContextSummary();
+        if (rangeBtn) {
+          rangeBtn.classList.toggle("is-custom", rangeState.mode === "custom");
+        }
+        syncPresetButtons();
       }
 
       function fillLookupSelect(sel, names, placeholder) {
@@ -1264,31 +1852,19 @@
       }
 
       function rebuildLookupSelects() {
-        var season = getSeason();
-        var all = season === "all";
+        var season = effectiveSeason();
+        var all = season === "all" || rangeState.mode === "all_time";
         var players = all
           ? (LOOKUP.all_players || [])
           : ((LOOKUP.players_by_season || {})[season] || []);
         var teams = all ? [] : ((LOOKUP.teams_by_season || {})[season] || []);
         fillLookupSelect(document.getElementById("player_sel"), players, "Choose player…");
-        fillLookupSelect(document.getElementById("team_sel"), teams, all ? "Pick a season first" : "Choose team…");
-        document.getElementById("team_lookup_field").classList.toggle("is-disabled", all);
-      }
-
-      function qsThisSeason() {
-        return "season=" + encodeURIComponent(getSeason()) + "&week=" + encodeURIComponent(getWeek());
-      }
-
-      function qsSeasonTotals() {
-        return "season=" + encodeURIComponent(getSeason());
-      }
-
-      function inferScope(search) {
-        var u = new URL(search, window.location.origin);
-        if (u.searchParams.get("season") === "all") return "alltime";
-        var p = u.pathname;
-        if (p.indexOf("/week/") === 0 || p === "/playoffs" || p === "/bracket") return "this_week";
-        return "season_totals";
+        fillLookupSelect(
+          document.getElementById("team_sel"),
+          teams,
+          all ? "Pick a season first" : "Choose team…"
+        );
+        document.getElementById("team_lookup_field").classList.toggle("is-disabled", all || !season);
       }
 
       function withEmbed(href) {
@@ -1297,14 +1873,9 @@
         return u.pathname + u.search;
       }
 
-      function goEmbedHome() {
-        closeNav();
-        showPanel("/week/summary?" + qsThisSeason(), "Weekly summary", { skipScroll: true, scope: "this_week" });
-      }
-
       var PLACEHOLDER_DEFAULT = {
         title: "Preview",
-        hint: "Pick a report — scrolling stays inside the preview.",
+        hint: "Pick a section and view — scrolling stays inside the preview.",
       };
 
       function setPlaceholder(show) {
@@ -1322,22 +1893,11 @@
         if (hint) hint.textContent = PLACEHOLDER_DEFAULT.hint;
       }
 
-      function embedBlockedMessage(pathname, search) {
-        if (getSeason() !== "all") return null;
+      function embedBlockedMessage(pathname) {
+        var season = effectiveSeason();
         var p = pathname || "";
-        if (p.indexOf("/week/") === 0) {
-          return "Weekly reports need a specific season, not All seasons. Choose a season above.";
-        }
-        if (p === "/teams") {
-          return "Team standings need a specific season, not All seasons. Choose a season above.";
-        }
-        if (p === "/bracket" || p === "/playoffs") {
-          if (getSeason() === "all") {
-            return "Playoffs need a specific season, not All seasons. Choose a season above.";
-          }
-          if (!seasonHasPlayoffs(getSeason())) {
-            return "No playoff weeks recorded for this season yet.";
-          }
+        if ((p === "/bracket" || p === "/playoffs") && !seasonHasPlayoffs(season)) {
+          return "No playoff weeks recorded for this season yet.";
         }
         return null;
       }
@@ -1355,7 +1915,7 @@
         ph.classList.add("embed-placeholder--invalid");
         var strong = ph.querySelector("strong");
         var hint = ph.querySelector(".hint");
-        if (strong) strong.textContent = "Not available with All seasons";
+        if (strong) strong.textContent = "Not available for this range";
         if (hint) hint.textContent = message;
         setPlaceholder(true);
         if (!options.noStore) {
@@ -1371,7 +1931,7 @@
         var frame = document.getElementById("embed-frame");
         var titleEl = document.getElementById("embed-title");
         var base = new URL(fullPathWithQuery, window.location.origin);
-        var blocked = embedBlockedMessage(base.pathname, base.search);
+        var blocked = embedBlockedMessage(base.pathname);
         if (blocked) {
           showEmbedInvalid(blocked, title, options);
           return;
@@ -1380,7 +1940,8 @@
           lastPreview = {
             href: base.pathname + base.search,
             title: title || "Scores",
-            scope: options.scope || inferScope(base.pathname + base.search),
+            dest: options.dest || activeDest,
+            view: options.view || activeViews[activeDest],
           };
           persistHomeState();
         }
@@ -1402,91 +1963,176 @@
         }
       }
 
-      function replayThisWeek() {
-        if (!lastPreview || lastPreview.scope !== "this_week") return;
-        var old = new URL(lastPreview.href, window.location.origin);
-        var path = old.pathname;
-        var title = lastPreview.title;
-        var blocked = embedBlockedMessage(path, old.search);
-        if (blocked) {
-          showEmbedInvalid(blocked, title, { skipScroll: true, noStore: true });
+      function resolveReport(dest, view) {
+        var season = effectiveSeason();
+        var week = getWeek();
+        var sp = new URLSearchParams();
+
+        if (dest === "players") {
+          // Legacy Season roster → range-driven players.
+          if (view === "roster") view = "week";
+          if (view === "week") {
+            if (rangeState.mode === "all_time") {
+              sp.set("range", "all_time");
+              return { path: "/week/summary", query: sp, title: "All-time · players" };
+            }
+            if (rangeState.mode === "season") {
+              sp.set("range", "season");
+              sp.set("to_season", rangeState.toSeason);
+              return { path: "/week/summary", query: sp, title: rangeState.toSeason + " · players" };
+            }
+            sp.set("range", rangeState.mode === "week" ? "week" : "custom");
+            sp.set("from_season", rangeState.fromSeason);
+            sp.set("from_week", String(rangeState.fromWeek));
+            sp.set("to_season", rangeState.toSeason);
+            sp.set("to_week", String(rangeState.toWeek));
+            return {
+              path: "/week/summary",
+              query: sp,
+              title: contextLabel() + " · players",
+            };
+          }
+          if (view === "best") {
+            sp.set("season", rangeState.mode === "all_time" ? "all" : season);
+            sp.set("n", "50");
+            return { path: "/top/player-scores", query: sp, title: "Best player scores" };
+          }
+          return { error: "Unknown players view." };
+        }
+
+        if (dest === "teams") {
+          if (view === "best") {
+            sp.set("season", rangeState.mode === "all_time" ? "all" : season);
+            sp.set("n", "50");
+            return { path: "/top/team-scores", query: sp, title: "Best team scores" };
+          }
+          if (view === "playoffs") {
+            if (!season || season === "all") {
+              return { error: "Playoffs need a specific season." };
+            }
+            sp.set("season", season);
+            return { path: "/bracket", query: sp, title: "Playoffs" };
+          }
+          if (!season || season === "all") {
+            return { error: "Standings need a specific season." };
+          }
+          sp.set("season", season);
+          sp.set("week", week);
+          return { path: "/week/teams", query: sp, title: "Standings through week" };
+        }
+
+        if (dest === "matchups") {
+          sp.set("season", season);
+          if (view === "all_weeks") {
+            sp.set("week", "all");
+            return { path: "/week/results", query: sp, title: "All weeks matchups" };
+          }
+          sp.set("week", week);
+          return { path: "/week/results", query: sp, title: "Weekly matchups" };
+        }
+
+        return { error: "Unknown section." };
+      }
+
+      function loadActiveView(options) {
+        options = options || {};
+        var dest = activeDest;
+        var view = activeViews[dest];
+        var report = resolveReport(dest, view);
+        if (report.error) {
+          showEmbedInvalid(report.error, "Unavailable", options);
           return;
         }
-        var sp;
-        if (path === "/bracket" || path === "/playoffs") {
-          sp = new URLSearchParams();
-          sp.set("season", getSeason());
-          old.searchParams.forEach(function (val, key) {
-            if (key !== "season") sp.set(key, val);
-          });
+        showPanel(
+          report.path + "?" + report.query.toString(),
+          report.title,
+          {
+            skipScroll: options.skipScroll,
+            noStore: options.noStore,
+            dest: dest,
+            view: view,
+          }
+        );
+      }
+
+      function setBtnUnavailable(el, unavailable) {
+        el.classList.toggle("is-unavailable", unavailable);
+        if (unavailable) {
+          el.setAttribute("aria-disabled", "true");
+          el.setAttribute("tabindex", "-1");
         } else {
-          sp = new URLSearchParams(qsThisSeason());
-          old.searchParams.forEach(function (val, key) {
-            if (key !== "season" && key !== "week") sp.set(key, val);
-          });
+          el.removeAttribute("aria-disabled");
+          el.removeAttribute("tabindex");
         }
-        showPanel(path + "?" + sp.toString(), title, { skipScroll: true, noStore: true, scope: "this_week" });
       }
 
-      function replaySeasonTotals() {
-        if (!lastPreview || lastPreview.scope !== "season_totals") return;
-        var old = new URL(lastPreview.href, window.location.origin);
-        var path = old.pathname;
-        var title = lastPreview.title;
-        var blocked = embedBlockedMessage(path, old.search);
-        if (blocked) {
-          showEmbedInvalid(blocked, title, { skipScroll: true, noStore: true });
-          return;
-        }
-        if (path === "/player") {
-          var q = old.searchParams.get("q") || "";
-          var season = getSeason();
-          showPanel("/player?q=" + encodeURIComponent(q) + "&season=" + encodeURIComponent(season), title, { skipScroll: true, noStore: true, scope: "season_totals" });
-          return;
-        }
-        if (/^\/player\/.+/i.test(path)) {
-          var seasonPlayer = getSeason();
-          showPanel(path + "?season=" + encodeURIComponent(seasonPlayer), title, { skipScroll: true, noStore: true, scope: "season_totals" });
-          return;
-        }
-        if (path === "/bracket") {
-          var sBr = getSeason();
-          showPanel("/bracket?season=" + encodeURIComponent(sBr), title, { skipScroll: true, noStore: true, scope: "season_totals" });
-          return;
-        }
-        if (/^\/team\/.+\/weekly$/i.test(path)) {
-          var seasonW = getSeason();
-          showPanel(path + "?season=" + encodeURIComponent(seasonW), title, { skipScroll: true, noStore: true, scope: "season_totals" });
-          return;
-        }
-        if (
-          path === "/top/games" || path === "/top/weeks" ||
-          path === "/top/team-games" || path === "/top/team-weeks" ||
-          path === "/top/player-scores" || path === "/top/team-scores"
-        ) {
-          var seasonTop = getSeason();
-          var spTop = new URLSearchParams();
-          spTop.set("season", seasonTop);
-          spTop.set("n", "50");
-          old.searchParams.forEach(function (val, key) {
-            if (key !== "season" && key !== "n") spTop.set(key, val);
-          });
-          showPanel(path + "?" + spTop.toString(), title, { skipScroll: true, noStore: true, scope: "season_totals" });
-          return;
-        }
-        var sp = new URLSearchParams(qsSeasonTotals());
-        old.searchParams.forEach(function (val, key) {
-          if (key !== "season") sp.set(key, val);
+      function updatePlayoffsButton() {
+        var btn = document.getElementById("btn-playoffs");
+        if (!btn) return;
+        var season = effectiveSeason();
+        var show = season !== "all" && seasonHasPlayoffs(season);
+        btn.hidden = !show;
+        setBtnUnavailable(btn, !show);
+      }
+
+      function updateRangeUi() {
+        syncTeamsRangePanel();
+        updatePlayoffsButton();
+        syncContextSummary();
+        rebuildLookupSelects();
+      }
+
+      function syncDestUi() {
+        document.querySelectorAll(".dest-nav button").forEach(function (btn) {
+          var on = btn.getAttribute("data-dest") === activeDest;
+          btn.classList.toggle("is-active", on);
+          btn.setAttribute("aria-selected", on ? "true" : "false");
         });
-        showPanel(path + "?" + sp.toString(), title, { skipScroll: true, noStore: true, scope: "season_totals" });
+        document.querySelectorAll(".dest-panel").forEach(function (panel) {
+          panel.classList.toggle("is-active", panel.getAttribute("data-dest-panel") === activeDest);
+        });
+        document.querySelectorAll(".view-grid").forEach(function (grid) {
+          var dest = grid.getAttribute("data-dest-views");
+          grid.querySelectorAll("[data-view]").forEach(function (btn) {
+            btn.classList.toggle("is-active", dest === activeDest && btn.getAttribute("data-view") === activeViews[dest]);
+          });
+        });
+        syncContextSummary();
       }
 
-      function scheduleReplay() {
+      function setDestination(dest, options) {
+        if (!activeViews[dest]) return;
+        options = options || {};
+        activeDest = dest;
+        if (dest === "teams") snapRangeToSingleSeason();
+        syncCustomSelectsFromState();
+        syncDestUi();
+        updateRangeUi();
+        persistHomeState();
+        if (!options.noLoad) loadActiveView(options);
+      }
+
+      function setView(dest, view, options) {
+        if (!activeViews[dest]) return;
+        activeDest = dest;
+        activeViews[dest] = view;
+        if (dest === "teams") {
+          snapRangeToSingleSeason();
+          if (view !== "best" && rangeState.mode === "all_time") {
+            snapRangeToSingleSeason();
+          }
+        }
+        syncCustomSelectsFromState();
+        syncDestUi();
+        updateRangeUi();
+        persistHomeState();
+        loadActiveView(options || {});
+      }
+
+      function scheduleReload() {
         clearTimeout(replayTimer);
         replayTimer = setTimeout(function () {
-          if (!lastPreview) return;
-          if (lastPreview.scope === "this_week") replayThisWeek();
-          else if (lastPreview.scope === "season_totals") replaySeasonTotals();
+          loadActiveView({ skipScroll: true });
         }, 120);
       }
 
@@ -1497,7 +2143,7 @@
           var frame = document.getElementById("embed-frame");
           var loc = frame.contentWindow.location;
           if (loc.pathname === "/" || loc.pathname === "") {
-            goEmbedHome();
+            setDestination("players", { skipScroll: true });
           }
         } catch (err) { /* ignore */ }
       });
@@ -1508,7 +2154,7 @@
         if (e.origin !== window.location.origin) return;
         if (!e.data || !e.data.type) return;
         if (e.data.type === "bowlbot-embed-home") {
-          goEmbedHome();
+          setDestination("players", { skipScroll: true });
           return;
         }
         if (e.data.type === "bowlbot-close-nav") {
@@ -1536,105 +2182,104 @@
         if (lastPreview) document.getElementById("embed-close").click();
       });
 
-      document.getElementById("season_sel").addEventListener("change", function () {
-        rebuildWeekSelect(null);
-        rebuildLookupSelects();
-        updateContextUI();
-        syncContextSummary();
-        persistHomeState();
-        scheduleReplay();
-      });
-      document.getElementById("week_sel").addEventListener("change", function () {
-        syncContextSummary();
-        persistHomeState();
-        if (lastPreview && lastPreview.scope === "this_week") {
-          scheduleReplay();
-        }
+      function afterRangeSelection() {
+        /* Mobile: collapse filter + drawer. Desktop: leave sidebar open for more picks. */
+        if (!narrowMq.matches) return;
+        setRangePanelOpen(false);
+        closeNav();
+      }
+
+      document.getElementById("range-pill-btn").addEventListener("click", function () {
+        var panel = document.getElementById("range-panel");
+        setRangePanelOpen(panel.hidden);
       });
 
-      function go(path, title) {
-        if (narrowMq.matches) closeNav();
-        if (getSeason() === "all") {
-          showEmbedInvalid(
-            "Weekly reports need a specific season, not All seasons. Choose a season above.",
-            title || "Weekly report"
-          );
-          return;
-        }
-        showPanel(path + "?" + qsThisSeason(), title || "Scores", { scope: "this_week" });
-      }
-
-      function setBtnUnavailable(el, unavailable) {
-        el.classList.toggle("is-unavailable", unavailable);
-        if (unavailable) {
-          el.setAttribute("aria-disabled", "true");
-          el.setAttribute("tabindex", "-1");
-        } else {
-          el.removeAttribute("aria-disabled");
-          el.removeAttribute("tabindex");
-        }
-      }
-
-      function updatePlayoffsButton() {
-        var btn = document.getElementById("btn-playoffs");
-        if (!btn) return;
-        var show = getSeason() !== "all" && seasonHasPlayoffs(getSeason());
-        btn.hidden = !show;
-        setBtnUnavailable(btn, !show);
-      }
-
-      function updateContextUI() {
-        var all = getSeason() === "all";
-        document.querySelectorAll(".btn-season-only, .btn-this-week").forEach(function (el) {
-          setBtnUnavailable(el, all);
+      document.querySelectorAll("[data-range-preset]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          applyPreset(btn.getAttribute("data-range-preset"));
+          afterRangeSelection();
         });
-        updatePlayoffsButton();
-        document.getElementById("week_field").classList.toggle("is-disabled", all);
-        var prev = lastPreview && new URL(lastPreview.href, window.location.origin);
-        var blocked = prev && embedBlockedMessage(prev.pathname, prev.search);
-        if (blocked) {
-          showEmbedInvalid(blocked, lastPreview.title, { skipScroll: true, noStore: true });
-        }
-      }
+      });
 
-      function goSeasonTotals(path, title) {
-        if (narrowMq.matches) closeNav();
-        var s = getSeason();
-        if (path === "/bracket" || path === "/playoffs") {
-          var blocked = embedBlockedMessage(path, "");
-          if (blocked) {
-            showEmbedInvalid(blocked, title || "Playoffs");
-            return;
-          }
+      document.getElementById("range-custom-apply").addEventListener("click", function () {
+        applyCustomRange();
+        afterRangeSelection();
+      });
+
+      document.getElementById("range-custom-apply-teams").addEventListener("click", function () {
+        applyTeamsCustomRange();
+        afterRangeSelection();
+      });
+
+      document.getElementById("from_season_sel").addEventListener("change", function () {
+        fillWeekSelect(document.getElementById("from_week_sel"), this.value, null, true);
+        if (rangeState.mode === "season") {
+          applySeasonFromPick();
+        } else if (rangeState.mode === "all_time") {
+          /* Keep all-time; season pick is only focus for teams/matchups. */
+          rangeState.fromSeason = this.value;
+          rangeState.toSeason = this.value;
+          rangeState.toWeek = latestWeekFor(this.value);
+          syncCustomSelectsFromState();
+          updateRangeUi();
+          persistHomeState();
+          scheduleReload();
+        } else {
+          applySingleWeek();
         }
-        if (path === "/teams" && s === "all") {
-          showEmbedInvalid(
-            "Team standings need a specific season, not All seasons. Choose a season above.",
-            title || "Scores"
-          );
-          return;
-        }
-        if (
-          path === "/top/games" || path === "/top/weeks" ||
-          path === "/top/team-games" || path === "/top/team-weeks" ||
-          path === "/top/player-scores" || path === "/top/team-scores"
-        ) {
-          var sp = new URLSearchParams(qsSeasonTotals());
-          sp.set("n", "50");
-          showPanel(path + "?" + sp.toString(), title || "Scores", { scope: "season_totals" });
-          return;
-        }
-        showPanel(path + "?" + qsSeasonTotals(), title || "Scores", { scope: "season_totals" });
-      }
+      });
+
+      document.getElementById("from_week_sel").addEventListener("change", function () {
+        applySingleWeek();
+      });
+
+      document.getElementById("to_season_sel").addEventListener("change", function () {
+        fillWeekSelect(document.getElementById("to_week_sel"), this.value, null, true);
+      });
+
+      document.getElementById("teams_season_sel").addEventListener("change", function () {
+        var seasonKey = this.value;
+        fillWeekSelect(
+          document.getElementById("teams_from_week_sel"),
+          seasonKey,
+          earliestWeekFor(seasonKey),
+          true
+        );
+        fillWeekSelect(
+          document.getElementById("teams_to_week_sel"),
+          seasonKey,
+          latestWeekFor(seasonKey),
+          true
+        );
+      });
+
+      document.querySelectorAll(".dest-nav button").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          setDestination(btn.getAttribute("data-dest"), { skipScroll: true, noLoad: true });
+        });
+      });
+
+      document.querySelectorAll(".view-grid [data-view]").forEach(function (btn) {
+        btn.addEventListener("click", function (e) {
+          e.preventDefault();
+          if (btn.classList.contains("is-unavailable") || btn.hidden) return;
+          var grid = btn.closest(".view-grid");
+          var dest = grid.getAttribute("data-dest-views");
+          if (narrowMq.matches) closeNav();
+          setView(dest, btn.getAttribute("data-view"));
+        });
+      });
 
       document.getElementById("player_sel").addEventListener("change", function () {
         var name = this.value;
         if (!name) return;
-        var season = getSeason();
+        var season = effectiveSeason();
+        activeDest = "players";
+        syncDestUi();
         showPanel(
           "/player/" + encodeURIComponent(name) + "?season=" + encodeURIComponent(season),
-          "Player lookup",
-          { scope: "season_totals" }
+          "Player · " + name,
+          { dest: "players", view: "lookup" }
         );
         this.value = "";
         if (narrowMq.matches) closeNav();
@@ -1642,63 +2287,61 @@
 
       document.getElementById("team_sel").addEventListener("change", function () {
         var team = this.value;
-        if (!team || getSeason() === "all") return;
-        var season = getSeason();
+        if (!team) return;
+        var season = effectiveSeason();
+        if (!season) return;
+        activeDest = "teams";
+        syncDestUi();
         showPanel(
           "/team/" + encodeURIComponent(team) + "/weekly?season=" + encodeURIComponent(season),
-          "Team season weeks",
-          { scope: "season_totals" }
+          "Team · " + team,
+          { dest: "teams", view: "lookup" }
         );
         this.value = "";
         if (narrowMq.matches) closeNav();
       });
 
-      window.go = go;
-      window.goSeasonTotals = goSeasonTotals;
-
-      function restoreStoredPreview(stored) {
-        if (!stored || !stored.preview || !stored.preview.href) return false;
-        lastPreview = stored.preview;
-        if (lastPreview.scope === "this_week") {
-          replayThisWeek();
-          return true;
+      function restoreStored(stored) {
+        if (!stored) return false;
+        if (stored.range && stored.range.mode) {
+          rangeState = {
+            mode: stored.range.mode,
+            fromSeason: stored.range.fromSeason || DEFAULT_SEASON,
+            fromWeek: Number(stored.range.fromWeek) || latestWeekFor(DEFAULT_SEASON),
+            toSeason: stored.range.toSeason || DEFAULT_SEASON,
+            toWeek: Number(stored.range.toWeek) || latestWeekFor(DEFAULT_SEASON),
+          };
         }
-        if (lastPreview.scope === "season_totals") {
-          replaySeasonTotals();
-          return true;
+        if (stored.views) {
+          Object.keys(stored.views).forEach(function (k) {
+            if (activeViews[k]) activeViews[k] = stored.views[k];
+          });
+          if (activeViews.players === "roster") activeViews.players = "week";
         }
-        showPanel(lastPreview.href, lastPreview.title, {
-          skipScroll: true,
-          scope: lastPreview.scope,
-        });
+        if (stored.dest && activeViews[stored.dest]) activeDest = stored.dest;
         return true;
       }
 
-      function initWeeksAndAutoOpen() {
+      function init() {
         syncPanelDetails();
         var stored = readStoredHome();
-        if (stored && stored.season) {
-          var seasonSel = document.getElementById("season_sel");
-          if ([].some.call(seasonSel.options, function (op) { return op.value === stored.season; })) {
-            seasonSel.value = stored.season;
-          }
-        }
-        var weekPreserve = stored && stored.week ? stored.week : String(INITIAL_LATEST);
-        rebuildWeekSelect(weekPreserve);
-        rebuildLookupSelects();
-        syncContextSummary();
-        updateContextUI();
-        if (!restoreStoredPreview(stored)) {
-          showPanel("/week/summary?" + qsThisSeason(), "Weekly summary", { skipScroll: true, scope: "this_week" });
-        }
+        restoreStored(stored);
+        if (activeDest === "teams") snapRangeToSingleSeason();
+        syncCustomSelectsFromState();
+        setRangePanelOpen(false);
+        updateRangeUi();
+        syncDestUi();
+        persistHomeState();
+        loadActiveView({ skipScroll: true });
       }
 
       if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", initWeeksAndAutoOpen);
+        document.addEventListener("DOMContentLoaded", init);
       } else {
-        initWeeksAndAutoOpen();
+        init();
       }
     })();
   </script>
+
 </body>
 </html>

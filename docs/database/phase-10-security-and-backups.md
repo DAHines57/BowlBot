@@ -67,10 +67,20 @@ docker compose exec -T db pg_dump -U bowlbot -d bowlbot_dev -Fc > "backups/local
 # .\scripts\backup_db.ps1   # uses postgres:18-alpine via Docker
 ```
 
+### Restore locally (easy path)
+
+```powershell
+.\backups\restore_db.ps1 -List                          # list dumps
+.\backups\restore_db.ps1                                # latest -> local bowlbot_dev
+.\backups\restore_db.ps1 bowlbot_2026-07-14_0712.dump    # specific dump
+```
+
+Drops/recreates local `bowlbot_dev` via Docker Compose, restores the dump, then runs `alembic upgrade head` if available. Refuses non-local `DATABASE_URL`. Use `-SkipMigrate` to skip alembic.
+
 ### Restore drill (do once)
 
-1. Empty DB → `alembic upgrade head`.
-2. `pg_restore -d $DATABASE_URL backups/your.dump` (or provider restore).
+1. Empty DB → restore dump (or `.\backups\restore_db.ps1`).
+2. `alembic upgrade head` if schema is behind the dump.
 3. Restart app or `POST /refresh?key=…`.
 4. Spot-check a known week on site and admin.
 

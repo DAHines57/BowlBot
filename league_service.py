@@ -111,13 +111,171 @@ class LeagueService:
         except Exception as e:
             return False, str(e)
 
+    def _enrich_week_summary_season_stats(self, data: dict, season: str) -> dict:
+        """Attach season roster stats onto each week-summary player (for mobile card expand)."""
+        pdata = self.data.get_player_scores(None, season, include_substitutes=False)
+        if isinstance(pdata, dict) and "error" in pdata:
+            pdata = {}
+        elif not isinstance(pdata, dict):
+            pdata = {}
+        par_map = self.data.get_player_par(season) or {}
+        for p in data.get("players") or []:
+            name = p.get("name") or ""
+            stats = pdata.get(name) or {}
+            par = int(par_map.get(name, stats.get("par", 0) or 0))
+            games = int(stats.get("games_played") or stats.get("games") or 0)
+            if not games:
+                # weeks_played is season weeks for non-all-time; games may live under scores
+                scores = stats.get("scores")
+                if isinstance(scores, list):
+                    games = len(scores)
+            p["season_stats"] = {
+                "average": stats.get("average"),
+                "highest_game": stats.get("highest_game"),
+                "lowest_game": stats.get("lowest_game"),
+                "weeks_played": stats.get("weeks_played", 0),
+                "weeks_absent": stats.get("weeks_absent", 0),
+                "std_dev": stats.get("std_dev"),
+                "par": par,
+                "scores": list(stats.get("scores") or []),
+                "games_played": len(stats.get("scores") or []),
+                "games": games or len(stats.get("scores") or []),
+            }
+        return data
+
+    def players_range_page(
+        self,
+        *,
+        mode: str,
+        from_season: Optional[int] = None,
+        from_week: Optional[int] = None,
+        to_season: Optional[int] = None,
+        to_week: Optional[int] = None,
+        embed: bool = False,
+    ) -> Tuple[Optional[str], str]:
+        """Range-driven player cards (week games only when range is a single week)."""
+        from stats.compute import parse_season_number, season_label
+
+        mode = (mode or "week").strip().lower()
+        if mode in ("all", "alltime"):
+            mode = "all_time"
+
+        if mode == "all_time":
+            data = self.data.get_players_range_summary(mode="all_time")
+        elif mode == "season":
+            sn = to_season or from_season
+            if sn is None:
+                cur = self.data.get_current_season()
+                sn = parse_season_number(cur)
+            if sn is None:
+                return None, "Could not resolve season."
+            data = self.data.get_players_range_summary(
+                mode="season", to_season=int(sn)
+            )
+        else:
+            # week or custom
+            if from_season is None or from_week is None or to_season is None or to_week is None:
+                return None, "Range requires from/to season and week."
+            if mode == "week":
+                # Preset "this week" is always a single week (ignore a mismatched end).
+                to_season, to_week = from_season, from_week
+            single = (from_season, from_week) == (to_season, to_week)
+            if single:
+                season = season_label(int(from_season))
+                data = self.data.get_week_summary(int(from_week), season)
+                if "error" in data:
+                    return None, data["error"]
+                if not data.get("players"):
+                    return None, f"No data for week {from_week}."
+                data["range"] = {
+                    "mode": "week",
+                    "label": f"S{int(from_season)} W{int(from_week)}",
+                    "single_week": True,
+                    "from_season": int(from_season),
+                    "from_week": int(from_week),
+                    "to_season": int(to_season),
+                    "to_week": int(to_week),
+                }
+                # Copy week metrics into range_stats for sort/expand consistency
+                for p in data.get("players") or []:
+                    p["range_stats"] = {
+                        "average": p.get("avg"),
+                        "highest_game": p.get("high"),
+                        "lowest_game": p.get("low"),
+                        "weeks_played": 0 if p.get("absent") else 1,
+                        "weeks_absent": 1 if p.get("absent") else 0,
+                        "std_dev": None,
+                        "par": p.get("par", 0),
+                        "games_played": len(p.get("games") or []),
+                        "games": len(p.get("games") or []),
+                        "scores": list(p.get("games") or []),
+                    }
+            else:
+                data = self.data.get_players_range_summary(
+                    mode="custom",
+                    from_season=int(from_season),
+                    from_week=int(from_week),
+                    to_season=int(to_season),
+                    to_week=int(to_week),
+                )
+
+        if "error" in data:
+            return None, data["error"]
+        if not data.get("players"):
+            return None, "No players in this range."
+
+        # Normalize range_stats on multi-week players from top-level fields
+        rng = data.get("range") or {}
+        if not rng.get("single_week"):
+            for p in data.get("players") or []:
+                if "range_stats" not in p:
+                    p["range_stats"] = {
+                        "average": p.get("avg"),
+                        "highest_game": p.get("high"),
+                        "lowest_game": p.get("low"),
+                        "weeks_played": p.get("weeks_played", 0),
+                        "weeks_absent": p.get("weeks_absent", 0),
+                        "weeks_subbed": p.get("weeks_subbed", 0),
+                        "std_dev": p.get("std_dev"),
+                        "par": p.get("par", 0),
+                        "games_played": p.get("games_played", 0),
+                        "games": p.get("games_played", 0),
+                        "scores": list(p.get("scores") or []),
+                    }
+                else:
+                    p["range_stats"].setdefault(
+                        "weeks_subbed", p.get("weeks_subbed", 0)
+                    )
+                # Multi-week: never attach per-game week arrays
+                p.pop("games", None)
+
+        return inject_web_chrome(build_html(data), embed=embed), ""
+
     def weekly_summary_page(
         self,
         season: str,
         week: Optional[Union[int, str]] = None,
         *,
         embed: bool = False,
+        range_mode: Optional[str] = None,
+        from_season: Optional[int] = None,
+        from_week: Optional[int] = None,
+        to_season: Optional[int] = None,
+        to_week: Optional[int] = None,
     ) -> Tuple[Optional[str], str]:
+        from stats.compute import parse_season_number
+
+        # New range API path
+        if range_mode:
+            return self.players_range_page(
+                mode=range_mode,
+                from_season=from_season,
+                from_week=from_week,
+                to_season=to_season,
+                to_week=to_week,
+                embed=embed,
+            )
+
         if season == "all":
             season = self.data.get_current_season()
         if week == "all":
@@ -128,18 +286,21 @@ class LeagueService:
             for wk in weeks_list:
                 data = self.data.get_week_summary(wk, season)
                 if "error" not in data and data.get("players"):
-                    datas.append(data)
+                    datas.append(self._enrich_week_summary_season_stats(data, season))
             if not datas:
                 return None, "No weekly data for this season."
             return inject_web_chrome(build_all_weeks_summary_html(season, datas), embed=embed), ""
 
         wk = week if week is not None else self.data.get_latest_week(season if season != "all" else None)
-        data = self.data.get_week_summary(wk, season)
-        if "error" in data:
-            return None, data["error"]
-        if not data.get("players"):
-            return None, f"No data for week {wk}."
-        return inject_web_chrome(build_html(data), embed=embed), ""
+        sn = parse_season_number(season)
+        return self.players_range_page(
+            mode="week",
+            from_season=sn,
+            from_week=int(wk) if wk is not None else None,
+            to_season=sn,
+            to_week=int(wk) if wk is not None else None,
+            embed=embed,
+        )
 
     def weekly_results_page(
         self,

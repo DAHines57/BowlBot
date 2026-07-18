@@ -70,6 +70,17 @@ def _team_color_style(team_name: str) -> str:
 
 _CSS = """
 * { margin: 0; padding: 0; box-sizing: border-box; }
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
 body {
     font-family: 'Arial', sans-serif;
     background: #12101a;
@@ -94,6 +105,12 @@ body {
     font-size: 14px;
     color: #888;
     margin-top: 4px;
+    line-height: 1.35;
+    padding: 0 8px;
+    max-width: 36rem;
+    margin-left: auto;
+    margin-right: auto;
+    overflow-wrap: anywhere;
 }
 
 /* Highlights row */
@@ -136,6 +153,13 @@ body {
     font-size: 12px;
     color: #888;
     margin-top: 2px;
+}
+.highlight-card .game-context {
+    font-size: 11px;
+    color: #888;
+    margin-top: 4px;
+    letter-spacing: 0.02em;
+    line-height: 1.3;
 }
 
 /* Section */
@@ -226,7 +250,7 @@ tbody tr.sub-row { opacity: 0.92; }
 .week-summary-section .section-head,
 .players-stats-section .section-head {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     justify-content: space-between;
     gap: 10px 14px;
@@ -239,14 +263,18 @@ tbody tr.sub-row { opacity: 0.92; }
     margin-bottom: 0;
     border-bottom: none;
     padding-bottom: 0;
+    flex: 1 1 auto;
+    min-width: 0;
 }
 .stats-panel-actions,
 .players-stats-actions {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     justify-content: flex-end;
     gap: 8px;
+    flex: 0 0 auto;
+    min-width: 0;
 }
 .summary-stats-toggle,
 .players-stats-toggle {
@@ -329,37 +357,196 @@ html {
     width: max-content;
     min-width: 100%;
 }
+/* Mobile stacked leaderboard cards (desktop keeps the table) */
+.lb-cards { display: none; }
+.lb-card-sort-wrap {
+    display: none;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+.lb-card-sort {
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    color: #e0e0e0;
+    background: #1a1730;
+    border: 1px solid #2a2050;
+    border-radius: 6px;
+    padding: 5px 28px 5px 8px;
+    max-width: none;
+    width: auto;
+    min-width: 5.5rem;
+}
+.lb-card-sort-dir {
+    flex: 0 0 auto;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1;
+    color: #e0e0e0;
+    background: #1a1730;
+    border: 1px solid #2a2050;
+    border-radius: 6px;
+    padding: 5px 8px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.lb-card-sort-dir:hover {
+    border-color: #4a4068;
+    color: #fff;
+}
+.lb-card-sort-dir[aria-pressed="true"] {
+    border-color: rgba(255, 184, 108, 0.55);
+    color: #ffb86c;
+}
+.player-card {
+    background: #1a1730;
+    border: 1px solid #2a2050;
+    border-radius: 8px;
+    overflow: hidden;
+}
+.player-card.absent { opacity: 0.45; }
+.player-card.sub-row { opacity: 0.92; }
+.player-card[open] {
+    border-color: #4a3a80;
+    background: #1e1a36;
+}
+.player-card > summary {
+    list-style: none;
+    cursor: pointer;
+    display: grid;
+    grid-template-columns: 1.6rem minmax(0, 1fr) auto 0.9rem;
+    gap: 0.45rem;
+    align-items: start;
+    padding: 0.5rem 0.55rem;
+    -webkit-tap-highlight-color: transparent;
+}
+.player-card > summary::-webkit-details-marker { display: none; }
+.player-card .who { min-width: 0; }
+.player-card .name {
+    font-weight: bold;
+    font-size: 14px;
+    color: #fff;
+    line-height: 1.25;
+}
+.player-card .team {
+    font-size: 11px;
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.player-card .metrics {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.25;
+}
+.player-card .avg {
+    font-size: 16px;
+    font-weight: bold;
+    color: #ffb86c;
+}
+.player-card .hl-lo {
+    font-size: 11px;
+    color: #888;
+    margin-top: 2px;
+}
+.player-card .chev {
+    color: #6a6280;
+    font-size: 11px;
+    line-height: 1.4;
+    transition: transform 0.15s ease;
+    user-select: none;
+}
+.player-card[open] .chev { transform: rotate(90deg); color: #ffb86c; }
+.card-detail {
+    padding: 0 0.55rem 0.55rem 2.05rem;
+    border-top: 1px solid rgba(42, 32, 80, 0.65);
+}
+.card-detail-label {
+    font-size: 10px;
+    font-weight: bold;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #6a6280;
+    margin: 8px 0 6px;
+}
+.detail-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 0;
+}
+.detail-cell {
+    background: #12101a;
+    border: 1px solid #2a2050;
+    border-radius: 6px;
+    padding: 6px 4px;
+    text-align: center;
+}
+.detail-cell .dv {
+    font-size: 14px;
+    font-weight: bold;
+    font-variant-numeric: tabular-nums;
+    color: #e0e0e0;
+    line-height: 1.1;
+}
+.detail-cell .dv.dv--miss {
+    color: #ff6b81;
+}
+.detail-cell .dl {
+    font-size: 9px;
+    font-weight: bold;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #666;
+    margin-top: 2px;
+}
 @media (max-width: 700px) {
     .highlights {
+        flex-direction: row;
+        gap: 8px;
+    }
+    .highlight-card {
+        padding: 10px 8px;
+    }
+    .highlight-card .score { font-size: 28px; }
+    .highlight-card .player-name { font-size: 13px; }
+    .highlight-card .team-name { font-size: 11px; }
+    .highlight-card .game-context { font-size: 10px; }
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 6px;
+    }
+    .stat {
+        flex: none;
+        padding: 6px 4px;
+    }
+    .stat .stat-value { font-size: 15px; }
+    .stat .stat-label {
+        font-size: 8px;
+        letter-spacing: 0.03em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .week-summary-section .table-scroll { display: none; }
+    .lb-cards {
+        display: flex;
         flex-direction: column;
+        gap: 6px;
+    }
+    .lb-card-sort-wrap {
+        display: flex;
     }
 }
 @media (max-width: 520px) {
     .container {
         padding-block: 16px;
-        padding-inline: 20px;
-    }
-    .highlights {
-        flex-direction: column;
-    }
-    .highlight-card .score {
-        font-size: 36px;
-    }
-    .stats-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 10px;
-    }
-    .stat {
-        flex: none;
-        padding: 10px 8px;
-    }
-    .stat .stat-value {
-        font-size: 22px;
-    }
-    .stat .stat-label {
-        font-size: 10px;
-        letter-spacing: 0.04em;
+        padding-inline: 12px;
     }
     thead th,
     tbody td {
@@ -415,34 +602,68 @@ _WEEK_SUMMARY_DOC = """<!DOCTYPE html>
 
 
 _SUMMARY_INNER_FR = """  <div class="header">
-    <div class="title">🎳 WEEKLY RECAP</div>
-    <div class="subtitle">{season} &nbsp;·&nbsp; Week {week}</div>
+    <div class="title">{title}</div>
+    <div class="subtitle">{subtitle}</div>
   </div>
 
   {league_summary_blocks}
 
-  <div class="section week-summary-section">
+  <div class="section week-summary-section" data-single-week="{single_week_flag}">
     <div class="section-head">
       <div class="section-title">Leaderboard</div>
+      <div class="players-stats-actions">
+        <div class="lb-card-sort-wrap">
+          <button type="button" class="lb-card-sort-dir" aria-label="Flip sort order" aria-pressed="false" title="Flip sort order">↓</button>
+          <label class="visually-hidden" for="lb-card-sort">Sort</label>
+          <select id="lb-card-sort" class="lb-card-sort" aria-label="Sort player cards">
+            {sort_options}
+          </select>
+        </div>
+      </div>
     </div>
-    <div class="table-scroll">
-    <table class="sortable-table" data-has-rank-col="1">
-      <thead>
-        <tr>
-          <th class="right sortable-th" data-sort-col="0" data-sort-type="number"><span class="sort-ind" aria-hidden="true"></span>#</th>
-          <th class="sortable-th" data-sort-col="1" data-sort-type="string">Player<span class="sort-ind" aria-hidden="true"></span></th>
-          <th class="sortable-th" data-sort-col="2" data-sort-type="string">Team<span class="sort-ind" aria-hidden="true"></span></th>
-          <th class="right sortable-th" data-sort-col="3" data-sort-type="number"><span class="sort-ind" aria-hidden="true"></span>Wk Avg</th>
-          <th class="right sortable-th" data-sort-col="4" data-sort-type="number"><span class="sort-ind" aria-hidden="true"></span>High</th>
-          <th class="right sortable-th" data-sort-col="5" data-sort-type="number"><span class="sort-ind" aria-hidden="true"></span>Low</th>
-        </tr>
-      </thead>
-      <tbody>
-        {player_rows}
-      </tbody>
-    </table>
+    <div class="players-stats-panel" data-panel="main">
+      <div class="table-scroll">
+      <table class="sortable-table" data-has-rank-col="1">
+        <thead>
+          <tr>
+            <th class="right sortable-th" data-sort-col="0" data-sort-type="number"><span class="sort-ind" aria-hidden="true"></span>#</th>
+            <th class="sortable-th" data-sort-col="1" data-sort-type="string">Player<span class="sort-ind" aria-hidden="true"></span></th>
+            <th class="sortable-th" data-sort-col="2" data-sort-type="string">Team<span class="sort-ind" aria-hidden="true"></span></th>
+            <th class="right sortable-th" data-sort-col="3" data-sort-type="number"><span class="sort-ind" aria-hidden="true"></span>{avg_col}</th>
+            <th class="right sortable-th" data-sort-col="4" data-sort-type="number"><span class="sort-ind" aria-hidden="true"></span>High</th>
+            <th class="right sortable-th" data-sort-col="5" data-sort-type="number"><span class="sort-ind" aria-hidden="true"></span>Low</th>
+          </tr>
+        </thead>
+        <tbody>
+          {player_rows}
+        </tbody>
+      </table>
+      </div>
+      <div class="lb-cards" aria-label="Leaderboard cards">
+        {player_cards}
+      </div>
     </div>
   </div>
+"""
+
+_SORT_OPTIONS_WEEK = """
+          <option value="name">Name</option>
+          <option value="avg" selected>Avg</option>
+          <option value="high">High</option>
+          <option value="low">Low</option>
+"""
+
+_SORT_OPTIONS_RANGE = """
+          <option value="name">Name</option>
+          <option value="avg" selected>Avg</option>
+          <option value="high">High</option>
+          <option value="low">Low</option>
+          <option value="weeks">Weeks</option>
+          <option value="games">Games</option>
+          <option value="absent">Absences</option>
+          <option value="par">PAR</option>
+          <option value="par_g">PAR/G</option>
+          <option value="stdev">Stdev</option>
 """
 
 
@@ -466,9 +687,12 @@ def _highlight_game_context_html(game: dict) -> str:
     if week_n <= 0:
         return ""
     if season:
-        label = f"{html_module.escape(str(season))} · Week {week_n}"
+        season_s = str(season).strip()
+        m = re.search(r"(\d+)", season_s)
+        season_short = f"S{m.group(1)}" if m else season_s
+        label = f"{html_module.escape(season_short)} · W{week_n}"
     else:
-        label = f"Week {week_n}"
+        label = f"W{week_n}"
     return f'<div class="game-context">{label}</div>'
 
 
@@ -528,6 +752,144 @@ def _build_league_summary_blocks(data: dict) -> str:
   </div>"""
 
 
+def _week_summary_player_badges(p: dict) -> str:
+    is_sub = p.get("is_substitute", False)
+    absent = p.get("absent", False)
+    subbed_out = p.get("subbed_out", False)
+    if is_sub:
+        badges = '<span class="sub-badge">SUB</span>'
+        sub_for = p.get("sub_for")
+        if sub_for:
+            badges += (
+                f' <span class="sub-for-badge">for '
+                f"{html_module.escape(_short_name(str(sub_for)))}</span>"
+            )
+        return badges
+    if absent or subbed_out:
+        return '<span class="absent-badge">ABSENT</span>'
+    return ""
+
+
+def _week_summary_player_metric_strs(p: dict) -> tuple[str, str, str]:
+    absent = p.get("absent", False)
+    is_sub = p.get("is_substitute", False)
+    avg_str = f"{p['avg']:.1f}" if p.get("avg") else "—"
+    if absent and not is_sub:
+        return avg_str, "—", "—"
+    high_str = str(p["high"]) if p.get("high") else "—"
+    low_str = str(p["low"]) if p.get("low") else "—"
+    return avg_str, high_str, low_str
+
+
+def _week_summary_detail_cell(value: str, label: str, *, miss: bool = False) -> str:
+    dv_cls = "dv dv--miss" if miss else "dv"
+    return (
+        f'<div class="detail-cell"><div class="{dv_cls}">{html_module.escape(str(value))}</div>'
+        f'<div class="dl">{html_module.escape(label)}</div></div>'
+    )
+
+
+def _range_stats_cells_html(p: dict, *, label_prefix: str = "") -> str:
+    """Aggregate stat cells from range_stats (or legacy season_stats)."""
+    s = p.get("range_stats") or p.get("season_stats") or {}
+    if not s and not any(k in p for k in ("weeks_played", "par", "avg")):
+        return ""
+    if not s:
+        s = {
+            "average": p.get("avg"),
+            "highest_game": p.get("high"),
+            "lowest_game": p.get("low"),
+            "weeks_played": p.get("weeks_played", 0),
+            "weeks_absent": p.get("weeks_absent", 0),
+            "std_dev": p.get("std_dev"),
+            "par": p.get("par", 0),
+            "games_played": p.get("games_played", 0),
+            "scores": p.get("scores") or [],
+        }
+    avg = s.get("average")
+    avg_str = f"{float(avg):.1f}" if avg is not None else "—"
+    high = s.get("highest_game")
+    low = s.get("lowest_game")
+    high_str = str(high) if high else "—"
+    low_str = str(low) if low else "—"
+    weeks = s.get("weeks_played", 0) or 0
+    absences = s.get("weeks_absent", 0) or 0
+    std = s.get("std_dev")
+    std_str = f"{float(std):.1f}" if std is not None else "—"
+    par = int(s.get("par", 0) or 0)
+    games = _player_par_game_count(s, all_time=False)
+    if not games:
+        games = int(s.get("games", 0) or s.get("games_played", 0) or 0)
+    par_str = _format_par(par)
+    par_g, _ = _format_par_per_game(par, games)
+    pref = label_prefix
+    weeks_subbed = int(s.get("weeks_subbed", p.get("weeks_subbed", 0)) or 0)
+    weeks_label = "Sub wks" if p.get("is_substitute") else "Weeks"
+    cells = [
+        _week_summary_detail_cell(avg_str, f"{pref}Avg".strip() or "Avg"),
+        _week_summary_detail_cell(high_str, f"{pref}Hi".strip() or "Hi"),
+        _week_summary_detail_cell(low_str, f"{pref}Lo".strip() or "Lo"),
+        _week_summary_detail_cell(weeks, weeks_label),
+        _week_summary_detail_cell(games or "—", "Games"),
+    ]
+    if not p.get("is_substitute"):
+        cells.extend(
+            [
+                _week_summary_detail_cell(absences, "Absent"),
+                _week_summary_detail_cell(par_str, "PAR"),
+                _week_summary_detail_cell(par_g, "PAR/G"),
+                _week_summary_detail_cell(std_str, "Stdev"),
+            ]
+        )
+        if weeks_subbed > 0:
+            cells.append(_week_summary_detail_cell(weeks_subbed, "Sub wks"))
+    return f'<div class="detail-grid">{"".join(cells)}</div>'
+
+
+def _week_summary_card_detail_html(
+    p: dict, *, single_week: bool, range_label: str
+) -> str:
+    """Expand: games for a single week; otherwise range aggregates only (no games)."""
+    if single_week:
+        absent = p.get("absent", False)
+        is_sub = p.get("is_substitute", False)
+        games = list(p.get("games") or [])
+        flags = list(p.get("game_absent") or [])
+        if absent and not is_sub and not games:
+            cells = [
+                _week_summary_detail_cell("—", "G1"),
+                _week_summary_detail_cell("—", "G2"),
+                _week_summary_detail_cell("—", "G3"),
+                _week_summary_detail_cell("—", "G4"),
+            ]
+        else:
+            cells = []
+            for i, g in enumerate(games):
+                miss = (not absent) and i < len(flags) and bool(flags[i])
+                cells.append(
+                    _week_summary_detail_cell(int(g), f"G{i + 1}", miss=miss)
+                )
+            if not cells:
+                cells = [_week_summary_detail_cell("—", "G1")]
+        return (
+            '<div class="card-detail">'
+            '<div class="card-detail-label">Games</div>'
+            f'<div class="detail-grid">{"".join(cells)}</div>'
+            "</div>"
+        )
+
+    grid = _range_stats_cells_html(p)
+    if not grid:
+        return ""
+    label = html_module.escape(range_label or "Range")
+    return (
+        '<div class="card-detail">'
+        f'<div class="card-detail-label">{label}</div>'
+        f"{grid}"
+        "</div>"
+    )
+
+
 def _week_summary_player_rows(data: dict) -> str:
     rows = []
     rank = 0
@@ -538,29 +900,16 @@ def _week_summary_player_rows(data: dict) -> str:
         subbed_out = p.get("subbed_out", False)
         rank += 1
         rank_str = str(rank)
-
-        badges = ""
-        if is_sub:
-            sub_for = p.get("sub_for")
-            badges = '<span class="sub-badge">SUB</span>'
-            if sub_for:
-                badges += f' <span class="sub-for-badge">for {_short_name(str(sub_for))}</span>'
-        elif absent or subbed_out:
-            badges = '<span class="absent-badge">ABSENT</span>'
+        badges = _week_summary_player_badges(p)
+        avg_str, high_str, low_str = _week_summary_player_metric_strs(p)
 
         row_class = 'class="absent"' if (absent or subbed_out) and not is_sub else ('class="sub-row"' if is_sub else "")
-        avg_str = f"{p['avg']:.1f}" if p.get("avg") else "—"
-        high_str = str(p["high"]) if p.get("high") else "—"
-        low_str = str(p["low"]) if p.get("low") else "—"
-
         team_style = _team_color_style(p["team"])
         rank_sort = rank
-        avg_sort = p["avg"] if p.get("avg") else -1
+        avg_sort = p["avg"] if p.get("avg") is not None else -1
         high_sort = p["high"] if p.get("high") else -1
         low_sort = p["low"] if p.get("low") else -1
         if absent and not is_sub:
-            avg_str = f"{p['avg']:.1f}" if p.get("avg") else "—"
-            high_str = low_str = "—"
             high_sort = low_sort = -1
         orig_rank = f' data-orig-rank="{html_module.escape(rank_str, quote=True)}"'
         rows.append(f"""
@@ -575,12 +924,145 @@ def _week_summary_player_rows(data: dict) -> str:
     return "".join(rows)
 
 
+def _player_range_metric_bundle(p: dict) -> dict:
+    """Sort/display metrics for range aggregates on cards."""
+    s = p.get("range_stats") or p.get("season_stats") or {}
+    is_sub = bool(p.get("is_substitute"))
+    avg = s.get("average", p.get("avg"))
+    high = s.get("highest_game", p.get("high"))
+    low = s.get("lowest_game", p.get("low"))
+    weeks = int(s.get("weeks_played", p.get("weeks_played", 0)) or 0)
+    absent_raw = s.get("weeks_absent", p.get("weeks_absent"))
+    absent = int(absent_raw or 0)
+    std = s.get("std_dev", p.get("std_dev"))
+    par_raw = s.get("par", p.get("par"))
+    par = int(par_raw or 0)
+    games = _player_par_game_count(s, all_time=False) if s else 0
+    if not games:
+        raw_games = p.get("games")
+        if isinstance(raw_games, (list, tuple)):
+            games = len(raw_games)
+        else:
+            games = int(p.get("games_played", 0) or 0)
+    _, par_g_sort = _format_par_per_game(par, games)
+    return {
+        "avg_sort": float(avg) if avg is not None else -1,
+        "high_sort": float(high) if high else -1,
+        "low_sort": float(low) if low else -1,
+        "weeks_sort": weeks,
+        "absent_sort": absent if absent_raw is not None else -1,
+        "std_sort": float(std) if std is not None else -1,
+        "par": par if par_raw is not None else -1,
+        "games": games,
+        "par_g_sort": par_g_sort if par_raw is not None else -1,
+        "avg_str": f"{float(avg):.1f}" if avg is not None else "—",
+        "high_str": str(int(high)) if high else "—",
+        "low_str": str(int(low)) if low else "—",
+        "weeks_str": str(weeks),
+        "games_str": str(games) if games else "—",
+        "absent_str": "—" if is_sub or absent_raw is None else str(absent),
+        "par_str": "—" if is_sub or par_raw is None else _format_par(par),
+        "par_g_str": "—" if is_sub or par_raw is None else _format_par_per_game(par, games)[0],
+        "std_str": f"{float(std):.1f}" if std is not None else "—",
+    }
+
+
+def _week_summary_player_cards(data: dict) -> str:
+    """Mobile stacked/expandable leaderboard cards (hidden on desktop via CSS)."""
+    rng = data.get("range") or {}
+    single_week = bool(rng.get("single_week", True))
+    range_label = str(rng.get("label") or "")
+    cards = []
+    for rank, p in enumerate(data.get("players", []), start=1):
+        absent = p.get("absent", False)
+        is_sub = p.get("is_substitute", False)
+        subbed_out = p.get("subbed_out", False)
+        badges = _week_summary_player_badges(p)
+        avg_str, high_str, low_str = _week_summary_player_metric_strs(p)
+        team_style = _team_color_style(p.get("team") or "")
+        cls = []
+        if (absent or subbed_out) and not is_sub:
+            cls.append("absent")
+        elif is_sub:
+            cls.append("sub-row")
+        class_attr = f' class="{" ".join(["player-card", *cls])}"' if cls else ' class="player-card"'
+        name = html_module.escape(_short_name(p.get("name") or "—"))
+        team = html_module.escape(p.get("team") or "")
+        name_sort = html_module.escape((p.get("name") or "").lower(), quote=True)
+        avg_sort = p["avg"] if p.get("avg") is not None else -1
+        high_sort = p["high"] if p.get("high") else -1
+        low_sort = p["low"] if p.get("low") else -1
+        if absent and not is_sub:
+            # Keep book avg for leaderboard order; hide high/low as "—".
+            high_sort = low_sort = -1
+
+        m = _player_range_metric_bundle(p)
+
+        cards.append(
+            f"<details{class_attr}"
+            f' data-sort-name="{name_sort}"'
+            f' data-sort-avg="{avg_sort}"'
+            f' data-sort-high="{high_sort}"'
+            f' data-sort-low="{low_sort}"'
+            f' data-sort-weeks="{m["weeks_sort"]}"'
+            f' data-sort-games="{m["games"]}"'
+            f' data-sort-absent="{m["absent_sort"]}"'
+            f' data-sort-par="{m["par"]}"'
+            f' data-sort-par_g="{m["par_g_sort"]}"'
+            f' data-sort-stdev="{m["std_sort"]}"'
+            f' data-disp-avg="{html_module.escape(avg_str, quote=True)}"'
+            f' data-disp-high="{html_module.escape(high_str, quote=True)}"'
+            f' data-disp-low="{html_module.escape(low_str, quote=True)}"'
+            f' data-disp-weeks="{html_module.escape(m["weeks_str"], quote=True)}"'
+            f' data-disp-games="{html_module.escape(m["games_str"], quote=True)}"'
+            f' data-disp-absent="{html_module.escape(m["absent_str"], quote=True)}"'
+            f' data-disp-par="{html_module.escape(m["par_str"], quote=True)}"'
+            f' data-disp-par_g="{html_module.escape(m["par_g_str"], quote=True)}"'
+            f' data-disp-stdev="{html_module.escape(m["std_str"], quote=True)}"'
+            f' data-default-index="{rank - 1}">'
+            f"<summary>"
+            f'<div class="rank">{rank}</div>'
+            f'<div class="who">'
+            f'<div class="name">{name}{badges}</div>'
+            f'<div class="team" style="{team_style}">{team}</div>'
+            f"</div>"
+            f'<div class="metrics">'
+            f'<div class="avg" data-primary>{avg_str}</div>'
+            f'<div class="hl-lo" data-secondary>H {high_str} · L {low_str}</div>'
+            f"</div>"
+            f'<div class="chev" aria-hidden="true">▸</div>'
+            f"</summary>"
+            f"{_week_summary_card_detail_html(p, single_week=single_week, range_label=range_label)}"
+            f"</details>"
+        )
+    return "".join(cards)
+
+
 def _build_week_summary_inner(data: dict) -> str:
+    rng = data.get("range") or {}
+    single_week = bool(rng.get("single_week", True))
+    label = str(rng.get("label") or "")
+    if not label:
+        season = data.get("season", "")
+        week = data.get("week", "")
+        label = f"{season} · Week {week}" if week != "" else str(season)
+    if single_week:
+        title = "WEEKLY RECAP"
+        sort_options = _SORT_OPTIONS_WEEK
+        avg_col = "Wk Avg"
+    else:
+        title = "PLAYER STATS"
+        sort_options = _SORT_OPTIONS_RANGE
+        avg_col = "Avg"
     return _SUMMARY_INNER_FR.format(
-        season=data.get("season", ""),
-        week=data.get("week", ""),
+        title=title,
+        subtitle=html_module.escape(label),
+        single_week_flag="1" if single_week else "0",
+        sort_options=sort_options,
+        avg_col=avg_col,
         league_summary_blocks=_build_league_summary_blocks(data),
         player_rows=_week_summary_player_rows(data),
+        player_cards=_week_summary_player_cards(data),
     )
 
 
@@ -589,7 +1071,7 @@ def _week_summary_page_html(inner: str) -> str:
     doc = _WEEK_SUMMARY_DOC.format(css=_CSS, inner=inner)
     return doc.replace(
         "</body>",
-        _LIST_SORT_SCRIPT + "\n</body>",
+        _LIST_SORT_SCRIPT + "\n" + _CARD_SORT_SCRIPT + "\n</body>",
         1,
     )
 
@@ -1303,9 +1785,11 @@ _HIGHLIGHTS_CSS = """
 }
 .highlight-card .game-context {
     font-size: 11px;
-    color: #666;
+    color: #888;
     margin-top: 4px;
     letter-spacing: 0.02em;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
 }
 .stats-grid {
     display: flex;
@@ -1740,6 +2224,129 @@ _LIST_SORT_SCRIPT = r"""<script>
   });
 })();
 </script>"""
+
+_CARD_SORT_SCRIPT = r"""<script>
+(function () {
+  function numAttr(el, key) {
+    var n = parseFloat(el.getAttribute(key));
+    return isNaN(n) ? -Infinity : n;
+  }
+
+  /* Keys whose natural order is ascending (low → high / A → Z). */
+  var ASC_KEYS = { low: 1, absent: 1, name: 1 };
+
+  function applyCardSort(wrap, key, flipped) {
+    var naturalAsc = !!ASC_KEYS[key];
+    var ascending = flipped ? !naturalAsc : naturalAsc;
+    var cards = Array.prototype.slice.call(wrap.querySelectorAll("details.player-card"));
+    cards.sort(function (a, b) {
+      if (key === "name") {
+        var an = (a.getAttribute("data-sort-name") || "");
+        var bn = (b.getAttribute("data-sort-name") || "");
+        if (an !== bn) {
+          if (ascending) return an < bn ? -1 : 1;
+          return an > bn ? -1 : 1;
+        }
+        return parseInt(a.getAttribute("data-default-index"), 10) -
+          parseInt(b.getAttribute("data-default-index"), 10);
+      }
+      var av = numAttr(a, "data-sort-" + key);
+      var bv = numAttr(b, "data-sort-" + key);
+      if (av !== bv) {
+        if (ascending) return av < bv ? -1 : 1;
+        return av > bv ? -1 : 1;
+      }
+      return parseInt(a.getAttribute("data-default-index"), 10) -
+        parseInt(b.getAttribute("data-default-index"), 10);
+    });
+    cards.forEach(function (card, idx) {
+      wrap.appendChild(card);
+      var rankEl = card.querySelector(".rank");
+      if (rankEl) rankEl.textContent = String(idx + 1);
+      var avg = card.getAttribute("data-disp-avg") || "—";
+      var high = card.getAttribute("data-disp-high") || "—";
+      var low = card.getAttribute("data-disp-low") || "—";
+      var weeks = card.getAttribute("data-disp-weeks") || "—";
+      var games = card.getAttribute("data-disp-games") || "—";
+      var absent = card.getAttribute("data-disp-absent") || "—";
+      var par = card.getAttribute("data-disp-par") || "—";
+      var parG = card.getAttribute("data-disp-par_g") || "—";
+      var stdev = card.getAttribute("data-disp-stdev") || "—";
+      var primary = card.querySelector("[data-primary]");
+      var secondary = card.querySelector("[data-secondary]");
+      if (!primary || !secondary) return;
+      if (key === "name" || key === "avg") {
+        primary.textContent = avg;
+        secondary.textContent = "H " + high + " · L " + low;
+      } else if (key === "high") {
+        primary.textContent = high;
+        secondary.textContent = "Avg " + avg + " · L " + low;
+      } else if (key === "low") {
+        primary.textContent = low;
+        secondary.textContent = "Avg " + avg + " · H " + high;
+      } else if (key === "weeks") {
+        primary.textContent = weeks;
+        secondary.textContent = "Avg " + avg + " · Abs " + absent;
+      } else if (key === "games") {
+        primary.textContent = games;
+        secondary.textContent = "Avg " + avg + " · PAR " + par;
+      } else if (key === "absent") {
+        primary.textContent = absent;
+        secondary.textContent = "Avg " + avg + " · Wks " + weeks;
+      } else if (key === "par") {
+        primary.textContent = par;
+        secondary.textContent = "PAR/G " + parG + " · Avg " + avg;
+      } else if (key === "par_g") {
+        primary.textContent = parG;
+        secondary.textContent = "PAR " + par + " · Avg " + avg;
+      } else if (key === "stdev") {
+        primary.textContent = stdev;
+        secondary.textContent = "Avg " + avg + " · PAR " + par;
+      }
+    });
+  }
+
+  document.querySelectorAll(".week-summary-section").forEach(function (section) {
+    var wrap = section.querySelector(".lb-cards");
+    var sel = section.querySelector(".lb-card-sort");
+    var dirBtn = section.querySelector(".lb-card-sort-dir");
+    if (!wrap || !sel) return;
+    var flipped = false;
+
+    function syncDirBtn() {
+      if (!dirBtn) return;
+      var key = sel.value || "avg";
+      var naturalAsc = !!ASC_KEYS[key];
+      var ascending = flipped ? !naturalAsc : naturalAsc;
+      dirBtn.textContent = ascending ? "↑" : "↓";
+      dirBtn.setAttribute("aria-pressed", flipped ? "true" : "false");
+      dirBtn.setAttribute(
+        "title",
+        ascending ? "Ascending — tap to flip" : "Descending — tap to flip"
+      );
+      dirBtn.setAttribute(
+        "aria-label",
+        ascending ? "Sort ascending, tap to flip" : "Sort descending, tap to flip"
+      );
+    }
+
+    function run() {
+      applyCardSort(wrap, sel.value || "avg", flipped);
+      syncDirBtn();
+    }
+
+    sel.addEventListener("change", run);
+    if (dirBtn) {
+      dirBtn.addEventListener("click", function () {
+        flipped = !flipped;
+        run();
+      });
+    }
+    run();
+  });
+})();
+</script>"""
+
 
 def _bracket_zoom_viewport_html(inner: str) -> str:
     """Wrap bracket markup in a zoom/pan viewport (toolbar + stage)."""
@@ -2885,7 +3492,10 @@ def _player_par_game_count(stats: dict, all_time: bool) -> int:
     scores = stats.get("scores")
     if scores is not None:
         return len(scores)
-    return int(stats.get("games_played", 0) or stats.get("games", 0))
+    games = stats.get("games_played", 0) or stats.get("games", 0)
+    if isinstance(games, (list, tuple)):
+        return len(games)
+    return int(games or 0)
 
 
 def _format_par_per_game(par: int, games: int) -> tuple:
@@ -3183,14 +3793,185 @@ def _team_roster_detail_html(players: Dict[str, Any]) -> str:
     return f'<ul class="team-roster-list">{"".join(items)}</ul>'
 
 
+_TEAM_CARD_SORT_OPTIONS = {
+    "standings": """
+          <option value="record" selected>Record</option>
+          <option value="avg">Avg</option>
+          <option value="pins">Pins</option>
+          <option value="name">Name</option>
+""",
+    "averages": """
+          <option value="avg" selected>Avg</option>
+          <option value="record">Record</option>
+          <option value="pins">Pins</option>
+          <option value="name">Name</option>
+""",
+    "games": """
+          <option value="score" selected>Score</option>
+          <option value="week">Week</option>
+          <option value="name">Name</option>
+""",
+    "weeks": """
+          <option value="avg" selected>Avg</option>
+          <option value="total">Total</option>
+          <option value="week">Week</option>
+          <option value="name">Name</option>
+""",
+}
+
+
+def _plain_team_label_from_cell(val: Any) -> str:
+    """Strip markup from a team name cell; undo prior html.escape so cards can escape once."""
+    text = re.sub(r"<[^>]+>", "", str(val or ""))
+    text = text.replace("▸", "").replace("👑", "").strip()
+    return html_module.unescape(text)
+
+
+def _header_index_map(headers: List[dict]) -> Dict[str, int]:
+    out: Dict[str, int] = {}
+    for i, h in enumerate(headers):
+        key = str(h.get("label") or "").strip().lower()
+        out[key] = i
+    return out
+
+
+def _cell_display(cells: List[dict], idx: Optional[int], default: str = "—") -> str:
+    if idx is None or idx < 0 or idx >= len(cells):
+        return default
+    return str(cells[idx].get("val", default))
+
+
+def _cell_sort_num(cells: List[dict], idx: Optional[int]) -> float:
+    if idx is None or idx < 0 or idx >= len(cells):
+        return -1
+    c = cells[idx]
+    if "sort" in c:
+        try:
+            return float(c["sort"])
+        except (TypeError, ValueError):
+            pass
+    raw = c.get("val", -1)
+    try:
+        return float(str(raw).replace(",", ""))
+    except (TypeError, ValueError):
+        return -1
+
+
+def _build_team_standings_cards(
+    headers: List[dict],
+    team_rows: List[Tuple[List[dict], Dict[str, Any]]],
+    *,
+    sort_kind: str,
+) -> str:
+    """Mobile expandable team cards (hidden on desktop via CSS)."""
+    idx = _header_index_map(headers)
+    i_team = idx.get("team", 1)
+    i_record = idx.get("record")
+    i_avg = idx.get("avg")
+    i_pins = idx.get("total pins")
+    i_score = idx.get("score")
+    i_week = idx.get("wk")
+    i_game = idx.get("game")
+    i_games = idx.get("games")
+    i_total = idx.get("total")
+    i_season = idx.get("season")
+
+    cards: List[str] = []
+    for rank, (cells, players) in enumerate(team_rows, start=1):
+        team_name = _plain_team_label_from_cell(_cell_display(cells, i_team, "—"))
+        team_style = cells[i_team].get("style", "") if i_team < len(cells) else ""
+        name_sort = html_module.escape(team_name.lower(), quote=True)
+        record = _cell_display(cells, i_record, "—")
+        avg = _cell_display(cells, i_avg, "—")
+        pins = _cell_display(cells, i_pins, "—")
+        score = _cell_display(cells, i_score, "—")
+        week = _cell_display(cells, i_week, "—")
+        game = _cell_display(cells, i_game, "—")
+        games = _cell_display(cells, i_games, "—")
+        total = _cell_display(cells, i_total, "—")
+        season = _cell_display(cells, i_season, "")
+
+        record_sort = _cell_sort_num(cells, i_record)
+        avg_sort = _cell_sort_num(cells, i_avg)
+        pins_sort = _cell_sort_num(cells, i_pins)
+        score_sort = _cell_sort_num(cells, i_score)
+        week_sort = _cell_sort_num(cells, i_week)
+        total_sort = _cell_sort_num(cells, i_total)
+
+        if sort_kind == "games":
+            primary, secondary = score, f"{week} · G{game}"
+        elif sort_kind == "weeks":
+            primary, secondary = avg, f"{total} pins · {week}"
+        elif sort_kind == "averages":
+            primary, secondary = avg, f"{record} · {pins} pins"
+        else:
+            primary, secondary = record, f"Avg {avg} · {pins} pins"
+
+        season_line = ""
+        if sort_kind == "averages" and season and season not in ("", "—"):
+            season_line = (
+                f'<div class="team-season">{html_module.escape(str(season))}</div>'
+            )
+
+        detail = (
+            '<div class="card-detail">'
+            f"{_team_roster_detail_html(players)}"
+            "</div>"
+        )
+        name_html = html_module.escape(team_name)
+        # Preserve champion crown if present in table cell
+        if "👑" in str(cells[i_team].get("val", "")):
+            name_html = (
+                '<span class="standings-champion" title="Playoff champion" '
+                'aria-label="Season champion">👑</span> ' + name_html
+            )
+
+        cards.append(
+            f'<details class="player-card team-card"'
+            f' data-sort-name="{name_sort}"'
+            f' data-sort-record="{record_sort}"'
+            f' data-sort-avg="{avg_sort}"'
+            f' data-sort-pins="{pins_sort}"'
+            f' data-sort-score="{score_sort}"'
+            f' data-sort-week="{week_sort}"'
+            f' data-sort-total="{total_sort}"'
+            f' data-disp-record="{html_module.escape(record, quote=True)}"'
+            f' data-disp-avg="{html_module.escape(avg, quote=True)}"'
+            f' data-disp-pins="{html_module.escape(pins, quote=True)}"'
+            f' data-disp-score="{html_module.escape(score, quote=True)}"'
+            f' data-disp-week="{html_module.escape(str(week), quote=True)}"'
+            f' data-disp-game="{html_module.escape(str(game), quote=True)}"'
+            f' data-disp-games="{html_module.escape(str(games), quote=True)}"'
+            f' data-disp-total="{html_module.escape(str(total), quote=True)}"'
+            f' data-disp-season="{html_module.escape(str(season), quote=True)}"'
+            f' data-default-index="{rank - 1}">'
+            f"<summary>"
+            f'<div class="rank">{rank}</div>'
+            f'<div class="who">'
+            f'<div class="name" style="{team_style}">{name_html}</div>'
+            f"{season_line}"
+            f"</div>"
+            f'<div class="metrics">'
+            f'<div class="avg" data-primary>{html_module.escape(str(primary))}</div>'
+            f'<div class="hl-lo" data-secondary>{html_module.escape(secondary)}</div>'
+            f"</div>"
+            f'<div class="chev" aria-hidden="true">▸</div>'
+            f"</summary>"
+            f"{detail}"
+            f"</details>"
+        )
+    return "".join(cards)
+
+
 def _teams_standings_section(
     title: str,
     headers: List[dict],
     team_rows: List[Tuple[List[dict], Dict[str, Any]]],
     *,
     note: Optional[str] = None,
+    sort_kind: str = "standings",
 ) -> str:
-    """Standings table with expandable per-team player rosters."""
+    """Standings table + mobile expandable cards with per-team player rosters."""
     ncols = len(headers)
     note_html = _section_note(note) if note else ""
     th_parts: List[str] = []
@@ -3234,9 +4015,27 @@ def _teams_standings_section(
         )
         body_parts.append(main_tr + detail_tr)
 
+    kind = sort_kind if sort_kind in _TEAM_CARD_SORT_OPTIONS else "standings"
+    sort_options = _TEAM_CARD_SORT_OPTIONS[kind]
+    default_sort = {
+        "standings": "record",
+        "averages": "avg",
+        "games": "score",
+        "weeks": "avg",
+    }.get(kind, "record")
+    cards = _build_team_standings_cards(headers, team_rows, sort_kind=kind)
+
     return f"""
-    <div class="section">
-      <div class="section-title">{title}</div>
+    <div class="section teams-standings-section" data-sort-kind="{html_module.escape(kind)}">
+      <div class="section-head">
+        <div class="section-title">{title}</div>
+        <div class="lb-card-sort-wrap">
+          <button type="button" class="lb-card-sort-dir" aria-label="Flip sort order" aria-pressed="false" title="Flip sort order">↓</button>
+          <select id="team-card-sort-{html_module.escape(kind)}" class="lb-card-sort" aria-label="Sort team cards" data-default-sort="{default_sort}">
+            {sort_options}
+          </select>
+        </div>
+      </div>
       {note_html}
       <div class="table-scroll">
       <table class="sortable-table teams-standings-table" data-has-rank-col="1">
@@ -3244,10 +4043,42 @@ def _teams_standings_section(
         <tbody>{"".join(body_parts)}</tbody>
       </table>
       </div>
+      <div class="lb-cards" aria-label="Team cards">
+        {cards}
+      </div>
     </div>"""
 
 
 _TEAMS_STANDINGS_CSS = """
+.teams-standings-section .section-head,
+.player-scores-section .section-head {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px 14px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid #2a2050;
+    padding-bottom: 6px;
+}
+.teams-standings-section .section-head .section-title,
+.player-scores-section .section-head .section-title {
+    margin-bottom: 0;
+    border-bottom: none;
+    padding-bottom: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.teams-standings-section .lb-card-sort-wrap,
+.player-scores-section .lb-card-sort-wrap {
+    display: none;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+.teams-standings-section .lb-cards,
+.player-scores-section .lb-cards { display: none; }
 .team-standings-row { cursor: pointer; }
 .team-standings-row:hover td { background: rgba(255, 184, 108, 0.06); }
 .team-standings-row.expanded td { background: #221e3d; }
@@ -3279,6 +4110,13 @@ _TEAMS_STANDINGS_CSS = """
     flex-direction: column;
     gap: 3px;
 }
+.team-card .card-detail .team-roster-list {
+    max-width: none;
+}
+.team-card .card-detail {
+    padding: 0.45rem 0.75rem 0.65rem;
+    border-top: 1px solid rgba(42, 32, 80, 0.65);
+}
 .team-roster-item {
     display: flex;
     justify-content: space-between;
@@ -3286,6 +4124,7 @@ _TEAMS_STANDINGS_CSS = """
     gap: 20px;
     font-size: 12px;
     line-height: 1.45;
+    padding: 0 0.15rem;
 }
 .team-roster-name { color: #9a94b0; font-weight: 500; }
 .team-roster-avg {
@@ -3293,6 +4132,7 @@ _TEAMS_STANDINGS_CSS = """
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     flex-shrink: 0;
+    padding-right: 0.15rem;
 }
 .team-roster-empty { margin: 0; color: #888; font-size: 12px; }
 .team-roster-item--absent { opacity: 0.55; }
@@ -3305,6 +4145,164 @@ _TEAMS_STANDINGS_CSS = """
     color: #ff6b81;
     margin-left: 4px;
     vertical-align: middle;
+}
+.player-card {
+    background: #1a1730;
+    border: 1px solid #2a2050;
+    border-radius: 8px;
+    overflow: hidden;
+}
+.player-card[open] {
+    border-color: #4a3a80;
+    background: #1e1a36;
+}
+.player-card > summary {
+    list-style: none;
+    cursor: pointer;
+    display: grid;
+    grid-template-columns: 1.6rem minmax(0, 1fr) auto 1rem;
+    gap: 0.45rem;
+    align-items: start;
+    padding: 0.5rem 0.55rem;
+}
+.player-card > summary::-webkit-details-marker { display: none; }
+.player-card .who { min-width: 0; }
+.player-card .name {
+    font-weight: 700;
+    font-size: 0.88rem;
+    line-height: 1.25;
+}
+.player-card .team {
+    font-size: 0.72rem;
+    margin-top: 0.12rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.player-card .team-season {
+    font-size: 0.72rem;
+    margin-top: 0.12rem;
+    color: #9a94b0;
+}
+.player-card .metrics {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.player-card .avg {
+    font-weight: 800;
+    font-size: 0.95rem;
+    color: #ffb86c;
+}
+.player-card .hl-lo {
+    font-size: 0.68rem;
+    color: #9a94b0;
+    margin-top: 0.1rem;
+}
+.player-card .rank {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #6a6280;
+    padding-top: 0.15rem;
+}
+.player-card .chev {
+    color: #6a6280;
+    font-size: 0.75rem;
+    padding-top: 0.15rem;
+    transition: transform 0.15s ease, color 0.15s ease;
+}
+.player-card[open] .chev { transform: rotate(90deg); color: #ffb86c; }
+.player-scores-section .player-card .card-detail,
+.score-card .card-detail {
+    padding: 0 0.55rem 0.55rem 2.05rem;
+    border-top: 1px solid rgba(42, 32, 80, 0.65);
+}
+.player-scores-section .player-card .card-detail-label,
+.score-card .card-detail-label {
+    font-size: 10px;
+    font-weight: bold;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #6a6280;
+    margin: 8px 0 6px;
+}
+.player-scores-section .player-card .detail-grid,
+.score-card .detail-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 0;
+}
+.player-scores-section .player-card .detail-cell,
+.score-card .detail-cell {
+    background: #12101a;
+    border: 1px solid #2a2050;
+    border-radius: 6px;
+    padding: 6px 4px;
+    text-align: center;
+}
+.player-scores-section .player-card .detail-cell .dv,
+.score-card .detail-cell .dv {
+    font-size: 14px;
+    font-weight: bold;
+    font-variant-numeric: tabular-nums;
+    color: #e0e0e0;
+    line-height: 1.1;
+}
+.player-scores-section .player-card .detail-cell .dl,
+.score-card .detail-cell .dl {
+    font-size: 9px;
+    font-weight: bold;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #666;
+    margin-top: 2px;
+}
+.score-card--static .score-card-main {
+    display: grid;
+    grid-template-columns: 1.6rem minmax(0, 1fr) auto;
+    gap: 0.45rem;
+    align-items: start;
+    padding: 0.5rem 0.55rem;
+}
+.lb-card-sort {
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 650;
+    color: #c8b4ff;
+    background: rgba(45, 27, 105, 0.35);
+    border: 1px solid #2a2050;
+    border-radius: 6px;
+    padding: 5px 8px;
+    cursor: pointer;
+}
+.lb-card-sort-dir {
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #c8b4ff;
+    background: rgba(45, 27, 105, 0.35);
+    border: 1px solid #2a2050;
+    border-radius: 6px;
+    padding: 5px 8px;
+    cursor: pointer;
+}
+.lb-card-sort-dir[aria-pressed="true"] {
+    border-color: rgba(255, 184, 108, 0.55);
+    color: #ffb86c;
+}
+@media (max-width: 700px) {
+    .teams-standings-section .table-scroll,
+    .player-scores-section .table-scroll { display: none; }
+    .teams-standings-section .lb-cards,
+    .player-scores-section .lb-cards {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+    .teams-standings-section .lb-card-sort-wrap,
+    .player-scores-section .lb-card-sort-wrap {
+        display: flex;
+    }
 }
 """
 
@@ -3330,6 +4328,116 @@ _TEAMS_EXPAND_SCRIPT = r"""<script>
         }
       });
     });
+  });
+
+  function numAttr(el, key) {
+    var n = parseFloat(el.getAttribute(key));
+    return isNaN(n) ? -Infinity : n;
+  }
+
+  var ASC_KEYS = { name: 1, week: 1 };
+
+  document.querySelectorAll(".teams-standings-section").forEach(function (section) {
+    var wrap = section.querySelector(".lb-cards");
+    var sel = section.querySelector(".lb-card-sort");
+    var dirBtn = section.querySelector(".lb-card-sort-dir");
+    if (!wrap || !sel) return;
+    var flipped = false;
+    var kind = section.getAttribute("data-sort-kind") || "standings";
+
+    function applyCardSort(key, ascending) {
+      var cards = Array.prototype.slice.call(wrap.querySelectorAll("details.team-card"));
+      cards.sort(function (a, b) {
+        if (key === "name") {
+          var an = (a.getAttribute("data-sort-name") || "");
+          var bn = (b.getAttribute("data-sort-name") || "");
+          if (an !== bn) return ascending ? (an < bn ? -1 : 1) : (an > bn ? -1 : 1);
+        } else {
+          var av = numAttr(a, "data-sort-" + key);
+          var bv = numAttr(b, "data-sort-" + key);
+          if (av !== bv) return ascending ? (av < bv ? -1 : 1) : (av > bv ? -1 : 1);
+        }
+        return parseInt(a.getAttribute("data-default-index"), 10) -
+          parseInt(b.getAttribute("data-default-index"), 10);
+      });
+      cards.forEach(function (card, i) {
+        wrap.appendChild(card);
+        var rankEl = card.querySelector(".rank");
+        if (rankEl) rankEl.textContent = String(i + 1);
+        var primary = card.querySelector("[data-primary]");
+        var secondary = card.querySelector("[data-secondary]");
+        if (!primary || !secondary) return;
+        var record = card.getAttribute("data-disp-record") || "—";
+        var avg = card.getAttribute("data-disp-avg") || "—";
+        var pins = card.getAttribute("data-disp-pins") || "—";
+        var score = card.getAttribute("data-disp-score") || "—";
+        var week = card.getAttribute("data-disp-week") || "—";
+        var game = card.getAttribute("data-disp-game") || "—";
+        var total = card.getAttribute("data-disp-total") || "—";
+        var season = card.getAttribute("data-disp-season") || "";
+        if (kind === "games") {
+          if (key === "name" || key === "score") {
+            primary.textContent = score;
+            secondary.textContent = week + " · G" + game;
+          } else if (key === "week") {
+            primary.textContent = week;
+            secondary.textContent = score + " · G" + game;
+          }
+        } else if (kind === "weeks") {
+          if (key === "name" || key === "total") {
+            primary.textContent = total;
+            secondary.textContent = "Avg " + avg + " · " + week;
+          } else if (key === "avg") {
+            primary.textContent = avg;
+            secondary.textContent = total + " pins · " + week;
+          } else if (key === "week") {
+            primary.textContent = week;
+            secondary.textContent = total + " · Avg " + avg;
+          }
+        } else {
+          var seasonPrefix = season ? (season + " · ") : "";
+          if (key === "name" || key === "record") {
+            primary.textContent = kind === "averages" ? avg : record;
+            secondary.textContent = kind === "averages"
+              ? seasonPrefix + record + " · " + pins + " pins"
+              : "Avg " + avg + " · " + pins + " pins";
+          } else if (key === "avg") {
+            primary.textContent = avg;
+            secondary.textContent = kind === "averages"
+              ? seasonPrefix + record + " · " + pins + " pins"
+              : record + " · " + pins + " pins";
+          } else if (key === "pins") {
+            primary.textContent = pins;
+            secondary.textContent = kind === "averages"
+              ? seasonPrefix + record + " · Avg " + avg
+              : record + " · Avg " + avg;
+          }
+        }
+      });
+    }
+
+    function syncDirBtn(ascending) {
+      if (!dirBtn) return;
+      dirBtn.textContent = ascending ? "↑" : "↓";
+      dirBtn.setAttribute("aria-pressed", flipped ? "true" : "false");
+    }
+
+    function run() {
+      var key = sel.value || sel.getAttribute("data-default-sort") || "record";
+      var naturalAsc = !!ASC_KEYS[key];
+      var ascending = flipped ? !naturalAsc : naturalAsc;
+      applyCardSort(key, ascending);
+      syncDirBtn(ascending);
+    }
+
+    sel.addEventListener("change", run);
+    if (dirBtn) {
+      dirBtn.addEventListener("click", function () {
+        flipped = !flipped;
+        run();
+      });
+    }
+    run();
   });
 })();
 </script>"""
@@ -6377,22 +7485,26 @@ body.page-playoffs .container {
 _BEST_SCORES_HUB_CSS = """
 .best-scores-hub-tabs {
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+    flex-wrap: nowrap;
+    gap: 6px;
     margin: 0 0 14px;
 }
 .best-scores-hub-tab {
+    flex: 1 1 0;
+    min-width: 0;
     font: inherit;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
-    padding: 7px 12px;
+    padding: 7px 6px;
     border-radius: 6px;
     border: 1px solid #4a4068;
     background: #1e1a32;
     color: #c4b8e8;
     cursor: pointer;
+    text-align: center;
+    white-space: nowrap;
 }
 .best-scores-hub-tab:hover {
     border-color: #7c6ec4;
@@ -6457,13 +7569,18 @@ def _normalize_scores_hub_view(view: Optional[str]) -> str:
     return "weeks"
 
 
-def _scores_hub_tabs_html(initial_view: str) -> str:
+def _scores_hub_tabs_html(
+    initial_view: str, *, include_averages: bool = True
+) -> str:
     initial = _normalize_scores_hub_view(initial_view)
-    tabs = (
+    if not include_averages and initial == "averages":
+        initial = "weeks"
+    tabs = [
         ("weeks", "Best weeks"),
         ("games", "Best games"),
-        ("averages", "Best seasons"),
-    )
+    ]
+    if include_averages:
+        tabs.append(("averages", "Best seasons"))
     parts = ['<div class="best-scores-hub-tabs" role="tablist">']
     for key, label in tabs:
         pressed = "true" if key == initial else "false"
@@ -6511,7 +7628,7 @@ def _top_player_games_section(games: list, n: int) -> str:
             {"val": int(score), "cls": "right gold"},
             {"val": week, "cls": "right sub-col"},
         ])
-    return _list_section(f"Top {n} individual games", headers, rows)
+    return _player_scores_section(f"Top {n} individual games", headers, rows, sort_kind="games")
 
 
 def _top_player_weeks_section(weeks: list, n: int) -> str:
@@ -6548,7 +7665,7 @@ def _top_player_weeks_section(weeks: list, n: int) -> str:
             {"val": num_games, "cls": "right sub-col"},
             {"val": int(total), "cls": "right sub-col", "sort": total},
         ])
-    return _list_section(f"Top {n} player weeks", headers, rows)
+    return _player_scores_section(f"Top {n} player weeks", headers, rows, sort_kind="weeks")
 
 
 def _top_player_season_avg_section(
@@ -6599,8 +7716,9 @@ def _top_player_season_avg_section(
                     {"val": games, "cls": "right sub-col"},
                 ]
             )
-        title = f"Top {n} best seasons"
-        return _list_section(title, headers, rows)
+        return _player_scores_section(
+            f"Top {n} best seasons", headers, rows, sort_kind="averages"
+        )
 
     if not player_data:
         return '<p class="best-scores-hub-empty">No best seasons data for this selection.</p>'
@@ -6629,14 +7747,338 @@ def _top_player_season_avg_section(
         rows.append(
             _player_identity_cells(i, name, team)
             + [
-                {"val": f"{avg:.1f}", "cls": "right gold"},
+                {"val": f"{avg:.1f}", "cls": "right gold", "sort": avg},
                 {"val": high, "cls": "right green"},
                 {"val": low, "cls": "right sub-col"},
                 {"val": weeks, "cls": "right sub-col"},
                 {"val": games, "cls": "right sub-col"},
             ]
         )
-    return _list_section(f"Top {n} best seasons", headers, rows)
+    return _player_scores_section(
+        f"Top {n} best seasons", headers, rows, sort_kind="averages"
+    )
+
+
+_PLAYER_SCORES_CARD_SORT_OPTIONS = {
+    "games": """
+          <option value="score" selected>Score</option>
+          <option value="week">Week</option>
+          <option value="name">Name</option>
+""",
+    "weeks": """
+          <option value="avg" selected>Avg</option>
+          <option value="total">Total</option>
+          <option value="week">Week</option>
+          <option value="name">Name</option>
+""",
+    "averages": """
+          <option value="avg" selected>Avg</option>
+          <option value="high">High</option>
+          <option value="low">Low</option>
+          <option value="name">Name</option>
+""",
+}
+
+
+def _plain_player_label_from_cell(val: Any) -> str:
+    text = re.sub(r"<[^>]+>", "", str(val or ""))
+    return html_module.unescape(text).strip()
+
+
+def _short_season_label(season: str) -> str:
+    m = re.search(r"(\d+)", str(season or ""))
+    return f"S{m.group(1)}" if m else str(season or "").strip()
+
+
+def _build_player_scores_cards(
+    headers: List[dict],
+    rows: List[List[dict]],
+    *,
+    sort_kind: str,
+) -> str:
+    """Mobile expandable player score cards (hidden on desktop via CSS)."""
+    idx = _header_index_map(headers)
+    i_player = idx.get("player", 1)
+    i_team = idx.get("team")
+    i_avg = idx.get("avg")
+    i_score = idx.get("score")
+    i_week = idx.get("wk")
+    i_games = idx.get("games")
+    i_total = idx.get("total")
+    i_high = idx.get("high")
+    i_low = idx.get("low")
+    i_season = idx.get("season")
+    i_weeks = idx.get("weeks")
+
+    cards: List[str] = []
+    for rank, cells in enumerate(rows, start=1):
+        player_name = _plain_player_label_from_cell(_cell_display(cells, i_player, "—"))
+        name_sort = html_module.escape(player_name.lower(), quote=True)
+        team = _cell_display(cells, i_team, "—")
+        team_style = ""
+        if i_team is not None and i_team < len(cells):
+            team_style = cells[i_team].get("style", "") or ""
+        avg = _cell_display(cells, i_avg, "—")
+        score = _cell_display(cells, i_score, "—")
+        week = _cell_display(cells, i_week, "—")
+        games = _cell_display(cells, i_games, "—")
+        total = _cell_display(cells, i_total, "—")
+        high = _cell_display(cells, i_high, "—")
+        low = _cell_display(cells, i_low, "—")
+        season = _cell_display(cells, i_season, "")
+        weeks = _cell_display(cells, i_weeks, "—")
+
+        avg_sort = _cell_sort_num(cells, i_avg)
+        score_sort = _cell_sort_num(cells, i_score)
+        week_sort = _cell_sort_num(cells, i_week)
+        total_sort = _cell_sort_num(cells, i_total)
+        high_sort = _cell_sort_num(cells, i_high)
+        low_sort = _cell_sort_num(cells, i_low)
+
+        if sort_kind == "games":
+            primary, secondary = score, str(week)
+        elif sort_kind == "weeks":
+            primary, secondary = avg, f"{total} pins · {week}"
+        else:
+            season_short = _short_season_label(season) if season and season not in ("", "—") else ""
+            primary = avg
+            secondary = (
+                f"{season_short} · H {high} · L {low}" if season_short else f"H {high} · L {low}"
+            )
+
+        detail_cells: List[str] = []
+        detail_label = ""
+        expandable = True
+        if sort_kind == "games":
+            # Score + week are already on the summary; no expand panel.
+            expandable = False
+        elif sort_kind == "weeks":
+            detail_label = "Week"
+            detail_cells.extend(
+                [
+                    _week_summary_detail_cell(avg, "Avg"),
+                    _week_summary_detail_cell(games, "Games"),
+                    _week_summary_detail_cell(total, "Total"),
+                ]
+            )
+        else:
+            detail_label = "Season"
+            detail_cells.extend(
+                [
+                    _week_summary_detail_cell(avg, "Avg"),
+                    _week_summary_detail_cell(high, "High"),
+                    _week_summary_detail_cell(low, "Low"),
+                    _week_summary_detail_cell(weeks, "Weeks"),
+                    _week_summary_detail_cell(games, "Games"),
+                ]
+            )
+        detail = ""
+        if expandable and detail_cells:
+            detail = (
+                '<div class="card-detail">'
+                f'<div class="card-detail-label">{detail_label}</div>'
+                f'<div class="detail-grid">{"".join(detail_cells)}</div>'
+                "</div>"
+            )
+
+        # Keep SUB badge markup from the table cell when present.
+        name_html = str(cells[i_player].get("val", html_module.escape(player_name)))
+        season_disp = (
+            _short_season_label(season) if season and season not in ("", "—") else ""
+        )
+
+        summary_inner = (
+            f'<div class="rank">{rank}</div>'
+            f'<div class="who">'
+            f'<div class="name">{name_html}</div>'
+            f'<div class="team" style="{team_style}">{html_module.escape(team)}</div>'
+            f"</div>"
+            f'<div class="metrics">'
+            f'<div class="avg" data-primary>{html_module.escape(str(primary))}</div>'
+            f'<div class="hl-lo" data-secondary>{html_module.escape(secondary)}</div>'
+            f"</div>"
+        )
+        attrs = (
+            f' data-sort-name="{name_sort}"'
+            f' data-sort-avg="{avg_sort}"'
+            f' data-sort-score="{score_sort}"'
+            f' data-sort-week="{week_sort}"'
+            f' data-sort-total="{total_sort}"'
+            f' data-sort-high="{high_sort}"'
+            f' data-sort-low="{low_sort}"'
+            f' data-disp-avg="{html_module.escape(avg, quote=True)}"'
+            f' data-disp-score="{html_module.escape(score, quote=True)}"'
+            f' data-disp-week="{html_module.escape(str(week), quote=True)}"'
+            f' data-disp-games="{html_module.escape(str(games), quote=True)}"'
+            f' data-disp-total="{html_module.escape(str(total), quote=True)}"'
+            f' data-disp-high="{html_module.escape(str(high), quote=True)}"'
+            f' data-disp-low="{html_module.escape(str(low), quote=True)}"'
+            f' data-disp-season="{html_module.escape(str(season_disp), quote=True)}"'
+            f' data-disp-team="{html_module.escape(str(team), quote=True)}"'
+            f' data-default-index="{rank - 1}"'
+        )
+        if expandable:
+            cards.append(
+                f'<details class="player-card score-card"{attrs}>'
+                f"<summary>"
+                f"{summary_inner}"
+                f'<div class="chev" aria-hidden="true">▸</div>'
+                f"</summary>"
+                f"{detail}"
+                f"</details>"
+            )
+        else:
+            cards.append(
+                f'<div class="player-card score-card score-card--static"{attrs}>'
+                f'<div class="score-card-main">'
+                f"{summary_inner}"
+                f"</div>"
+                f"</div>"
+            )
+    return "".join(cards)
+
+
+def _player_scores_section(
+    title: str,
+    headers: List[dict],
+    rows: List[List[dict]],
+    *,
+    sort_kind: str,
+    note: Optional[str] = None,
+) -> str:
+    """Player best-scores table + mobile cards (same pattern as team best scores)."""
+    note_html = _section_note(note) if note else ""
+    kind = sort_kind if sort_kind in _PLAYER_SCORES_CARD_SORT_OPTIONS else "weeks"
+    sort_options = _PLAYER_SCORES_CARD_SORT_OPTIONS[kind]
+    default_sort = {"games": "score", "weeks": "avg", "averages": "avg"}.get(kind, "avg")
+    cards = _build_player_scores_cards(headers, rows, sort_kind=kind)
+    return f"""
+    <div class="section player-scores-section" data-sort-kind="{html_module.escape(kind)}">
+      <div class="section-head">
+        <div class="section-title">{title}</div>
+        <div class="lb-card-sort-wrap">
+          <button type="button" class="lb-card-sort-dir" aria-label="Flip sort order" aria-pressed="false" title="Flip sort order">↓</button>
+          <select id="player-card-sort-{html_module.escape(kind)}" class="lb-card-sort" aria-label="Sort player cards" data-default-sort="{default_sort}">
+            {sort_options}
+          </select>
+        </div>
+      </div>
+      {note_html}
+      {_render_sortable_table(headers, rows)}
+      <div class="lb-cards" aria-label="Player score cards">
+        {cards}
+      </div>
+    </div>"""
+
+
+_PLAYER_SCORES_CARD_SCRIPT = r"""<script>
+(function () {
+  function numAttr(el, key) {
+    var n = parseFloat(el.getAttribute(key));
+    return isNaN(n) ? -Infinity : n;
+  }
+
+  var ASC_KEYS = { name: 1, week: 1, low: 1 };
+
+  document.querySelectorAll(".player-scores-section").forEach(function (section) {
+    var wrap = section.querySelector(".lb-cards");
+    var sel = section.querySelector(".lb-card-sort");
+    var dirBtn = section.querySelector(".lb-card-sort-dir");
+    if (!wrap || !sel) return;
+    var flipped = false;
+    var kind = section.getAttribute("data-sort-kind") || "weeks";
+
+    function applyCardSort(key, ascending) {
+      var cards = Array.prototype.slice.call(
+        wrap.querySelectorAll("details.score-card, div.score-card")
+      );
+      cards.sort(function (a, b) {
+        if (key === "name") {
+          var an = (a.getAttribute("data-sort-name") || "");
+          var bn = (b.getAttribute("data-sort-name") || "");
+          if (an !== bn) return ascending ? (an < bn ? -1 : 1) : (an > bn ? -1 : 1);
+        } else {
+          var av = numAttr(a, "data-sort-" + key);
+          var bv = numAttr(b, "data-sort-" + key);
+          if (av !== bv) return ascending ? (av < bv ? -1 : 1) : (av > bv ? -1 : 1);
+        }
+        return parseInt(a.getAttribute("data-default-index"), 10) -
+          parseInt(b.getAttribute("data-default-index"), 10);
+      });
+      cards.forEach(function (card, i) {
+        wrap.appendChild(card);
+        var rankEl = card.querySelector(".rank");
+        if (rankEl) rankEl.textContent = String(i + 1);
+        var primary = card.querySelector("[data-primary]");
+        var secondary = card.querySelector("[data-secondary]");
+        if (!primary || !secondary) return;
+        var avg = card.getAttribute("data-disp-avg") || "—";
+        var score = card.getAttribute("data-disp-score") || "—";
+        var week = card.getAttribute("data-disp-week") || "—";
+        var total = card.getAttribute("data-disp-total") || "—";
+        var high = card.getAttribute("data-disp-high") || "—";
+        var low = card.getAttribute("data-disp-low") || "—";
+        var season = card.getAttribute("data-disp-season") || "";
+        var seasonPrefix = season ? (season + " · ") : "";
+        if (kind === "games") {
+          if (key === "name" || key === "score") {
+            primary.textContent = score;
+            secondary.textContent = week;
+          } else if (key === "week") {
+            primary.textContent = week;
+            secondary.textContent = score;
+          }
+        } else if (kind === "weeks") {
+          if (key === "name" || key === "avg") {
+            primary.textContent = avg;
+            secondary.textContent = total + " pins · " + week;
+          } else if (key === "total") {
+            primary.textContent = total;
+            secondary.textContent = "Avg " + avg + " · " + week;
+          } else if (key === "week") {
+            primary.textContent = week;
+            secondary.textContent = total + " · Avg " + avg;
+          }
+        } else {
+          if (key === "name" || key === "avg") {
+            primary.textContent = avg;
+            secondary.textContent = seasonPrefix + "H " + high + " · L " + low;
+          } else if (key === "high") {
+            primary.textContent = high;
+            secondary.textContent = seasonPrefix + "Avg " + avg + " · L " + low;
+          } else if (key === "low") {
+            primary.textContent = low;
+            secondary.textContent = seasonPrefix + "Avg " + avg + " · H " + high;
+          }
+        }
+      });
+    }
+
+    function syncDirBtn(ascending) {
+      if (!dirBtn) return;
+      dirBtn.textContent = ascending ? "↑" : "↓";
+      dirBtn.setAttribute("aria-pressed", flipped ? "true" : "false");
+    }
+
+    function run() {
+      var key = sel.value || sel.getAttribute("data-default-sort") || "avg";
+      var naturalAsc = !!ASC_KEYS[key];
+      var ascending = flipped ? !naturalAsc : naturalAsc;
+      applyCardSort(key, ascending);
+      syncDirBtn(ascending);
+    }
+
+    sel.addEventListener("change", run);
+    if (dirBtn) {
+      dirBtn.addEventListener("click", function () {
+        flipped = !flipped;
+        run();
+      });
+    }
+    run();
+  });
+})();
+</script>"""
 
 
 def _top_team_games_section(games: list, n: int) -> str:
@@ -6669,7 +8111,9 @@ def _top_team_games_section(games: list, n: int) -> str:
             ],
             players if isinstance(players, dict) else {},
         ))
-    return _teams_standings_section(f"Top {n} team games", headers, team_rows)
+    return _teams_standings_section(
+        f"Top {n} team games", headers, team_rows, sort_kind="games"
+    )
 
 
 def _top_team_weeks_section(weeks: list, n: int) -> str:
@@ -6705,7 +8149,9 @@ def _top_team_weeks_section(weeks: list, n: int) -> str:
             ],
             players if isinstance(players, dict) else {},
         ))
-    return _teams_standings_section(f"Top {n} team weeks", headers, team_rows)
+    return _teams_standings_section(
+        f"Top {n} team weeks", headers, team_rows, sort_kind="weeks"
+    )
 
 
 def _top_team_season_avg_section(
@@ -6758,7 +8204,9 @@ def _top_team_season_avg_section(
                 ],
                 players,
             ))
-        return _teams_standings_section(f"Top {n} best seasons", headers, team_rows)
+        return _teams_standings_section(
+            f"Top {n} best seasons", headers, team_rows, sort_kind="averages"
+        )
 
     if not teams_data:
         return (
@@ -6806,7 +8254,9 @@ def _top_team_season_avg_section(
             ],
             players,
         ))
-    return _teams_standings_section(f"Top {n} best seasons", headers, team_rows)
+    return _teams_standings_section(
+        f"Top {n} best seasons", headers, team_rows, sort_kind="averages"
+    )
 
 
 def build_top_player_scores_hub_html(
@@ -6819,26 +8269,33 @@ def build_top_player_scores_hub_html(
     player_season_rows: Optional[List[dict]] = None,
     initial_view: str = "weeks",
 ) -> str:
+    # Best seasons only makes sense across multiple seasons (all-time).
+    include_averages = player_season_rows is not None
     view = _normalize_scores_hub_view(initial_view)
+    if not include_averages and view == "averages":
+        view = "weeks"
     weeks_panel = _top_player_weeks_section(weeks, n)
     games_panel = _top_player_games_section(games, n)
-    avg_panel = _top_player_season_avg_section(
-        player_data, n, season_rows=player_season_rows
-    )
     hub_inner = (
         f'<div class="best-scores-hub" data-initial-view="{view}">'
-        + _scores_hub_tabs_html(view)
+        + _scores_hub_tabs_html(view, include_averages=include_averages)
         + _scores_hub_panel("weeks", weeks_panel, hidden=view != "weeks")
         + _scores_hub_panel("games", games_panel, hidden=view != "games")
-        + _scores_hub_panel("averages", avg_panel, hidden=view != "averages")
-        + "</div>"
     )
+    if include_averages:
+        avg_panel = _top_player_season_avg_section(
+            player_data, n, season_rows=player_season_rows
+        )
+        hub_inner += _scores_hub_panel(
+            "averages", avg_panel, hidden=view != "averages"
+        )
+    hub_inner += "</div>"
     return _render_list_page(
-        css=_LIST_CSS + _BEST_SCORES_HUB_CSS,
+        css=_LIST_CSS + _TEAMS_STANDINGS_CSS + _BEST_SCORES_HUB_CSS,
         title="🎳 BEST PLAYER SCORES",
         subtitle=season,
         sections=hub_inner,
-        extra_script=_BEST_SCORES_HUB_SCRIPT,
+        extra_script=_BEST_SCORES_HUB_SCRIPT + _PLAYER_SCORES_CARD_SCRIPT,
     )
 
 
@@ -6853,23 +8310,30 @@ def build_top_team_scores_hub_html(
     initial_view: str = "weeks",
     champion_team: Optional[str] = None,
 ) -> str:
+    # Best seasons only makes sense across multiple seasons (all-time).
+    include_averages = team_season_rows is not None
     view = _normalize_scores_hub_view(initial_view)
+    if not include_averages and view == "averages":
+        view = "weeks"
     weeks_panel = _top_team_weeks_section(weeks, n)
     games_panel = _top_team_games_section(games, n)
-    avg_panel = _top_team_season_avg_section(
-        teams_data,
-        n,
-        season_rows=team_season_rows,
-        champion_team=champion_team,
-    )
     hub_inner = (
         f'<div class="best-scores-hub" data-initial-view="{view}">'
-        + _scores_hub_tabs_html(view)
+        + _scores_hub_tabs_html(view, include_averages=include_averages)
         + _scores_hub_panel("weeks", weeks_panel, hidden=view != "weeks")
         + _scores_hub_panel("games", games_panel, hidden=view != "games")
-        + _scores_hub_panel("averages", avg_panel, hidden=view != "averages")
-        + "</div>"
     )
+    if include_averages:
+        avg_panel = _top_team_season_avg_section(
+            teams_data,
+            n,
+            season_rows=team_season_rows,
+            champion_team=champion_team,
+        )
+        hub_inner += _scores_hub_panel(
+            "averages", avg_panel, hidden=view != "averages"
+        )
+    hub_inner += "</div>"
     return _render_list_page(
         css=_LIST_CSS + _TEAMS_STANDINGS_CSS + _BEST_SCORES_HUB_CSS,
         title="🎳 BEST TEAM SCORES",
@@ -6914,7 +8378,9 @@ def build_top_team_games_html(games: list, season: str, n: int) -> str:
             ],
             players if isinstance(players, dict) else {},
         ))
-    section = _teams_standings_section(f"Top {n} Team Games", headers, team_rows)
+    section = _teams_standings_section(
+        f"Top {n} Team Games", headers, team_rows, sort_kind="games"
+    )
     return _render_list_page(
         css=_LIST_CSS + _TEAMS_STANDINGS_CSS,
         title="🎳 TOP TEAM GAMES",
@@ -6958,7 +8424,9 @@ def build_top_team_weeks_html(weeks: list, season: str, n: int) -> str:
             ],
             players if isinstance(players, dict) else {},
         ))
-    section = _teams_standings_section(f"Top {n} Team Weeks", headers, team_rows)
+    section = _teams_standings_section(
+        f"Top {n} Team Weeks", headers, team_rows, sort_kind="weeks"
+    )
     return _render_list_page(
         css=_LIST_CSS + _TEAMS_STANDINGS_CSS,
         title="🎳 TOP TEAM WEEKS",

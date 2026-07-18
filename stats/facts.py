@@ -299,3 +299,54 @@ def filter_facts(
                 continue
         result.append(f)
     return result
+
+
+def season_week_tuple(season_num: int, week: int) -> tuple:
+    """Comparable (season, week) key for inclusive range checks."""
+    return (int(season_num), int(week))
+
+
+def fact_in_season_week_range(
+    fact: dict,
+    *,
+    from_season: int,
+    from_week: int,
+    to_season: int,
+    to_week: int,
+) -> bool:
+    """True if fact's season/week is within inclusive [from, to] ordered by season then week."""
+    sn = safe_int(fact.get("season_number"), 0)
+    wk = safe_int(fact.get("week"), 0)
+    if sn <= 0 or wk <= 0:
+        return False
+    start = season_week_tuple(from_season, from_week)
+    end = season_week_tuple(to_season, to_week)
+    if start > end:
+        start, end = end, start
+    key = season_week_tuple(sn, wk)
+    return start <= key <= end
+
+
+def filter_facts_season_week_range(
+    facts: Iterable[dict],
+    *,
+    from_season: int,
+    from_week: int,
+    to_season: int,
+    to_week: int,
+    exclude_playoffs: bool = False,
+) -> List[dict]:
+    """Facts in an inclusive cross-season week range."""
+    out: List[dict] = []
+    for f in facts:
+        if exclude_playoffs and f.get("playoffs"):
+            continue
+        if fact_in_season_week_range(
+            f,
+            from_season=from_season,
+            from_week=from_week,
+            to_season=to_season,
+            to_week=to_week,
+        ):
+            out.append(f)
+    return out
