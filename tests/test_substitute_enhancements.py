@@ -294,7 +294,7 @@ def test_week_summary_html_shows_substitutes_in_leaderboard():
     assert "Jane" in html
     assert "sub-badge" in html
     assert "for Alice" in html or "sub-for-badge" in html
-    assert ">180.0<" in html
+    assert ">180.00<" in html
     assert 'data-orig-rank="2"' in html
 
 

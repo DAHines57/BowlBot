@@ -663,8 +663,8 @@ class LeagueService:
             name = match["player"]
             team = match.get("team", "Unknown")
             stat_rows = [
-                ("Average", f"{match.get('average', 0):.1f}", "gold"),
-                ("Std dev", f"{safe_float(match.get('std_dev', 0)):.1f}", "gold"),
+                ("Average", f"{match.get('average', 0):.2f}", "gold"),
+                ("Std dev", f"{safe_float(match.get('std_dev', 0)):.2f}", "gold"),
                 ("Highest game", str(safe_int(match.get("highest_game", 0))), "green"),
                 ("Lowest game", str(safe_int(match.get("lowest_game", 0))), "muted"),
                 ("Games", str(safe_int(match.get("games", 0))), "muted"),
@@ -702,8 +702,8 @@ class LeagueService:
         avg = safe_float(data.get("average", 0))
         if scores:
             stat_rows = [
-                ("Average", f"{avg:.1f}", "gold"),
-                ("Std dev", f"{safe_float(data.get('std_dev', 0)):.1f}", "gold"),
+                ("Average", f"{avg:.2f}", "gold"),
+                ("Std dev", f"{safe_float(data.get('std_dev', 0)):.2f}", "gold"),
                 ("Highest game", str(safe_int(data.get("highest_game", 0))), "green"),
                 ("Lowest game", str(safe_int(data.get("lowest_game", 0))), "muted"),
                 ("Games played", str(len(scores)), "muted"),

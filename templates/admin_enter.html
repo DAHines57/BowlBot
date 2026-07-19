@@ -110,6 +110,12 @@
     .scan-table input[type="number"] { width: 3rem; }
     .scan-table select { background: #12101a; border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 0.25rem; font-size: 0.8rem; max-width: 11rem; }
     .scan-table tr.duplicate-assign td { background: rgba(255, 107, 129, 0.12); }
+    .scan-team-block { margin: 0.85rem 0 1rem; padding: 0.65rem 0.7rem; border: 1px solid var(--border); border-radius: 8px; background: rgba(0,0,0,0.18); }
+    .scan-team-block h3 { margin: 0 0 0.5rem; font-size: 0.88rem; color: var(--mint); font-weight: 650; }
+    .scan-team-match { display: flex; flex-wrap: wrap; gap: 0.5rem 0.85rem; align-items: center; margin-bottom: 0.55rem; font-size: 0.8rem; color: var(--muted); }
+    .scan-team-match label { display: inline-flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+    .scan-team-match select { background: #12101a; border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 0.25rem 0.4rem; font-size: 0.8rem; max-width: 16rem; }
+    .scan-ocr-name { font-size: 0.72rem; color: var(--muted); display: block; max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .sub-section { margin-top: 0.65rem; display: none; }
     .sub-section.visible { display: block; }
     .sub-section-title { font-size: 0.78rem; font-weight: 600; color: var(--muted); margin: 0 0 0.35rem 0.15rem; }
@@ -220,14 +226,14 @@
         </label>
       </div>
 
-      {% if scoreboard_scan_enabled and selected_team %}
+      {% if scoreboard_scan_enabled %}
       <div class="scan-panel" id="scan-panel">
         <h2>Scan scoreboard</h2>
-        <p class="meta" style="margin:0 0 0.35rem">For <strong>{{ selected_team }}</strong> — crop to game columns only, then assign rows to players.</p>
-        <p class="scan-privacy">Cropped scores are sent to Anthropic for processing. BowlBot does not store photos. Player names stay in this app only.</p>
+        <p class="meta" style="margin:0 0 0.35rem">Upload a full dual-monitor photo (or crop one side). Team and player names are read from the board and matched to this week’s rosters.</p>
+        <p class="scan-privacy">The selected area is sent to Anthropic for processing. BowlBot does not store photos.</p>
         <div class="scan-toolbar">
           <input type="file" id="scan-image" accept="image/jpeg,image/png,image/webp">
-          <button type="button" class="scan" id="scan-run" disabled>Scan cropped area</button>
+          <button type="button" class="scan" id="scan-run" disabled>Scan photo</button>
           <button type="button" id="scan-recrop" style="display:none">Adjust crop</button>
         </div>
         <div class="scan-crop-stage" id="scan-crop-stage">
@@ -235,33 +241,19 @@
           <img id="scan-crop-img" alt="">
           <div class="scan-crop-box" id="scan-crop-box"></div>
         </div>
-        <p class="meta" id="scan-crop-hint" style="display:none;margin:0 0 0.5rem;font-size:0.8rem">Drag on the image to select game columns 1–4 (exclude names and footer totals).</p>
+        <p class="meta" id="scan-crop-hint" style="display:none;margin:0 0 0.5rem;font-size:0.8rem">Full photo is selected by default. Drag to crop one monitor if you prefer.</p>
         <p class="scan-status" id="scan-status" aria-live="polite"></p>
         <div class="scan-loading" id="scan-loading" aria-hidden="true">
           <div class="scan-spinner" role="status" aria-label="Scanning scoreboard"></div>
           <span class="scan-loading-text">Reading scoreboard…</span>
         </div>
         <div class="scan-review" id="scan-review">
-          <img class="scan-preview" id="scan-preview" alt="Cropped area sent for scan">
+          <img class="scan-preview" id="scan-preview" alt="Area sent for scan">
           <ul class="scan-errors" id="scan-errors"></ul>
-          <div class="table-scroll">
-            <table class="scan-table" id="scan-table">
-              <thead>
-                <tr>
-                  <th>Row</th>
-                  <th>Assign to</th>
-                  <th>G1</th><th>G2</th><th>G3</th><th>G4</th>
-                  <th class="game5-col">G5</th>
-                </tr>
-              </thead>
-              <tbody id="scan-table-body"></tbody>
-            </table>
-          </div>
+          <div id="scan-teams-review"></div>
           <button type="button" class="primary" id="scan-apply">Apply to grid</button>
         </div>
       </div>
-      {% elif scoreboard_scan_enabled and not selected_team %}
-      <p class="notice" style="font-size:0.88rem">Select a team above to scan a scoreboard photo.</p>
       {% endif %}
 
       {% for team_name, team_rows in entry.teams_grouped %}
@@ -1075,7 +1067,7 @@
         var reviewEl = document.getElementById("scan-review");
         var previewEl = document.getElementById("scan-preview");
         var errorsEl = document.getElementById("scan-errors");
-        var tbody = document.getElementById("scan-table-body");
+        var teamsReview = document.getElementById("scan-teams-review");
         var applyBtn = document.getElementById("scan-apply");
         var cropStage = document.getElementById("scan-crop-stage");
         var cropImg = document.getElementById("scan-crop-img");
@@ -1087,6 +1079,8 @@
         var fileObjectUrl = null;
         var cropRect = null;
         var dragStart = null;
+        var scanTeams = [];
+        var allTeamNames = ALL_TEAMS || [];
 
         function setStatus(msg, isError) {
           statusEl.textContent = msg || "";
@@ -1116,7 +1110,7 @@
         }
 
         function defaultCropRect() {
-          return { x: 0.22, y: 0.18, w: 0.55, h: 0.62 };
+          return { x: 0, y: 0, w: 1, h: 1 };
         }
 
         function clampCrop(rect) {
@@ -1262,11 +1256,11 @@
         fileInput.addEventListener("change", function () {
           clearPreviewUrl();
           clearFileUrl();
-          scanRows = [];
+          scanTeams = [];
           reviewEl.classList.remove("visible");
           hideCropUI(false);
           errorsEl.innerHTML = "";
-          tbody.innerHTML = "";
+          if (teamsReview) teamsReview.innerHTML = "";
           cropImg.removeAttribute("src");
           cropRect = null;
           var file = fileInput.files && fileInput.files[0];
@@ -1280,18 +1274,88 @@
           cropRect = defaultCropRect();
           showCropUI();
           if (recropBtn) recropBtn.style.display = "none";
-          setStatus("Adjust the crop box over game columns 1–4, then scan.");
+          setStatus("Full photo selected. Drag to crop if needed, then scan.");
           refreshScanButton();
         });
 
-        function buildAssignSelect(selected) {
+        function rosterForTeam(teamName) {
+          var block = teamName ? findTeamBlock(teamName) : null;
+          if (!block) return [];
+          try {
+            var raw = block.getAttribute("data-roster-names");
+            return raw ? JSON.parse(raw) : [];
+          } catch (err) {
+            return [];
+          }
+        }
+
+        function buildTeamSelect(selected, ocrName) {
+          var sel = document.createElement("select");
+          sel.className = "scan-team-assign";
+          var empty = document.createElement("option");
+          empty.value = "";
+          empty.textContent = "— choose team —";
+          sel.appendChild(empty);
+          (allTeamNames || []).forEach(function (name) {
+            var opt = document.createElement("option");
+            opt.value = name;
+            opt.textContent = name;
+            if (name === selected) opt.selected = true;
+            sel.appendChild(opt);
+          });
+          if (ocrName) sel.setAttribute("data-ocr-team", ocrName);
+          return sel;
+        }
+
+        function buildOpponentSelect(selected, selfTeam) {
+          var sel = document.createElement("select");
+          sel.className = "scan-opponent-assign";
+          var empty = document.createElement("option");
+          empty.value = "";
+          empty.textContent = "— none —";
+          sel.appendChild(empty);
+          (allTeamNames || []).forEach(function (name) {
+            if (selfTeam && name === selfTeam) return;
+            var opt = document.createElement("option");
+            opt.value = name;
+            opt.textContent = name;
+            if (name === selected) opt.selected = true;
+            sel.appendChild(opt);
+          });
+          return sel;
+        }
+
+        function syncScanOpponentDefaults() {
+          if (!teamsReview) return;
+          var blocks = teamsReview.querySelectorAll(".scan-team-block");
+          if (blocks.length !== 2) return;
+          var teamA = blocks[0].querySelector("select.scan-team-assign");
+          var teamB = blocks[1].querySelector("select.scan-team-assign");
+          var oppA = blocks[0].querySelector("select.scan-opponent-assign");
+          var oppB = blocks[1].querySelector("select.scan-opponent-assign");
+          var a = teamA && teamA.value.trim();
+          var b = teamB && teamB.value.trim();
+          if (!a || !b || a === b) return;
+          // Rebuild options excluding self, then default to the other board team.
+          function refill(oppSel, selfName, otherName) {
+            if (!oppSel) return;
+            var keep = oppSel.value.trim() || otherName;
+            var next = buildOpponentSelect(keep === selfName ? otherName : keep, selfName);
+            next.className = oppSel.className;
+            oppSel.replaceWith(next);
+          }
+          refill(oppA, a, b);
+          refill(oppB, b, a);
+        }
+
+        function buildAssignSelect(roster, selected) {
           var sel = document.createElement("select");
           sel.className = "scan-assign";
           var empty = document.createElement("option");
           empty.value = "";
           empty.textContent = "— skip —";
           sel.appendChild(empty);
-          (TEAM_ROSTER || []).forEach(function (name) {
+          (roster || []).forEach(function (name) {
             var opt = document.createElement("option");
             opt.value = name;
             opt.textContent = name;
@@ -1303,18 +1367,21 @@
         }
 
         function highlightDuplicateAssigns() {
-          var seen = {};
-          tbody.querySelectorAll("tr[data-scan-idx]").forEach(function (tr) {
-            tr.classList.remove("duplicate-assign");
-            var sel = tr.querySelector("select.scan-assign");
-            var v = sel && sel.value.trim();
-            if (!v) return;
-            if (seen[v]) {
-              tr.classList.add("duplicate-assign");
-              seen[v].classList.add("duplicate-assign");
-            } else {
-              seen[v] = tr;
-            }
+          if (!teamsReview) return;
+          teamsReview.querySelectorAll(".scan-team-block").forEach(function (block) {
+            var seen = {};
+            block.querySelectorAll("tr[data-scan-idx]").forEach(function (tr) {
+              tr.classList.remove("duplicate-assign");
+              var sel = tr.querySelector("select.scan-assign");
+              var v = sel && sel.value.trim();
+              if (!v) return;
+              if (seen[v]) {
+                tr.classList.add("duplicate-assign");
+                seen[v].classList.add("duplicate-assign");
+              } else {
+                seen[v] = tr;
+              }
+            });
           });
         }
 
@@ -1332,31 +1399,114 @@
           return td;
         }
 
+        function refillPlayerSelects(block) {
+          var teamSel = block.querySelector("select.scan-team-assign");
+          var teamName = teamSel && teamSel.value.trim();
+          var roster = rosterForTeam(teamName);
+          block.querySelectorAll("tr[data-scan-idx]").forEach(function (tr) {
+            var assignTd = tr.querySelector("td.scan-assign-cell");
+            if (!assignTd) return;
+            var prev = assignTd.querySelector("select.scan-assign");
+            var prevVal = prev ? prev.value : "";
+            var suggested = tr.getAttribute("data-suggested") || "";
+            var pick = prevVal || suggested;
+            if (pick && roster.indexOf(pick) < 0) pick = "";
+            assignTd.innerHTML = "";
+            assignTd.appendChild(buildAssignSelect(roster, pick));
+          });
+          highlightDuplicateAssigns();
+        }
+
+        function renderTeamBlock(teamData, teamIdx) {
+          var wrap = document.createElement("div");
+          wrap.className = "scan-team-block";
+          wrap.setAttribute("data-team-idx", String(teamIdx));
+
+          var title = document.createElement("h3");
+          var ocr = teamData.ocr_name || ("Team " + (teamIdx + 1));
+          title.textContent = ocr;
+          wrap.appendChild(title);
+
+          var matchRow = document.createElement("div");
+          matchRow.className = "scan-team-match";
+          var teamLabel = document.createElement("label");
+          teamLabel.textContent = "Match to ";
+          var matched = teamData.matched_team || "";
+          var teamSel = buildTeamSelect(matched, ocr);
+          teamSel.addEventListener("change", function () {
+            refillPlayerSelects(wrap);
+            syncScanOpponentDefaults();
+          });
+          teamLabel.appendChild(teamSel);
+          matchRow.appendChild(teamLabel);
+
+          var oppLabel = document.createElement("label");
+          oppLabel.textContent = "Opponent ";
+          var suggestedOpp = teamData.suggested_opponent || "";
+          var oppSel = buildOpponentSelect(suggestedOpp, matched);
+          oppLabel.appendChild(oppSel);
+          matchRow.appendChild(oppLabel);
+          wrap.appendChild(matchRow);
+
+          var scroll = document.createElement("div");
+          scroll.className = "table-scroll";
+          var table = document.createElement("table");
+          table.className = "scan-table";
+          var thead = document.createElement("thead");
+          thead.innerHTML = "<tr><th>Board</th><th>Assign to</th><th>G1</th><th>G2</th><th>G3</th><th>G4</th><th class=\"game5-col\">G5</th></tr>";
+          table.appendChild(thead);
+          var tbody = document.createElement("tbody");
+          var roster = rosterForTeam(matched);
+          if (!roster.length) roster = teamData.roster_players || [];
+          (teamData.players || []).forEach(function (row, idx) {
+            var tr = document.createElement("tr");
+            tr.dataset.scanIdx = String(idx);
+            if (row.suggested_player) tr.setAttribute("data-suggested", row.suggested_player);
+            var nameTd = document.createElement("td");
+            var ocrSpan = document.createElement("span");
+            ocrSpan.className = "scan-ocr-name";
+            ocrSpan.textContent = row.ocr_name || ("Row " + (idx + 1));
+            ocrSpan.title = row.ocr_name || "";
+            nameTd.appendChild(ocrSpan);
+            tr.appendChild(nameTd);
+            var assignTd = document.createElement("td");
+            assignTd.className = "scan-assign-cell";
+            assignTd.appendChild(buildAssignSelect(roster, row.suggested_player || ""));
+            tr.appendChild(assignTd);
+            ["game1", "game2", "game3", "game4", "game5"].forEach(function (k) {
+              tr.appendChild(gameCell(row, k));
+            });
+            tbody.appendChild(tr);
+          });
+          table.appendChild(tbody);
+          scroll.appendChild(table);
+          wrap.appendChild(scroll);
+
+          var teamBlock = matched ? findTeamBlock(matched) : null;
+          if (table && teamBlock) {
+            table.classList.toggle("hide-game5", teamBlock.classList.contains("hide-game5"));
+          }
+          return wrap;
+        }
+
         function renderReview(data, previewBlob) {
-          scanRows = data.score_rows || [];
+          scanTeams = data.teams || [];
+          if (data.all_teams && data.all_teams.length) {
+            allTeamNames = data.all_teams;
+          }
           errorsEl.innerHTML = "";
           (data.validation_errors || []).forEach(function (err) {
             var li = document.createElement("li");
             li.textContent = err;
             errorsEl.appendChild(li);
           });
-          tbody.innerHTML = "";
-          var roster = data.roster_players || TEAM_ROSTER || [];
-          scanRows.forEach(function (row, idx) {
-            var tr = document.createElement("tr");
-            var rowTd = document.createElement("td");
-            rowTd.textContent = String((row.row_index != null ? row.row_index : idx) + 1);
-            tr.appendChild(rowTd);
-            var assignTd = document.createElement("td");
-            var defaultPlayer = roster[idx] || "";
-            assignTd.appendChild(buildAssignSelect(defaultPlayer));
-            tr.appendChild(assignTd);
-            ["game1", "game2", "game3", "game4", "game5"].forEach(function (k) {
-              tr.appendChild(gameCell(row, k));
+          if (teamsReview) {
+            teamsReview.innerHTML = "";
+            scanTeams.forEach(function (teamData, idx) {
+              teamsReview.appendChild(renderTeamBlock(teamData, idx));
             });
-            tr.dataset.scanIdx = String(idx);
-            tbody.appendChild(tr);
-          });
+            syncScanOpponentDefaults();
+          }
           highlightDuplicateAssigns();
           hideCropUI(true);
           clearPreviewUrl();
@@ -1365,28 +1515,24 @@
             previewEl.src = previewUrl;
           }
           reviewEl.classList.add("visible");
-          var teamBlock = findTeamBlock(teamFilter);
-          var scanTable = document.getElementById("scan-table");
-          if (scanTable && teamBlock) {
-            scanTable.classList.toggle("hide-game5", teamBlock.classList.contains("hide-game5"));
-          }
           var errCount = (data.validation_errors || []).length;
+          var nTeams = scanTeams.length;
           setStatus(
             errCount
-              ? "Assign each row to a player (" + errCount + " validation warning(s))."
-              : "Assign each row to a player, then apply to the grid."
+              ? ("Review " + nTeams + " team(s) (" + errCount + " warning(s)).")
+              : ("Review matches for " + nTeams + " team(s), then apply to the grid.")
           );
         }
 
         runBtn.addEventListener("click", function () {
-          if (!cropReady() || !teamFilter) return;
+          if (!cropReady()) return;
           runBtn.disabled = true;
           setScanLoading(true);
           setStatus("");
           exportCroppedBlob(function (blob) {
             if (!blob) {
               setScanLoading(false);
-              setStatus("Could not crop image.", true);
+              setStatus("Could not prepare image.", true);
               runBtn.disabled = false;
               return;
             }
@@ -1394,7 +1540,6 @@
             fd.append("image", blob, "scoreboard-crop.jpg");
             fd.append("season", season);
             fd.append("week", String(week));
-            fd.append("team", teamFilter);
             fetch(SCAN_URL, { method: "POST", body: fd, credentials: "same-origin" })
               .then(function (res) {
                 return res.json().then(function (body) {
@@ -1420,41 +1565,69 @@
 
         applyBtn.addEventListener("click", function () {
           highlightDuplicateAssigns();
-          if (tbody.querySelector("tr.duplicate-assign")) {
-            setStatus("Each player can only be assigned once.", true);
+          if (teamsReview && teamsReview.querySelector("tr.duplicate-assign")) {
+            setStatus("Each player can only be assigned once per team.", true);
             return;
           }
           var applied = 0;
-          tbody.querySelectorAll("tr[data-scan-idx]").forEach(function (tr) {
-            var sel = tr.querySelector("select.scan-assign");
-            var player = sel && sel.value.trim();
-            if (!player) return;
-            var gridRow = document.querySelector(
-              'tr[data-row][data-team="' + CSS.escape(teamFilter) + '"][data-player="' + CSS.escape(player) + '"]'
-            );
-            if (!gridRow) return;
-            var teamBlock = findTeamBlock(teamFilter);
-            var showG5 = teamBlock && !teamBlock.classList.contains("hide-game5");
-            var inputs = gridRow.querySelectorAll("input.game");
-            tr.querySelectorAll("input.scan-game").forEach(function (inp, gi) {
-              if (gi === 4 && !showG5) return;
-              var v = inp.value.trim();
-              if (inputs[gi]) {
-                inputs[gi].value = v;
-                validateGameInput(inputs[gi], gridRow);
-              }
+          var missingTeam = 0;
+          var opponentPairs = [];
+          if (!teamsReview) return;
+          teamsReview.querySelectorAll(".scan-team-block").forEach(function (block) {
+            var teamSel = block.querySelector("select.scan-team-assign");
+            var teamName = teamSel && teamSel.value.trim();
+            if (!teamName) {
+              missingTeam += 1;
+              return;
+            }
+            var oppSel = block.querySelector("select.scan-opponent-assign");
+            var oppName = oppSel && oppSel.value.trim();
+            if (oppName && oppName !== teamName) {
+              opponentPairs.push({ team: teamName, opponent: oppName });
+            }
+            block.querySelectorAll("tr[data-scan-idx]").forEach(function (tr) {
+              var sel = tr.querySelector("select.scan-assign");
+              var player = sel && sel.value.trim();
+              if (!player) return;
+              var gridRow = document.querySelector(
+                'tr[data-row][data-team="' + CSS.escape(teamName) + '"][data-player="' + CSS.escape(player) + '"]'
+              );
+              if (!gridRow) return;
+              var teamBlock = findTeamBlock(teamName);
+              var showG5 = teamBlock && !teamBlock.classList.contains("hide-game5");
+              var inputs = gridRow.querySelectorAll("input.game");
+              tr.querySelectorAll("input.scan-game").forEach(function (inp, gi) {
+                if (gi === 4 && !showG5) return;
+                var v = inp.value.trim();
+                if (inputs[gi]) {
+                  inputs[gi].value = v;
+                  validateGameInput(inputs[gi], gridRow);
+                }
+              });
+              gridRow.classList.remove("row-incomplete");
+              gridRow.removeAttribute("title");
+              applied += 1;
             });
-            gridRow.classList.remove("row-incomplete");
-            gridRow.removeAttribute("title");
-            applied += 1;
           });
+          opponentPairs.forEach(function (pair) {
+            setOpponentSelect(pair.team, pair.opponent, null);
+            setOpponentSelect(pair.opponent, pair.team, null);
+          });
+          if (opponentPairs.length) refreshOpponentOptions();
+          if (!applied && missingTeam) {
+            setStatus("Match each scanned team to a roster team first.", true);
+            return;
+          }
           setStatus(
             applied
-              ? "Applied " + applied + " player row(s). Save when ready."
+              ? ("Applied " + applied + " player row(s)"
+                + (opponentPairs.length ? " and opponents" : "")
+                + ". Save when ready.")
               : "Choose a player for each row you want to apply."
           );
         });
       })();
+
 
       var debugFill = document.getElementById("debug-fill-scores");
       if (debugFill) {
