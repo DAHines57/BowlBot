@@ -68,6 +68,7 @@ def test_build_top_team_scores_hub_has_cards_per_panel():
     assert 'data-sort-kind="weeks"' in html
     assert 'data-default-sort="avg"' in html
     assert '<option value="avg" selected>Avg</option>' in html
+    assert "pins · Wk 1" in html
     assert "Best seasons" not in html
     assert 'data-view-tab="averages"' not in html
 
@@ -101,13 +102,17 @@ def test_build_top_team_scores_hub_has_cards_per_panel():
 def test_home_teams_range_smoke_markers():
     home = Path(__file__).resolve().parents[1] / "templates" / "home.html"
     text = home.read_text(encoding="utf-8")
-    assert 'id="range-custom-teams"' in text
-    assert 'id="teams_season_sel"' in text
+    assert 'id="range-custom"' in text
+    assert 'id="to_season_sel"' in text
+    assert 'id="to_week_sel"' in text
     assert "function teamsRangeMode" in text
     assert "function snapRangeToSingleSeason" in text
-    assert "function applyTeamsCustomRange" in text
     assert "function applySingleWeek" in text
-    assert "function earliestWeekFor" in text
     assert 'id="week-pick"' in text
     assert 'id="range-preset-all-time"' in text
     assert "teamsAllowsAllTime" in text
+    assert "Stage only" in text
+    assert "afterRangeSelection" in text
+    assert 'id="range-custom-apply"' in text
+    assert 'id="range-custom-teams"' not in text
+    assert "function applyTeamsCustomRange" not in text

@@ -358,6 +358,8 @@ def test_home_range_smoke_markers():
     assert "function applySingleWeek" in text
     assert "Custom range" in text
     assert 'id="range-week-apply"' not in text
+    assert "Stage only" in text
+    assert "afterRangeSelection" in text
     assert 'sp.set("range", "all_time")' in text
     assert 'sp.set("range", "season")' in text
     assert 'sp.set("from_season"' in text

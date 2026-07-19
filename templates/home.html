@@ -1230,7 +1230,7 @@
                 <span class="range-pill-chev" aria-hidden="true">▸</span>
               </button>
               <div class="range-panel" id="range-panel" hidden>
-                <div class="range-custom" id="range-custom-players">
+                <div class="range-custom" id="range-custom">
                   <p class="range-custom-hint">From the season &amp; week above through:</p>
                   <div class="row row--compact">
                     <div class="field field--season">
@@ -1247,30 +1247,6 @@
                     </div>
                   </div>
                   <button type="button" class="range-apply" id="range-custom-apply">Apply range</button>
-                </div>
-                <div class="range-custom" id="range-custom-teams" hidden>
-                  <span class="range-custom-title">One season</span>
-                  <div class="row">
-                    <div class="field">
-                      <label class="field-hint" for="teams_season_sel">Season</label>
-                      <select id="teams_season_sel">
-                        {% for s in seasons %}
-                        <option value="{{ s }}" {% if s == current_season %}selected{% endif %}>{% set parts = s.split() %}S{{ parts[-1] if parts else s }}</option>
-                        {% endfor %}
-                      </select>
-                    </div>
-                  </div>
-                  <div class="row row--compact">
-                    <div class="field field--week">
-                      <label class="field-hint" for="teams_from_week_sel">From</label>
-                      <select id="teams_from_week_sel" aria-label="From week"></select>
-                    </div>
-                    <div class="field field--week">
-                      <label class="field-hint" for="teams_to_week_sel">To</label>
-                      <select id="teams_to_week_sel" aria-label="To week"></select>
-                    </div>
-                  </div>
-                  <button type="button" class="range-apply" id="range-custom-apply-teams">Apply custom range</button>
                 </div>
               </div>
             </form>
@@ -1402,11 +1378,6 @@
         return list[0];
       }
 
-      function earliestWeekFor(seasonKey) {
-        var list = (WEEKS[seasonKey] || []).slice().sort(function (a, b) { return a - b; });
-        return list.length ? list[0] : 1;
-      }
-
       function shortSeason(label) {
         var m = String(label || "").match(/(\d+)/);
         return m ? ("S" + m[1]) : String(label || "");
@@ -1470,27 +1441,17 @@
       }
 
       function snapRangeToSingleSeason() {
+        /* Teams standings/playoffs do not support all-time; keep the shared range otherwise. */
+        if (rangeState.mode !== "all_time" || teamsAllowsAllTime()) return;
         var season = rangeState.toSeason || DEFAULT_SEASON;
         var week = Number(rangeState.toWeek) || latestWeekFor(season);
-        if (rangeState.mode === "all_time" && !teamsAllowsAllTime()) {
-          rangeState = {
-            mode: "week",
-            fromSeason: season,
-            fromWeek: week,
-            toSeason: season,
-            toWeek: week,
-          };
-          return;
-        }
-        if (rangeState.fromSeason !== rangeState.toSeason) {
-          rangeState = {
-            mode: Number(rangeState.fromWeek) === week ? "week" : "custom",
-            fromSeason: season,
-            fromWeek: 1,
-            toSeason: season,
-            toWeek: week,
-          };
-        }
+        rangeState = {
+          mode: "week",
+          fromSeason: season,
+          fromWeek: week,
+          toSeason: season,
+          toWeek: week,
+        };
       }
 
       function fillWeekSelect(sel, seasonKey, preserveValue, shortLabel) {
@@ -1525,31 +1486,6 @@
         }
         fillWeekSelect(document.getElementById("from_week_sel"), fs.value, focusWeek, true);
         fillWeekSelect(document.getElementById("to_week_sel"), ts.value, rangeState.toWeek, true);
-
-        var teamsSeason = document.getElementById("teams_season_sel");
-        if (teamsSeason) {
-          teamsSeason.value = rangeState.toSeason || DEFAULT_SEASON;
-          var seasonKey = teamsSeason.value;
-          var fromW = Number(rangeState.fromWeek) || earliestWeekFor(seasonKey);
-          var toW = Number(rangeState.toWeek) || latestWeekFor(seasonKey);
-          // Single-week state: seed custom controls with full season span (earliest → latest).
-          if (fromW === toW) {
-            fromW = earliestWeekFor(seasonKey);
-            toW = latestWeekFor(seasonKey);
-          }
-          fillWeekSelect(
-            document.getElementById("teams_from_week_sel"),
-            seasonKey,
-            fromW,
-            true
-          );
-          fillWeekSelect(
-            document.getElementById("teams_to_week_sel"),
-            seasonKey,
-            toW,
-            true
-          );
-        }
       }
 
       function syncPresetButtons() {
@@ -1559,17 +1495,12 @@
       }
 
       function syncTeamsRangePanel() {
-        var playersCustom = document.getElementById("range-custom-players");
-        var teamsCustom = document.getElementById("range-custom-teams");
+        /* Same custom range on every tab; only All-time availability changes for team views. */
         var allTimeBtn = document.getElementById("range-preset-all-time");
-        var onTeams = teamsRangeMode();
-        if (playersCustom) playersCustom.hidden = onTeams;
-        if (teamsCustom) teamsCustom.hidden = !onTeams;
-        if (allTimeBtn) {
-          var allowAll = !onTeams || teamsAllowsAllTime();
-          allTimeBtn.hidden = !allowAll;
-          setBtnUnavailable(allTimeBtn, !allowAll);
-        }
+        if (!allTimeBtn) return;
+        var allowAll = !teamsRangeMode() || teamsAllowsAllTime();
+        allTimeBtn.hidden = !allowAll;
+        setBtnUnavailable(allTimeBtn, !allowAll);
       }
 
       function applyPreset(mode) {
@@ -1611,7 +1542,6 @@
         syncPresetButtons();
         updateRangeUi();
         persistHomeState();
-        scheduleReload();
       }
 
       function applySingleWeek() {
@@ -1628,7 +1558,6 @@
         syncPresetButtons();
         updateRangeUi();
         persistHomeState();
-        scheduleReload();
       }
 
       function applySeasonFromPick() {
@@ -1644,7 +1573,6 @@
         syncPresetButtons();
         updateRangeUi();
         persistHomeState();
-        scheduleReload();
       }
 
       function applyCustomRange() {
@@ -1660,30 +1588,6 @@
           toSeason: toSeason,
           toWeek: toWeek,
         };
-        syncPresetButtons();
-        updateRangeUi();
-        persistHomeState();
-        scheduleReload();
-      }
-
-      function applyTeamsCustomRange() {
-        var season = document.getElementById("teams_season_sel").value || DEFAULT_SEASON;
-        var fromWeek = Number(document.getElementById("teams_from_week_sel").value) || 1;
-        var toWeek = Number(document.getElementById("teams_to_week_sel").value) || 1;
-        if (fromWeek > toWeek) {
-          var tmp = fromWeek;
-          fromWeek = toWeek;
-          toWeek = tmp;
-        }
-        var single = fromWeek === toWeek;
-        rangeState = {
-          mode: single ? "week" : "custom",
-          fromSeason: season,
-          fromWeek: fromWeek,
-          toSeason: season,
-          toWeek: toWeek,
-        };
-        syncCustomSelectsFromState();
         syncPresetButtons();
         updateRangeUi();
         persistHomeState();
@@ -2196,18 +2100,13 @@
 
       document.querySelectorAll("[data-range-preset]").forEach(function (btn) {
         btn.addEventListener("click", function () {
+          /* Stage only — load when a view button is chosen. */
           applyPreset(btn.getAttribute("data-range-preset"));
-          afterRangeSelection();
         });
       });
 
       document.getElementById("range-custom-apply").addEventListener("click", function () {
         applyCustomRange();
-        afterRangeSelection();
-      });
-
-      document.getElementById("range-custom-apply-teams").addEventListener("click", function () {
-        applyTeamsCustomRange();
         afterRangeSelection();
       });
 
@@ -2223,7 +2122,6 @@
           syncCustomSelectsFromState();
           updateRangeUi();
           persistHomeState();
-          scheduleReload();
         } else {
           applySingleWeek();
         }
@@ -2235,22 +2133,6 @@
 
       document.getElementById("to_season_sel").addEventListener("change", function () {
         fillWeekSelect(document.getElementById("to_week_sel"), this.value, null, true);
-      });
-
-      document.getElementById("teams_season_sel").addEventListener("change", function () {
-        var seasonKey = this.value;
-        fillWeekSelect(
-          document.getElementById("teams_from_week_sel"),
-          seasonKey,
-          earliestWeekFor(seasonKey),
-          true
-        );
-        fillWeekSelect(
-          document.getElementById("teams_to_week_sel"),
-          seasonKey,
-          latestWeekFor(seasonKey),
-          true
-        );
       });
 
       document.querySelectorAll(".dest-nav button").forEach(function (btn) {
@@ -2265,8 +2147,8 @@
           if (btn.classList.contains("is-unavailable") || btn.hidden) return;
           var grid = btn.closest(".view-grid");
           var dest = grid.getAttribute("data-dest-views");
-          if (narrowMq.matches) closeNav();
           setView(dest, btn.getAttribute("data-view"));
+          afterRangeSelection();
         });
       });
 

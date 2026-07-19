@@ -3890,6 +3890,7 @@ def _build_team_standings_cards(
         games = _cell_display(cells, i_games, "—")
         total = _cell_display(cells, i_total, "—")
         season = _cell_display(cells, i_season, "")
+        week_label = _week_display_label(week)
 
         record_sort = _cell_sort_num(cells, i_record)
         avg_sort = _cell_sort_num(cells, i_avg)
@@ -3899,9 +3900,9 @@ def _build_team_standings_cards(
         total_sort = _cell_sort_num(cells, i_total)
 
         if sort_kind == "games":
-            primary, secondary = score, f"{week} · G{game}"
+            primary, secondary = score, f"{week_label} · G{game}"
         elif sort_kind == "weeks":
-            primary, secondary = avg, f"{total} pins · {week}"
+            primary, secondary = avg, f"{total} pins · {week_label}"
         elif sort_kind == "averages":
             primary, secondary = avg, f"{record} · {pins} pins"
         else:
@@ -3939,7 +3940,7 @@ def _build_team_standings_cards(
             f' data-disp-avg="{html_module.escape(avg, quote=True)}"'
             f' data-disp-pins="{html_module.escape(pins, quote=True)}"'
             f' data-disp-score="{html_module.escape(score, quote=True)}"'
-            f' data-disp-week="{html_module.escape(str(week), quote=True)}"'
+            f' data-disp-week="{html_module.escape(str(week_label), quote=True)}"'
             f' data-disp-game="{html_module.escape(str(game), quote=True)}"'
             f' data-disp-games="{html_module.escape(str(games), quote=True)}"'
             f' data-disp-total="{html_module.escape(str(total), quote=True)}"'
@@ -7788,6 +7789,16 @@ def _plain_player_label_from_cell(val: Any) -> str:
 def _short_season_label(season: str) -> str:
     m = re.search(r"(\d+)", str(season or ""))
     return f"S{m.group(1)}" if m else str(season or "").strip()
+
+
+def _week_display_label(week: Any) -> str:
+    """Prefix bare week numbers with Wk; leave labels like S8 W4 alone."""
+    s = str(week if week is not None else "").strip()
+    if not s or s == "—":
+        return s or "—"
+    if re.search(r"[A-Za-z]", s):
+        return s
+    return f"Wk {s}"
 
 
 def _build_player_scores_cards(
