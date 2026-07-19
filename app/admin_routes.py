@@ -42,10 +42,9 @@ from league_admin import (
 from scoreboard_scan import (
     ALLOWED_IMAGE_TYPES,
     MAX_IMAGE_BYTES,
-    extract_score_rows,
+    build_scan_response,
     scan_configured,
     scan_scoreboard_image,
-    validate_extract,
 )
 from stats.compute import parse_season_number
 
@@ -291,10 +290,6 @@ def admin_week_scan():
     if not scan_configured():
         return jsonify({"error": "Scoreboard scan is not configured (ANTHROPIC_API_KEY)."}), 503
 
-    team = (request.form.get("team") or "").strip()
-    if not team:
-        return jsonify({"error": "Select a team before scanning."}), 400
-
     week, err = _parse_week_arg(required=True)
     if err:
         return jsonify({"error": err}), 400
@@ -314,41 +309,36 @@ def admin_week_scan():
     if len(image_bytes) > MAX_IMAGE_BYTES:
         return jsonify({"error": "Image too large (max 8 MB)."}), 400
 
-    payload, err = get_week_entry(svc.data, season, week, team=team)
+    # All teams for the week — team filter is not required for scan.
+    payload, err = get_week_entry(svc.data, season, week, team=None)
     if err:
         return jsonify({"error": err}), 400
 
-    roster_names = [
-        str(r.get("player_display_name") or "").strip()
-        for r in payload.get("rows") or []
-        if str(r.get("team") or "").strip() == team and str(r.get("player_display_name") or "").strip()
-    ]
-    if not roster_names:
-        return jsonify({"error": f"No roster players found for team {team!r}."}), 400
+    teams_rosters: dict[str, list[str]] = {}
+    for row in payload.get("rows") or []:
+        team_name = str(row.get("team") or "").strip()
+        player = str(row.get("player_display_name") or "").strip()
+        if not team_name or not player:
+            continue
+        if row.get("substitute"):
+            continue
+        teams_rosters.setdefault(team_name, [])
+        if player not in teams_rosters[team_name]:
+            teams_rosters[team_name].append(player)
+
+    if not teams_rosters:
+        return jsonify({"error": "No roster players found for this week."}), 400
 
     try:
         extract = scan_scoreboard_image(image_bytes, content_type)
     except Exception as exc:
         return jsonify({"error": f"Scan failed: {exc}"}), 502
 
-    score_rows = extract_score_rows(extract)
-    validation_errors = validate_extract(extract)
-    if len(score_rows) != len(roster_names):
-        validation_errors.append(
-            f"Scan found {len(score_rows)} score row(s); "
-            f"roster has {len(roster_names)} player(s). Assign each row manually."
-        )
-
-    return jsonify(
-        {
-            "validation_errors": validation_errors,
-            "score_rows": score_rows,
-            "roster_players": roster_names,
-            "team": team,
-            "season": season,
-            "week": week,
-        }
-    )
+    body = build_scan_response(extract, teams_rosters)
+    body["season"] = season
+    body["week"] = week
+    body["all_teams"] = sorted(teams_rosters.keys())
+    return jsonify(body)
 
 
 @admin_bp.route("/admin/week", methods=["POST"])
