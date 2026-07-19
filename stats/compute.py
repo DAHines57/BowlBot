@@ -1642,7 +1642,7 @@ def get_league_game_stats(
     return {
         "high_game": high_game,
         "low_game": low_game,
-        "league_avg": round(sum(scores_only) / len(scores_only), 1)
+        "league_avg": round(sum(scores_only) / len(scores_only), 2)
         if scores_only
         else 0,
         "total_players": total_players,
@@ -1687,7 +1687,7 @@ def get_week_summary(
                     "name": player,
                     "team": team,
                     "games": games,
-                    "avg": round(sum(games) / len(games), 1) if games else 0,
+                    "avg": round(sum(games) / len(games), 2) if games else 0,
                     "high": max(games) if games else 0,
                     "low": min(games) if games else 0,
                     "absent": False,
@@ -1707,7 +1707,7 @@ def get_week_summary(
                         "name": player,
                         "team": team,
                         "games": games,
-                        "avg": round(sum(games) / len(games), 1) if games else 0,
+                        "avg": round(sum(games) / len(games), 2) if games else 0,
                         "high": max(games) if games else 0,
                         "low": min(games) if games else 0,
                         "absent": True,
@@ -1723,7 +1723,7 @@ def get_week_summary(
                         "name": player,
                         "team": team,
                         "games": games,
-                        "avg": round(sum(games) / len(games), 1) if games else 0,
+                        "avg": round(sum(games) / len(games), 2) if games else 0,
                         "high": max(games) if games else 0,
                         "low": min(games) if games else 0,
                         "absent": True,
@@ -1743,7 +1743,7 @@ def get_week_summary(
                 "name": player,
                 "team": team,
                 "games": games,
-                "avg": round(sum(games) / len(games), 1) if games else 0,
+                "avg": round(sum(games) / len(games), 2) if games else 0,
                 "high": max(games) if games else 0,
                 "low": min(games) if games else 0,
                 "absent": is_absent,
@@ -1876,7 +1876,7 @@ def get_week_matchups(
         total_h = sum(td["game_pins"])
         num_games = len(td["game_pins"])
         avg_h = (
-            round(total_h / (td["player_count"] * num_games), 1)
+            round(total_h / (td["player_count"] * num_games), 2)
             if td["player_count"] and num_games
             else 0
         )
@@ -1904,7 +1904,7 @@ def get_week_matchups(
 
         total_a = sum(opp["game_pins"])
         avg_a = (
-            round(total_a / (opp["player_count"] * len(opp["game_pins"])), 1)
+            round(total_a / (opp["player_count"] * len(opp["game_pins"])), 2)
             if opp["player_count"] and opp["game_pins"]
             else 0
         )

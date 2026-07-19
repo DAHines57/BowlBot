@@ -41,7 +41,7 @@ def test_get_league_game_stats_season_totals():
         "team": "Team B",
         "week": 1,
     }
-    assert stats["league_avg"] == 157.4
+    assert stats["league_avg"] == 157.38
     assert stats["total_players"] == 2
     assert stats["games_200_plus"] == 2
     assert stats["total_games"] == 8

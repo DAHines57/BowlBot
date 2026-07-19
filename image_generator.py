@@ -487,6 +487,8 @@ def _build_league_summary_blocks(data: dict) -> str:
     high_team = high.get("team", "") or ""
     low_team = low.get("team", "") or ""
     league_avg = data.get("league_avg", "—")
+    if isinstance(league_avg, (int, float)):
+        league_avg = _format_avg(league_avg)
     return f"""
   <div class="highlights">
     <div class="highlight-card high">
@@ -549,7 +551,7 @@ def _week_summary_player_rows(data: dict) -> str:
             badges = '<span class="absent-badge">ABSENT</span>'
 
         row_class = 'class="absent"' if (absent or subbed_out) and not is_sub else ('class="sub-row"' if is_sub else "")
-        avg_str = f"{p['avg']:.1f}" if p.get("avg") else "—"
+        avg_str = _format_avg(p['avg']) if p.get("avg") else "—"
         high_str = str(p["high"]) if p.get("high") else "—"
         low_str = str(p["low"]) if p.get("low") else "—"
 
@@ -559,7 +561,7 @@ def _week_summary_player_rows(data: dict) -> str:
         high_sort = p["high"] if p.get("high") else -1
         low_sort = p["low"] if p.get("low") else -1
         if absent and not is_sub:
-            avg_str = f"{p['avg']:.1f}" if p.get("avg") else "—"
+            avg_str = _format_avg(p['avg']) if p.get("avg") else "—"
             high_str = low_str = "—"
             high_sort = low_sort = -1
         orig_rank = f' data-orig-rank="{html_module.escape(rank_str, quote=True)}"'
@@ -1035,7 +1037,7 @@ def _build_matchup_card_list(data: dict, *, for_bracket: bool = False) -> str:
               <div class="team-side away">
                 <div class="team-name" style="{a_color}">{away['name']}</div>
                 <div class="team-stats">
-                  <span class="pins">{away['pins']:,} pins</span> &nbsp;·&nbsp; {away['avg']} avg
+                  <span class="pins">{away['pins']:,} pins</span> &nbsp;·&nbsp; {_format_avg(away['avg'])} avg
                   &nbsp;·&nbsp; {away['wins']}W
                 </div>
               </div>"""
@@ -1084,7 +1086,7 @@ def _build_matchup_card_list(data: dict, *, for_bracket: bool = False) -> str:
         <div class="team-side">
           <div class="team-name" style="{h_color}">{home['name']}</div>
           <div class="team-stats">
-            <span class="pins">{home['pins']:,} pins</span> &nbsp;·&nbsp; {home['avg']} avg
+            <span class="pins">{home['pins']:,} pins</span> &nbsp;·&nbsp; {_format_avg(home['avg'])} avg
             &nbsp;·&nbsp; {home['wins']}W
           </div>
         </div>
@@ -1522,7 +1524,7 @@ _PLAYER_CHART_TIP_SCRIPT = r"""<script>
       active = g;
       g.classList.add("player-chart-point--active");
       var vs = score - avg;
-      var vsStr = (vs >= 0 ? "+" : "") + vs.toFixed(1) + " vs avg";
+      var vsStr = (vs >= 0 ? "+" : "") + vs.toFixed(2) + " vs avg";
       var vsCls =
         vs >= 0 ? "player-chart-tip-vs--up" : "player-chart-tip-vs--down";
       var season = g.getAttribute("data-season") || "";
@@ -2421,14 +2423,14 @@ def _player_game_chart_html(
         )
 
     league_note = (
-        f' · league avg <strong>{league_ref:.1f}</strong>'
+        f' · league avg <strong>{_format_avg(league_ref)}</strong>'
         if show_league
         else ""
     )
     caption = (
         f'<p class="player-chart-caption">Last <strong>{n}</strong> game'
         f'{"s" if n != 1 else ""}{scope_note}'
-        f' · player avg <strong>{avg:.1f}</strong>'
+        f' · player avg <strong>{_format_avg(avg)}</strong>'
         f"{league_note}</p>"
     )
     svg = (
@@ -2652,7 +2654,17 @@ def _format_roster_score_value(value: float) -> str:
     iv = int(round(value))
     if abs(value - iv) < 0.01:
         return f"{iv:,}"
-    return f"{value:.1f}"
+    return f"{value:.2f}"
+
+
+def _format_avg(value) -> str:
+    """Sitewide bowling average / std-dev display (two decimal places)."""
+    if value is None:
+        return "—"
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return "—"
 
 
 _PLAYERS_STATS_TOGGLE_CSS = """
@@ -2894,8 +2906,8 @@ def _format_par_per_game(par: int, games: int) -> tuple:
         return "—", 0.0
     per = int(par) / games
     if per > 0:
-        return f"+{per:.1f}", per
-    return f"{per:.1f}", per
+        return f"+{per:.2f}", per
+    return f"{per:.2f}", per
 
 
 def build_players_html(
@@ -2965,7 +2977,7 @@ def build_players_html(
         main_rows.append(
             ident
             + [
-                {"val": f"{avg:.1f}", "cls": "right gold"},
+                {"val": _format_avg(avg), "cls": "right gold"},
                 {"val": high, "cls": "right green"},
                 {"val": low, "cls": "right sub-col"},
                 {"val": weeks, "cls": "right sub-col"},
@@ -2973,7 +2985,7 @@ def build_players_html(
         )
         other_cells = [
             {"val": games, "cls": "right sub-col", "sort": games},
-            {"val": f"{std_dev:.1f}", "cls": "right gold", "sort": std_dev},
+            {"val": _format_avg(std_dev), "cls": "right gold", "sort": std_dev},
         ]
         if show_par:
             other_cells.extend(
@@ -3005,7 +3017,7 @@ def build_players_html(
             subs_rows.append(
                 _player_identity_cells(i, name, team, sub_badge=True, include_team=False)
                 + [
-                    {"val": f"{avg:.1f}", "cls": "right gold", "sort": avg},
+                    {"val": _format_avg(avg), "cls": "right gold", "sort": avg},
                     {"val": high, "cls": "right green"},
                     {"val": low, "cls": "right sub-col"},
                     {"val": weeks_subbed, "cls": "right sub-col", "sort": weeks_subbed},
@@ -3177,7 +3189,7 @@ def _team_roster_detail_html(players: Dict[str, Any]) -> str:
         items.append(
             '<li class="team-roster-item">'
             f'<span class="team-roster-name">{label}</span>'
-            f'<span class="team-roster-avg">{float(avg):.1f}</span>'
+            f'<span class="team-roster-avg">{_format_avg(avg)}</span>'
             "</li>"
         )
     return f'<ul class="team-roster-list">{"".join(items)}</ul>'
@@ -3372,7 +3384,7 @@ def build_teams_html(
                 "cls": "record",
                 "sort": w * 1_000_000 - l * 1_000 - t,
             },
-            {"val": f"{avg:.1f}", "cls": "right gold"},
+            {"val": _format_avg(avg), "cls": "right gold"},
             {"val": f"{pins:,}", "cls": "right sub-col", "sort": pins},
         ]
         team_rows.append((main_cells, players))
@@ -6178,7 +6190,7 @@ def build_playoff_bracket_html(
                 "sort": name.lower(),
             },
             {"val": record, "cls": "record", "sort": w * 10000 + l * 100 + t},
-            {"val": f"{avg:.1f}", "cls": "right gold"},
+            {"val": _format_avg(avg), "cls": "right gold"},
             {"val": f"{pins:,}", "cls": "right sub-col", "sort": pins},
         ])
     seed_section = _list_section(
@@ -6543,7 +6555,7 @@ def _top_player_weeks_section(weeks: list, n: int) -> str:
                 "sort": player.lower(),
             },
             {"val": team, "cls": "sub-col", "style": _team_color_style(team), "sort": team.lower()},
-            {"val": f"{week_avg:.1f}", "cls": "right gold", "sort": week_avg},
+            {"val": _format_avg(week_avg), "cls": "right gold", "sort": week_avg},
             {"val": week, "cls": "right sub-col"},
             {"val": num_games, "cls": "right sub-col"},
             {"val": int(total), "cls": "right sub-col", "sort": total},
@@ -6591,7 +6603,7 @@ def _top_player_season_avg_section(
                         "style": _team_color_style(team),
                         "sort": team.lower(),
                     },
-                    {"val": f"{avg:.1f}", "cls": "right gold", "sort": avg},
+                    {"val": _format_avg(avg), "cls": "right gold", "sort": avg},
                     {"val": high, "cls": "right green"},
                     {"val": low, "cls": "right sub-col"},
                     {"val": season, "cls": "sub-col", "sort": season.lower()},
@@ -6629,7 +6641,7 @@ def _top_player_season_avg_section(
         rows.append(
             _player_identity_cells(i, name, team)
             + [
-                {"val": f"{avg:.1f}", "cls": "right gold"},
+                {"val": _format_avg(avg), "cls": "right gold"},
                 {"val": high, "cls": "right green"},
                 {"val": low, "cls": "right sub-col"},
                 {"val": weeks, "cls": "right sub-col"},
@@ -6699,7 +6711,7 @@ def _top_team_weeks_section(weeks: list, n: int) -> str:
                     "sort": team.lower(),
                 },
                 {"val": week, "cls": "right sub-col"},
-                {"val": f"{week_avg:.1f}", "cls": "right gold", "sort": week_avg},
+                {"val": _format_avg(week_avg), "cls": "right gold", "sort": week_avg},
                 {"val": num_games, "cls": "right sub-col"},
                 {"val": int(total), "cls": "right sub-col", "sort": total},
             ],
@@ -6753,7 +6765,7 @@ def _top_team_season_avg_section(
                         "cls": "record",
                         "sort": w * 1_000_000 - l * 1_000 - t,
                     },
-                    {"val": f"{avg:.1f}", "cls": "right gold", "sort": avg},
+                    {"val": _format_avg(avg), "cls": "right gold", "sort": avg},
                     {"val": f"{pins:,}", "cls": "right sub-col", "sort": pins},
                 ],
                 players,
@@ -6801,7 +6813,7 @@ def _top_team_season_avg_section(
                     "cls": "record",
                     "sort": w * 1_000_000 - l * 1_000 - t,
                 },
-                {"val": f"{avg:.1f}", "cls": "right gold", "sort": avg},
+                {"val": _format_avg(avg), "cls": "right gold", "sort": avg},
                 {"val": f"{pins:,}", "cls": "right sub-col", "sort": pins},
             ],
             players,
@@ -6952,7 +6964,7 @@ def build_top_team_weeks_html(weeks: list, season: str, n: int) -> str:
                     "sort": team.lower(),
                 },
                 {"val": week, "cls": "right sub-col"},
-                {"val": f"{week_avg:.1f}", "cls": "right gold", "sort": week_avg},
+                {"val": _format_avg(week_avg), "cls": "right gold", "sort": week_avg},
                 {"val": num_games, "cls": "right sub-col"},
                 {"val": int(total), "cls": "right sub-col", "sort": total},
             ],
@@ -7005,7 +7017,7 @@ def build_team_weekly_html(team: str, season: str, weekly_summary: dict) -> str:
             {"val": rec,                            "cls": "record",      "sort": w * 10000 + l * 100 + t},
             {"val": f"{wi.get('pins_for',0):,}",    "cls": "right green", "sort": wi.get("pins_for", 0)},
             {"val": f"{wi.get('pins_against',0):,}", "cls": "right sub-col", "sort": wi.get("pins_against", 0)},
-            {"val": f"{wi.get('avg',0):.1f}",       "cls": "right gold"},
+            {"val": _format_avg(wi.get('avg', 0)),       "cls": "right gold"},
         ])
 
     subtitle = f"{season} &nbsp;·&nbsp; {record_str}"
@@ -7081,7 +7093,7 @@ def build_top_weeks_html(weeks: list, season: str, n: int) -> str:
             },
             {"val": team, "cls": "sub-col", "style": _team_color_style(team), "sort": team.lower()},
             {"val": week, "cls": "right sub-col"},
-            {"val": f"{week_avg:.1f}", "cls": "right gold", "sort": week_avg},
+            {"val": _format_avg(week_avg), "cls": "right gold", "sort": week_avg},
             {"val": num_games, "cls": "right sub-col"},
             {"val": int(total), "cls": "right sub-col", "sort": total},
         ])

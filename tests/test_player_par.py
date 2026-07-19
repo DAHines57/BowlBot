@@ -129,9 +129,9 @@ def test_format_par_displays_sign():
 
 
 def test_format_par_per_game():
-    assert _format_par_per_game(55, 10) == ("+5.5", 5.5)
-    assert _format_par_per_game(0, 8) == ("0.0", 0.0)
-    assert _format_par_per_game(-12, 4) == ("-3.0", -3.0)
+    assert _format_par_per_game(55, 10) == ("+5.50", 5.5)
+    assert _format_par_per_game(0, 8) == ("0.00", 0.0)
+    assert _format_par_per_game(-12, 4) == ("-3.00", -3.0)
     assert _format_par_per_game(10, 0) == ("—", 0.0)
 
 
@@ -171,7 +171,7 @@ def test_build_players_html_other_stats_shows_par():
         '<span class="sort-ind" aria-hidden="true"></span>PAR/G'
     ) in other_chunk
     assert "+55" in other_chunk
-    assert "+5.5" in other_chunk
+    assert "+5.50" in other_chunk
     assert "What is PAR?" in html
     assert "All seasons" not in html
 

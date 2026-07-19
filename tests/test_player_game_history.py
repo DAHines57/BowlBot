@@ -141,4 +141,4 @@ def test_build_player_detail_html_chart_includes_league_avg_line():
         league_avg=175.5,
     )
     assert "player-chart-league-avg" in html
-    assert "league avg <strong>175.5</strong>" in html
+    assert "league avg <strong>175.50</strong>" in html
