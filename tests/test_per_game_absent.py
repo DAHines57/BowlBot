@@ -3,7 +3,11 @@
 import pytest
 
 from stats.compute import get_player_scores, get_week_matchups
-from stats.facts import games_list_for_player_stats, games_list_for_team
+from stats.facts import (
+    games_list_for_player_stats,
+    games_list_for_team,
+    player_profile_game_slots,
+)
 
 
 def _fact(
@@ -44,6 +48,48 @@ def test_games_list_splits_team_vs_player():
     f = _fact("Alice", 5, games=(180, 200, 210, 205, None), game_absent=[True, False, False, False, False])
     assert games_list_for_team(f) == [180, 200, 210, 205]
     assert games_list_for_player_stats(f) == [200, 210, 205]
+
+
+def test_profile_game_slots_keep_missed_score_and_slot_number():
+    f = _fact(
+        "Alice",
+        5,
+        games=(180, 200, 210, 205, None),
+        game_absent=[True, False, False, False, False],
+    )
+    slots = player_profile_game_slots(f)
+    assert [(s["slot"], s["score"], s["absent"], s["counts"]) for s in slots] == [
+        (1, 180, True, False),
+        (2, 200, False, True),
+        (3, 210, False, True),
+        (4, 205, False, True),
+    ]
+
+
+def test_profile_game_slots_counting_scores_match_the_stats_list():
+    """The new accessor must not become a second source of truth for averages."""
+    f = _fact(
+        "Alice",
+        5,
+        games=(180, 200, 210, 205, None),
+        game_absent=[True, False, True, False, False],
+    )
+    counting = [s["score"] for s in player_profile_game_slots(f) if s["counts"]]
+    assert counting == games_list_for_player_stats(f)
+
+
+def test_profile_game_slots_empty_for_whole_week_absence():
+    f = _fact("Alice", 5, absent=True, game_absent=[True, False, False, False, False])
+    assert player_profile_game_slots(f) == []
+
+
+def test_profile_game_slots_count_every_game_for_a_substitute():
+    f = _fact("Alice", 5, games=(180, 200, 210, 205, None))
+    f["substitute"] = True
+    f["game1_absent"] = True
+    slots = player_profile_game_slots(f)
+    assert [s["score"] for s in slots] == games_list_for_team(f)
+    assert all(s["counts"] for s in slots)
 
 
 def test_player_season_average_excludes_book_avg_game():

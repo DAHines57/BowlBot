@@ -7,7 +7,6 @@ from flask import Blueprint, Response, current_app, redirect, render_template, r
 from league_admin import (
     list_public_seasons,
     list_public_weeks_for_season,
-    playoff_weeks_by_season,
     public_latest_week,
 )
 
@@ -55,7 +54,6 @@ def home():
     cur = seasons[0] if seasons else svc.data.get_current_season()
     latest_wk = public_latest_week(svc.data, cur) if cur else 1
     weeks_by_season = {s: list_public_weeks_for_season(svc.data, s) for s in seasons}
-    playoff_weeks = playoff_weeks_by_season(svc.data, seasons)
     catalog = svc.lookup_catalog()
     public_set = set(seasons)
     catalog = {
@@ -73,9 +71,20 @@ def home():
         current_season=cur,
         latest_week=latest_wk,
         weeks_by_season=weeks_by_season,
-        playoff_weeks_by_season=playoff_weeks,
         lookup_catalog=catalog,
     )
+
+
+@bp.route("/app")
+def unified_app():
+    """Unified stats page. Data arrives via /api/*; this only serves the shell."""
+    svc = _svc()
+    if not svc:
+        return render_template(
+            "error.html",
+            message="Database not ready. Set DATABASE_URL, run docker compose up -d, then python sync_db.py.",
+        ), 503
+    return render_template("app.html")
 
 
 def _season_arg() -> str:
@@ -143,33 +152,6 @@ def week_teams():
         season = svc.data.get_current_season()
     week = _week_arg()
     html, err = svc.weekly_teams_page(season, week, embed=_embed_flag())
-    if err:
-        return render_template("error.html", message=err), 400
-    return Response(html, mimetype="text/html; charset=utf-8")
-
-
-@bp.route("/playoffs")
-def playoffs():
-    svc = _svc()
-    if not svc:
-        return _no_svc()
-    season = _season_arg()
-    html, err = svc.playoff_results_page(season, embed=_embed_flag())
-    if err:
-        return render_template("error.html", message=err), 400
-    return Response(html, mimetype="text/html; charset=utf-8")
-
-
-@bp.route("/bracket")
-def playoff_bracket():
-    svc = _svc()
-    if not svc:
-        return _no_svc()
-    raw = request.args.get("season")
-    if raw is None or str(raw).strip().lower() in ("", "all", "all-time", "alltime"):
-        html, err = svc.playoff_bracket_index_page(embed=_embed_flag())
-    else:
-        html, err = svc.playoff_bracket_page(_season_arg(), embed=_embed_flag())
     if err:
         return render_template("error.html", message=err), 400
     return Response(html, mimetype="text/html; charset=utf-8")

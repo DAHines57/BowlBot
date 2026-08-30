@@ -8,26 +8,22 @@ from typing import List, Optional, Tuple, Union
 from image_generator import (
     build_all_weeks_matchups_html,
     build_all_weeks_summary_html,
-    build_bracket_index_html,
     build_html,
     build_top_team_games_html,
     build_top_team_weeks_html,
     build_matchups_html,
     build_player_detail_html,
     build_players_html,
-    build_playoff_bracket_html,
     build_team_weekly_html,
     build_teams_html,
-    champion_from_playoff_snapshots,
     build_top_games_html,
     build_top_player_scores_hub_html,
     build_top_team_scores_hub_html,
     build_top_weeks_html,
-    compute_bracket_rounds,
     inject_web_chrome,
 )
 from league_data import LeagueDataSource
-from stats.compute import sort_teams_for_playoff_seeding
+from playoff_champion import champion_from_playoff_snapshots
 from utils import safe_float, safe_int
 
 
@@ -194,64 +190,6 @@ class LeagueService:
         return inject_web_chrome(
             build_teams_html(data, season, subtitle=subtitle), embed=embed
         ), ""
-
-    def playoff_results_page(self, season: str, *, embed: bool = False) -> Tuple[Optional[str], str]:
-        """Same page as the bracket view: seeds, bracket, and stacked playoff week cards."""
-        return self.playoff_bracket_page(season, embed=embed)
-
-    def playoff_bracket_page(self, season: str, *, embed: bool = False) -> Tuple[Optional[str], str]:
-        """Playoff seeds, bracket, and (when available) full playoff week scorecards on one page."""
-        if season == "all":
-            return None, "Pick a specific season for playoffs."
-        weeks = self.data.list_weeks_for_season(season)
-        if not weeks:
-            return None, "No weeks in this season."
-        pweeks = self.data.list_playoff_weeks_for_season(season)
-        if pweeks:
-            first = min(pweeks)
-            sw = max(1, first - 1)
-            if sw not in weeks:
-                before = [w for w in weeks if w < first]
-                sw = max(before) if before else min(weeks)
-
-        else:
-            if 7 in weeks:
-                sw = 7
-            else:
-                sw = max(weeks)
-        data = self.data.get_team_scores(None, season, through_week=sw)
-        if isinstance(data, dict) and "error" in data:
-            return None, data["error"]
-        if not data:
-            return None, "No team data for seeding."
-        sorted_teams = sort_teams_for_playoff_seeding(data)
-        if len(sorted_teams) < 2:
-            return None, "Need at least two teams for a bracket."
-        seeded_names = [name for name, _ in sorted_teams]
-        rounds = compute_bracket_rounds(seeded_names)
-        pweeks_sorted, playoff_snapshots = self._playoff_snapshots_for_season(season)
-        playoff_h2h = sum(
-            sum(1 for m in (snap or {}).get("matchups", []) if m.get("away"))
-            for snap in playoff_snapshots
-            if snap
-        )
-        if pweeks_sorted and playoff_h2h == 0:
-            return None, "No playoff matchups for this season."
-        html = build_playoff_bracket_html(
-            season,
-            sw,
-            sorted_teams,
-            rounds,
-            playoff_week_numbers=pweeks_sorted if pweeks_sorted else None,
-            playoff_matchups_by_round=playoff_snapshots if pweeks_sorted else None,
-        )
-        return inject_web_chrome(html, embed=embed), ""
-
-    def playoff_bracket_index_page(self, *, embed: bool = False) -> Tuple[Optional[str], str]:
-        seasons = self.seasons_sorted()
-        if not seasons:
-            return None, "No seasons in spreadsheet."
-        return inject_web_chrome(build_bracket_index_html(seasons, embed=embed), embed=embed), ""
 
     def players_page(self, season: str, *, embed: bool = False) -> Tuple[Optional[str], str]:
         subs_data: Optional[dict] = None
@@ -668,6 +606,7 @@ class LeagueService:
                 ("Highest game", str(safe_int(match.get("highest_game", 0))), "green"),
                 ("Lowest game", str(safe_int(match.get("lowest_game", 0))), "muted"),
                 ("Games", str(safe_int(match.get("games", 0))), "muted"),
+                ("Absences", str(safe_int(match.get("absences", 0))), "muted"),
             ]
             game_history = self.data.get_player_game_history(name, season=None, limit=30)
             league_summary = self.data.get_league_game_stats(all_time=True)
@@ -707,7 +646,11 @@ class LeagueService:
                 ("Highest game", str(safe_int(data.get("highest_game", 0))), "green"),
                 ("Lowest game", str(safe_int(data.get("lowest_game", 0))), "muted"),
                 ("Games played", str(len(scores)), "muted"),
+                ("Absences", str(safe_int(data.get("weeks_absent", 0))), "muted"),
             ]
+            weeks_subbed = safe_int(data.get("weeks_subbed", 0))
+            if weeks_subbed:
+                stat_rows.append(("Weeks subbed", str(weeks_subbed), "muted"))
             empty_message = None
         else:
             stat_rows = None

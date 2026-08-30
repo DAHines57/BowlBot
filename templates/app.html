@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Monday Night Friends</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+  <a class="skip-link" href="#leaderboard">Skip to leaderboard</a>
+
+  <div class="app">
+    <header class="app-header">
+      <h1 class="app-title">
+        <span class="app-title-ico" aria-hidden="true">&#127923;</span>
+        <span class="app-title-text">Monday Night Friends</span>
+      </h1>
+      <div class="settings-field">
+        <button type="button" class="settings-btn" id="settings-btn" aria-label="Settings"
+                aria-expanded="false" aria-controls="settings-panel">
+          <span class="settings-ico" aria-hidden="true">&#9881;</span>
+          <span class="settings-btn-text">Settings</span>
+        </button>
+
+        <div class="settings-panel" id="settings-panel" hidden>
+          <h2 class="filter-title">Settings</h2>
+
+          <div class="filter-group">
+            <h3 class="filter-group-title">Default sort</h3>
+            <p class="filter-hint">Applied when the page opens. Change the live sort above the leaderboard.</p>
+            <div class="settings-row">
+              <label class="sr-only" for="default-sort-players">Default player sort</label>
+              <span class="settings-row-label">Players</span>
+              <select id="default-sort-players" class="mini-select"></select>
+              <select id="default-sort-players-dir" class="mini-select">
+                <option value="desc">High &rarr; low</option>
+                <option value="asc">Low &rarr; high</option>
+              </select>
+            </div>
+            <div class="settings-row">
+              <label class="sr-only" for="default-sort-teams">Default team sort</label>
+              <span class="settings-row-label">Teams</span>
+              <select id="default-sort-teams" class="mini-select"></select>
+              <select id="default-sort-teams-dir" class="mini-select">
+                <option value="desc">High &rarr; low</option>
+                <option value="asc">Low &rarr; high</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="filter-group">
+            <h3 class="filter-group-title">Density</h3>
+            <div class="radio-list" id="density-radios" role="radiogroup" aria-label="Display density"></div>
+          </div>
+
+          <div class="filter-actions">
+            <button type="button" class="btn btn--ghost" id="settings-reset">Reset all</button>
+            <button type="button" class="btn btn--primary" id="settings-close">Done</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="controls">
+      <div class="range-field">
+        <button type="button" class="range-pill" id="range-pill"
+                aria-expanded="false" aria-controls="filter-panel">
+          <span class="range-pill-ico" aria-hidden="true">&#128257;</span>
+          <span class="range-pill-text" id="range-pill-text">Loading&hellip;</span>
+          <span class="range-tag" id="range-pill-tag" hidden></span>
+          <span class="range-pill-caret" aria-hidden="true"></span>
+        </button>
+
+        <div class="filter-panel" id="filter-panel" hidden>
+          <h2 class="filter-title">Advanced Data Filters</h2>
+          <p class="filter-range-summary" id="filter-range-summary">
+            <span id="filter-range-text"></span>
+            <span class="range-tag" id="filter-range-tag" hidden></span>
+          </p>
+
+          <div class="filter-group">
+            <div class="range-picker" id="range-picker">
+              <div class="range-picker-col" id="start-col">
+                <span class="range-picker-head" id="start-head">Start</span>
+                <div class="range-picker-selects" role="group" aria-labelledby="start-head">
+                  <label class="sr-only" for="start-season">Start season</label>
+                  <select id="start-season" class="mini-select"></select>
+                  <label class="sr-only" for="start-week">Start week</label>
+                  <select id="start-week" class="mini-select"></select>
+                </div>
+              </div>
+              <span class="range-picker-dash" id="range-picker-dash" aria-hidden="true">&ndash;</span>
+              <div class="range-picker-col">
+                <span class="range-picker-head" id="end-head">End</span>
+                <div class="range-picker-selects" role="group" aria-labelledby="end-head">
+                  <label class="sr-only" for="end-season">End season</label>
+                  <select id="end-season" class="mini-select"></select>
+                  <label class="sr-only" for="end-week">End week</label>
+                  <select id="end-week" class="mini-select"></select>
+                </div>
+              </div>
+            </div>
+            <p class="filter-hint" id="range-hint"></p>
+            <div class="range-presets" id="range-presets">
+              <button type="button" class="btn btn--chip" data-preset="season"
+                      aria-pressed="false">This season</button>
+              <button type="button" class="btn btn--chip" data-preset="all"
+                      aria-pressed="false">All time</button>
+            </div>
+          </div>
+
+          <div class="filter-group" id="playoff-group">
+            <h3 class="filter-group-title">Weeks counted</h3>
+            <div class="playoff-flip" id="playoff-flip" role="group"
+                 aria-label="Weeks counted">
+              <button type="button" class="playoff-btn" data-playoffs="regular"
+                      aria-pressed="false">Regular</button>
+              <button type="button" class="playoff-btn" data-playoffs="both"
+                      aria-pressed="true">All</button>
+              <button type="button" class="playoff-btn" data-playoffs="only"
+                      aria-pressed="false">Playoffs</button>
+            </div>
+          </div>
+
+          <div class="filter-actions">
+            <button type="button" class="btn btn--ghost" id="filter-reset">Reset</button>
+            <button type="button" class="btn btn--primary" id="filter-close">Done</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="tabbar">
+        <div class="tabs" role="tablist" aria-label="Leaderboard view">
+          <button type="button" class="tab" id="tab-players" role="tab"
+                  aria-selected="true" aria-controls="leaderboard" data-view="players">Players</button>
+          <button type="button" class="tab" id="tab-teams" role="tab"
+                  aria-selected="false" aria-controls="leaderboard" data-view="teams">Teams</button>
+        </div>
+        <div class="spanflip" id="spanflip" role="group" aria-label="Week span">
+          <button type="button" class="spanflip-btn" data-span="single"
+                  aria-pressed="false">Week</button>
+          <button type="button" class="spanflip-btn" data-span="multi"
+                  aria-pressed="true">Range</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="summary-band">
+      <section class="panel" id="panel-highlights">
+        <h2 class="panel-title" id="highlights-title">Weekly Summary</h2>
+        <div class="carousel" id="highlights"
+             role="group" aria-label="Highlight cards"></div>
+      </section>
+
+      <section class="panel" id="panel-league">
+        <h2 class="panel-title">League Stats</h2>
+        <div class="tiles" id="league-tiles"></div>
+      </section>
+    </div>
+
+    <div class="layout">
+      <aside class="rail"></aside>
+
+      <main class="main">
+        <section class="panel" id="panel-leaderboard">
+          <div class="panel-head">
+            <h2 class="panel-title">Leaderboard</h2>
+            <div class="sortbar">
+              <span class="sortbar-label" id="sort-label">Sort</span>
+              <div class="sortbar-controls">
+                <label class="sr-only" for="sort-field">Sort field</label>
+                <select id="sort-field" class="mini-select" aria-describedby="sort-label"></select>
+                <button type="button" class="dir-toggle" id="sort-dir"
+                        aria-label="Toggle sort direction">
+                  <span class="dir-arrow" id="sort-dir-arrow" aria-hidden="true">&darr;</span>
+                  <span class="dir-text" id="sort-dir-text">High &rarr; low</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <p class="status" id="status" role="status" aria-live="polite">Loading&hellip;</p>
+          <ol class="board" id="leaderboard" aria-labelledby="sort-label"></ol>
+        </section>
+      </main>
+    </div>
+
+    <footer class="app-footer">
+      <a href="/">Classic view</a>
+    </footer>
+  </div>
+
+  <div class="scrim" id="scrim" hidden></div>
+
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</body>
+</html>

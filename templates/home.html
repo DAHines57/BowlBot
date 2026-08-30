@@ -91,9 +91,6 @@
         max-width: 1200px;
         padding: 1.25rem 1.25rem 2.5rem;
       }
-      .shell.shell--playoffs {
-        max-width: 1440px;
-      }
     }
 
     .hero {
@@ -884,16 +881,6 @@
       animation: cardRise 0.6s var(--ease) 0.14s both;
     }
 
-    .embed-panel--playoffs .embed-frame-wrap {
-      min-height: min(78vh, 820px);
-    }
-
-    @media (min-width: 900px) {
-      .embed-panel--playoffs .embed-frame-wrap {
-        min-height: 0;
-      }
-    }
-
     .drawer-head-start {
       display: flex;
       align-items: center;
@@ -941,6 +928,7 @@
     <header class="hero">
       <h1><span class="hero-ico" aria-hidden="true">🎳</span>Monday Night Friends</h1>
       <p class="sub">Set <strong style="color:#50fa7b;font-weight:600;">season &amp; week</strong> at the top, then pick a report — green labels use the week; blue labels use season only.</p>
+      <p class="sub"><a href="/app" style="color:#ffb86c;font-weight:600;">Try the new stats page &rarr;</a> — cross-season ranges, sortable leaderboard, expandable player cards.</p>
     </header>
 
     <div class="mobile-toolbar" aria-label="Mobile navigation">
@@ -1016,7 +1004,6 @@
                 <a class="btn btn--spark btn-season-only" href="#" onclick="goSeasonTotals('/teams', 'Full season standings'); return false;">Full season standings</a>
                 <a class="btn btn--ghost btn--spark" href="#" onclick="goSeasonTotals('/top/player-scores', 'Best player scores'); return false;">Best player scores</a>
                 <a class="btn btn--ghost btn--spark" href="#" onclick="goSeasonTotals('/top/team-scores', 'Best team scores'); return false;">Best team scores</a>
-                <a id="btn-playoffs" class="btn btn--ghost btn--spark" href="#" style="grid-column: 1 / -1;" hidden onclick="goSeasonTotals('/bracket', 'Playoffs'); return false;">Playoffs (bracket &amp; scores)</a>
               </div>
             </div>
               </div>
@@ -1077,7 +1064,6 @@
   </div>
 
   <script type="application/json" id="weeks-data">{{ weeks_by_season | tojson }}</script>
-  <script type="application/json" id="playoff-weeks-data">{{ playoff_weeks_by_season | tojson }}</script>
   <script type="application/json" id="lookup-catalog-data">{{ lookup_catalog | tojson }}</script>
   <script type="application/json" id="initial-latest-data">{{ latest_week | tojson }}</script>
   <script>
@@ -1159,7 +1145,6 @@
       bindMobileNav();
 
       var WEEKS = JSON.parse(document.getElementById("weeks-data").textContent);
-      var PLAYOFF_WEEKS = JSON.parse(document.getElementById("playoff-weeks-data").textContent);
       var LOOKUP = JSON.parse(document.getElementById("lookup-catalog-data").textContent);
       var INITIAL_LATEST = JSON.parse(document.getElementById("initial-latest-data").textContent);
 
@@ -1169,12 +1154,6 @@
 
       function getWeek() {
         return document.getElementById("week_sel").value;
-      }
-
-      function seasonHasPlayoffs(season) {
-        if (!season || season === "all") return false;
-        var list = PLAYOFF_WEEKS[season] || [];
-        return list.length > 0;
       }
 
       function readStoredHome() {
@@ -1287,7 +1266,7 @@
         var u = new URL(search, window.location.origin);
         if (u.searchParams.get("season") === "all") return "alltime";
         var p = u.pathname;
-        if (p.indexOf("/week/") === 0 || p === "/playoffs" || p === "/bracket") return "this_week";
+        if (p.indexOf("/week/") === 0) return "this_week";
         return "season_totals";
       }
 
@@ -1331,14 +1310,6 @@
         if (p === "/teams") {
           return "Team standings need a specific season, not All seasons. Choose a season above.";
         }
-        if (p === "/bracket" || p === "/playoffs") {
-          if (getSeason() === "all") {
-            return "Playoffs need a specific season, not All seasons. Choose a season above.";
-          }
-          if (!seasonHasPlayoffs(getSeason())) {
-            return "No playoff weeks recorded for this season yet.";
-          }
-        }
         return null;
       }
 
@@ -1348,8 +1319,7 @@
         var frame = document.getElementById("embed-frame");
         var titleEl = document.getElementById("embed-title");
         var ph = document.getElementById("embed-placeholder");
-        panel.classList.remove("embed-panel--playoffs", "loading");
-        document.querySelector(".shell").classList.remove("shell--playoffs");
+        panel.classList.remove("loading");
         frame.src = "about:blank";
         titleEl.textContent = title || "Unavailable";
         ph.classList.add("embed-placeholder--invalid");
@@ -1384,9 +1354,6 @@
           };
           persistHomeState();
         }
-        var isPlayoffs = base.pathname === "/bracket" || base.pathname === "/playoffs";
-        panel.classList.toggle("embed-panel--playoffs", isPlayoffs);
-        document.querySelector(".shell").classList.toggle("shell--playoffs", isPlayoffs);
         panel.classList.add("loading");
         titleEl.textContent = title || "Scores";
         resetPlaceholderCopy();
@@ -1412,19 +1379,10 @@
           showEmbedInvalid(blocked, title, { skipScroll: true, noStore: true });
           return;
         }
-        var sp;
-        if (path === "/bracket" || path === "/playoffs") {
-          sp = new URLSearchParams();
-          sp.set("season", getSeason());
-          old.searchParams.forEach(function (val, key) {
-            if (key !== "season") sp.set(key, val);
-          });
-        } else {
-          sp = new URLSearchParams(qsThisSeason());
-          old.searchParams.forEach(function (val, key) {
-            if (key !== "season" && key !== "week") sp.set(key, val);
-          });
-        }
+        var sp = new URLSearchParams(qsThisSeason());
+        old.searchParams.forEach(function (val, key) {
+          if (key !== "season" && key !== "week") sp.set(key, val);
+        });
         showPanel(path + "?" + sp.toString(), title, { skipScroll: true, noStore: true, scope: "this_week" });
       }
 
@@ -1447,11 +1405,6 @@
         if (/^\/player\/.+/i.test(path)) {
           var seasonPlayer = getSeason();
           showPanel(path + "?season=" + encodeURIComponent(seasonPlayer), title, { skipScroll: true, noStore: true, scope: "season_totals" });
-          return;
-        }
-        if (path === "/bracket") {
-          var sBr = getSeason();
-          showPanel("/bracket?season=" + encodeURIComponent(sBr), title, { skipScroll: true, noStore: true, scope: "season_totals" });
           return;
         }
         if (/^\/team\/.+\/weekly$/i.test(path)) {
@@ -1519,8 +1472,6 @@
       document.getElementById("embed-close").addEventListener("click", function () {
         lastPreview = null;
         clearStoredPreview();
-        document.getElementById("embed-panel").classList.remove("embed-panel--playoffs");
-        document.querySelector(".shell").classList.remove("shell--playoffs");
         document.getElementById("embed-frame").src = "about:blank";
         resetPlaceholderCopy();
         setPlaceholder(true);
@@ -1575,20 +1526,11 @@
         }
       }
 
-      function updatePlayoffsButton() {
-        var btn = document.getElementById("btn-playoffs");
-        if (!btn) return;
-        var show = getSeason() !== "all" && seasonHasPlayoffs(getSeason());
-        btn.hidden = !show;
-        setBtnUnavailable(btn, !show);
-      }
-
       function updateContextUI() {
         var all = getSeason() === "all";
         document.querySelectorAll(".btn-season-only, .btn-this-week").forEach(function (el) {
           setBtnUnavailable(el, all);
         });
-        updatePlayoffsButton();
         document.getElementById("week_field").classList.toggle("is-disabled", all);
         var prev = lastPreview && new URL(lastPreview.href, window.location.origin);
         var blocked = prev && embedBlockedMessage(prev.pathname, prev.search);
@@ -1600,13 +1542,6 @@
       function goSeasonTotals(path, title) {
         if (narrowMq.matches) closeNav();
         var s = getSeason();
-        if (path === "/bracket" || path === "/playoffs") {
-          var blocked = embedBlockedMessage(path, "");
-          if (blocked) {
-            showEmbedInvalid(blocked, title || "Playoffs");
-            return;
-          }
-        }
         if (path === "/teams" && s === "all") {
           showEmbedInvalid(
             "Team standings need a specific season, not All seasons. Choose a season above.",

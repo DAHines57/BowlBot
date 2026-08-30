@@ -73,6 +73,55 @@ def test_get_player_game_history_marks_substitute_games():
     assert sub[0]["score"] == 230
 
 
+def test_get_player_game_history_keeps_missed_games_with_real_slots():
+    """A missed game still has a score taken for it, so it stays in the history."""
+    facts = [{**_fact("Alice", 1, games=(150, 200, 210, 220)), "game1_absent": True}]
+    hist = get_player_game_history(facts, "Alice", "Season 9", season_num=9, limit=30)
+
+    assert [g["score"] for g in hist] == [150, 200, 210, 220]
+    assert [g["game"] for g in hist] == [1, 2, 3, 4]
+    assert hist[0]["game_absent"] is True
+    assert not any(g["game_absent"] for g in hist[1:])
+
+
+def test_whole_week_absence_overrides_per_game_flags():
+    facts = [{**_fact("Alice", 1, absent=True), "game1_absent": True}]
+    assert get_player_game_history(facts, "Alice", "Season 9", season_num=9) == []
+
+
+def test_build_player_detail_html_chart_shows_miss_indicator():
+    html = build_player_detail_html(
+        page_title="Alice",
+        subtitle="Alice · Season 9",
+        team="Team A",
+        stats_title="Season stats",
+        stat_rows=[("Average", "210.0", "gold")],
+        game_history=[
+            {
+                "score": 150,
+                "week": 1,
+                "game": 1,
+                "season_label": "Season 9",
+                "season_number": 9,
+                "game_absent": True,
+            },
+            {
+                "score": 210,
+                "week": 1,
+                "game": 2,
+                "season_label": "Season 9",
+                "season_number": 9,
+                "game_absent": False,
+            },
+        ],
+        chart_scope="Season 9",
+    )
+    assert 'data-miss="1"' in html
+    assert "player-chart-point--miss" in html
+    assert "player-chart-tip-miss" in html
+    assert "missed, book average" in html
+
+
 def test_build_player_detail_html_chart_shows_sub_indicator():
     html = build_player_detail_html(
         page_title="Alice",

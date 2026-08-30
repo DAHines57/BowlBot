@@ -1,9 +1,12 @@
 """Normalize and filter player-week fact rows."""
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Optional
+from typing import TYPE_CHECKING, Dict, Iterable, List, Optional
 
 from utils import safe_float, safe_int
+
+if TYPE_CHECKING:
+    from stats.scope import Scope
 
 
 def normalize(text: str) -> str:
@@ -34,11 +37,14 @@ def fact_in_roster_window(fact: dict) -> bool:
 GAME_SLOT_KEYS = ("game1", "game2", "game3", "game4", "game5")
 
 
-def _game_absent(fact: dict, slot: int) -> bool:
+def game_absent(fact: dict, slot: int) -> bool:
     """True when slot uses book average (missed that game). Ignored if whole week absent."""
     if fact.get("absent"):
         return False
     return bool(fact.get(f"game{slot}_absent"))
+
+
+_game_absent = game_absent
 
 
 def games_list_for_team(fact: dict) -> List[float]:
@@ -108,6 +114,36 @@ def player_profile_games(fact: dict) -> List[float]:
     if fact.get("substitute"):
         return games_list_for_team(fact)
     return games_list_for_player_stats(fact)
+
+
+def player_profile_game_slots(fact: dict) -> List[dict]:
+    """Per-slot scores for a player's profile, keeping the real game number.
+
+    Unlike :func:`player_profile_games` this keeps book-average slots so callers
+    can show what score was taken for a missed game; ``counts`` marks whether the
+    slot belongs in an average.
+    """
+    if fact.get("absent"):
+        return []
+    is_sub = bool(fact.get("substitute"))
+    out: List[dict] = []
+    for slot, key in enumerate(GAME_SLOT_KEYS, start=1):
+        g = fact.get(key)
+        if g is None or g == "":
+            continue
+        score = safe_float(g)
+        if score <= 0:
+            continue
+        absent = False if is_sub else game_absent(fact, slot)
+        out.append(
+            {
+                "slot": slot,
+                "score": score,
+                "absent": absent,
+                "counts": not absent,
+            }
+        )
+    return out
 
 
 def subs_by_replaced_by_team_week(
@@ -270,10 +306,17 @@ def filter_facts(
     exclude_playoffs: bool = False,
     team: Optional[str] = None,
     player_substr: Optional[str] = None,
+    scope: Optional["Scope"] = None,
 ) -> List[dict]:
-    """Return fact rows matching optional season/week/team/player filters."""
+    """Return fact rows matching optional season/week/team/player filters.
+
+    ``scope`` adds a cross-season ``(season, week)`` window; it composes with the
+    other filters rather than replacing them.
+    """
     result: List[dict] = []
     for f in facts:
+        if scope is not None and not scope.contains(f):
+            continue
         if season_num is not None and f.get("season_number") != season_num:
             continue
         w = safe_int(f.get("week"), 0)

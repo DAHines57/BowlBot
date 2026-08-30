@@ -15,6 +15,7 @@ from stats.facts import (
     games_list_for_team,
     games_slots,
     name_matches_team,
+    player_profile_game_slots,
     player_profile_games,
     resolve_opponent_on_roster,
     subs_by_replaced_by_team_week,
@@ -1306,15 +1307,16 @@ def get_player_game_history(
         sn = safe_int(f.get("season_number"), 0)
         wk = safe_int(f.get("week"), 0)
         slabel = str(f.get("season_label") or f"S{sn}")
-        for gi, score in enumerate(player_profile_games(f), start=1):
+        for slot in player_profile_game_slots(f):
             games.append(
                 {
-                    "score": int(round(score)),
+                    "score": int(round(slot["score"])),
                     "week": wk,
-                    "game": gi,
+                    "game": slot["slot"],
                     "season_number": sn,
                     "season_label": slabel,
                     "is_substitute": is_sub,
+                    "game_absent": slot["absent"],
                 }
             )
 
