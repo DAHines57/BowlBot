@@ -1418,6 +1418,13 @@ a { color: var(--accent); }
   font-size: 0.78rem;
 }
 
+/* The member's average over this season's slice of the range. */
+.mem-avg {
+  margin-left: 0.35rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .games {
   display: flex;
   flex-wrap: wrap;
@@ -1495,6 +1502,7 @@ a { color: var(--accent); }
 }
 
 .detail-sub-note {
+  font-size: 0.68rem;
   font-weight: 400;
   letter-spacing: 0;
   text-transform: none;
@@ -1510,6 +1518,13 @@ a { color: var(--accent); }
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
   overflow: hidden;
+}
+
+/* Summary line plus that week's scores, reading as one unit. */
+.week-block { background: var(--card); }
+.week-block .games {
+  padding: 0 0.6rem 0.45rem;
+  margin-bottom: 0;
 }
 
 .week-line {
@@ -1592,11 +1607,42 @@ a { color: var(--accent); }
 .wk-table td.wk-wk { color: var(--muted); }
 .wk-table td.wk-avg { font-weight: 700; }
 
-/* Each game cell carries both sides, ours over the opponent's. */
-.wk-table td.wk-g { line-height: 1.15; }
-.wk-table .wk-g-ours,
-.wk-table .wk-g-opp { display: block; }
-.wk-table .wk-g-opp { color: var(--muted-dim); font-size: 0.85em; }
+/* A week opens into its games against the opponent. */
+.wk-row--open-able { cursor: pointer; }
+.wk-row--open-able:hover { background: var(--card-hi); }
+.wk-row .wk-wk .chev { margin-left: 0.3rem; vertical-align: middle; }
+.wk-row.is-open .wk-wk .chev { transform: rotate(180deg); }
+
+.wk-games-row[hidden] { display: none; }
+.wk-games-row > td { border-top: none; padding-top: 0; }
+
+.wk-games {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.15rem 0 0.35rem;
+}
+
+.wk-game {
+  display: grid;
+  grid-template-columns: 2.6rem 3.4rem 0.8rem 3.4rem 1.2rem;
+  align-items: center;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.wk-game-n { text-align: left; color: var(--muted-dim); font-size: 0.92em; }
+.wk-game-pins { font-weight: 600; }
+.wk-game-sep { color: var(--muted-dim); text-align: center; }
+.wk-game-mark { text-align: center; font-size: 0.85em; font-weight: 700; }
+.wk-game-mark--w { color: var(--good-border); }
+.wk-game-mark--l { color: var(--bad-border); }
+
+.wk-game--total {
+  margin-top: 0.15rem;
+  padding-top: 0.2rem;
+  border-top: 1px solid var(--border-soft);
+}
+.wk-game--total .wk-game-n { text-transform: uppercase; font-size: 0.8em; }
 
 /* Long team names ellipsis rather than wrap. */
 .wk-table td.wk-opp {
@@ -1610,20 +1656,10 @@ a { color: var(--accent); }
 @media (max-width: 479px) {
   .wk-table { font-size: 0.74rem; }
   .wk-table th, .wk-table td { padding: 0.3rem 0.35rem; }
-  /* The per-game tints already say who won each game, so the record column
-   * gives up its space to them. Without those columns it is the only thing
-   * carrying the result, so it stays. */
-  .wk-table--pergame .wk-rec,
-  .wk-table--pergame .wk-h-wl { display: none; }
-  .wk-table .wk-h-wk { width: 4rem; }
+  .wk-table .wk-h-wk { width: 4.6rem; }
   .wk-table .wk-h-pins,
   .wk-table .wk-h-games { width: 3.5rem; }
   .wk-table .wk-h-avg { width: 3.9rem; }
-  .wk-table .wk-h-g1,
-  .wk-table .wk-h-g2,
-  .wk-table .wk-h-g3,
-  .wk-table .wk-h-g4,
-  .wk-table .wk-h-g5 { width: 2.6rem; }
 
   /* The column has no room left here, so the name moves to a full-width line
    * that reads as a continuation of the week above it. The line's colspan is

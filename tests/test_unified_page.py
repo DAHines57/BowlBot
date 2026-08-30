@@ -98,6 +98,11 @@ def test_static_assets_exist_and_are_wired():
     # out to the season-only page.
     assert "data-prof-toggle" in js_text
     assert '"/player/' not in js_text
+    # Both breakdowns sit behind one collapsible, and a team week opens into
+    # its game-by-game comparison.
+    assert '"Weekly Breakdown"' in js_text
+    assert "data-wk-toggle" in js_text
+    assert "data-wk-games" in js_text
 
 
 def test_bracket_routes_are_gone():

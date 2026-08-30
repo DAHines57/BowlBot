@@ -430,16 +430,64 @@ def test_membership_lists_tag_a_sub_only_appearance():
     seasons = get_player_range_detail(facts, "Alice", scope)["teams_by_season"]
     assert [g["season"] for g in seasons] == [9]
     assert seasons[0]["members"] == [
-        {"name": "Team A", "sub": False},
-        {"name": "Team B", "sub": True},
+        {"name": "Team A", "sub": False, "average": 200.0},
+        {"name": "Team B", "sub": True, "average": 180.0},
     ]
 
     # Same rule from the team's side: Alice only filled in for Team B.
     rosters = get_team_range_detail(facts, "Team B", scope)["rosters"]
     assert rosters[0]["members"] == [
-        {"name": "Bob", "sub": False},
-        {"name": "Alice", "sub": True},
+        {"name": "Bob", "sub": False, "average": 190.0},
+        {"name": "Alice", "sub": True, "average": 180.0},
     ]
+
+
+def test_roster_members_carry_their_average_over_the_range():
+    facts = [
+        _fact("Alice", 9, 1, games=(200, 200)),
+        _fact("Alice", 9, 2, games=(100, 100)),
+        _fact("Bob", 9, 1, games=(190, 190)),
+    ]
+    rosters = get_team_range_detail(
+        facts, "Team A", Scope(start=(9, 1), end=(9, 9))
+    )["rosters"]
+
+    members = {m["name"]: m["average"] for m in rosters[0]["members"]}
+    assert members == {"Alice": 150.0, "Bob": 190.0}
+
+
+def test_a_member_absent_all_season_has_no_average():
+    facts = [
+        _fact("Alice", 9, 1, games=(200, 200)),
+        _fact("Bob", 9, 1, games=(), absent=True),
+    ]
+    rosters = get_team_range_detail(
+        facts, "Team A", Scope(start=(9, 1), end=(9, 9))
+    )["rosters"]
+
+    bob = next(m for m in rosters[0]["members"] if m["name"] == "Bob")
+    assert bob["average"] is None
+
+
+def test_a_subs_roster_average_covers_only_their_games_there():
+    facts = [
+        _fact("Alice", 9, 1, games=(100, 100)),
+        _fact("Alice", 9, 2, games=(240, 240), team="Team B", substitute=True),
+        _fact("Bob", 9, 2, games=(190, 190), team="Team B"),
+    ]
+    scope = Scope(start=(9, 1), end=(9, 9))
+
+    rosters = get_team_range_detail(facts, "Team B", scope)["rosters"]
+    alice = next(m for m in rosters[0]["members"] if m["name"] == "Alice")
+    # Her Team A games are not part of the team she filled in for.
+    assert alice["average"] == 240.0
+
+    # From her own side, the per-team split holds too.
+    seasons = get_player_range_detail(facts, "Alice", scope)["teams_by_season"]
+    assert {m["name"]: m["average"] for m in seasons[0]["members"]} == {
+        "Team A": 100.0,
+        "Team B": 240.0,
+    }
 
 
 def test_rosters_are_grouped_by_season_and_exclude_other_teams():

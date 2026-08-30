@@ -193,8 +193,14 @@ def _names_by_season(rows: List[dict], name_key: str) -> List[dict]:
     substitute appearance, which is the same "an appearance is not membership"
     rule ``build_player_accumulators`` follows. Absences stay in, since a
     rostered player who sat out is still on the roster.
+
+    Each member also carries the ``average`` of the rows behind it, or ``None``
+    when none of them counted. Because a bucket is one season deep, pooling the
+    games and averaging per-season averages come to the same thing, so this
+    needs no mode.
     """
     by_season: Dict[int, Dict[str, dict]] = {}
+    bucket_rows: Dict[int, Dict[str, List[dict]]] = {}
     for f in rows:
         name = str(f.get(name_key) or "").strip()
         if not name:
@@ -205,9 +211,19 @@ def _names_by_season(rows: List[dict], name_key: str) -> List[dict]:
         )
         if not bool(f.get("substitute")):
             entry["sub"] = False
+        bucket_rows.setdefault(season_num, {}).setdefault(name, []).append(f)
 
     out: List[dict] = []
     for season_num in sorted(by_season):
+        for name, entry in by_season[season_num].items():
+            # Run the bucket back through the accumulator rather than averaging
+            # the raw games, so absences, book-average fills, and subbed weeks
+            # are treated exactly as they are on the Players tab.
+            acc = build_player_accumulators(bucket_rows[season_num][name])
+            games = [g for a in acc.values() for g in a.all_games]
+            avg = _mean(games)
+            entry["average"] = round(avg, 2) if avg is not None else None
+
         members = sorted(
             by_season[season_num].values(),
             key=lambda m: (m["sub"], m["name"].lower()),

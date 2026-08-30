@@ -311,7 +311,9 @@ def test_league_block_counts_teams_for_the_teams_tile(client):
 def test_player_detail_lists_the_teams_per_season(client):
     data = client.get("/api/player/Alice?from=13.1&to=14.1").get_json()
     assert [g["label"] for g in data["teams_by_season"]] == ["Season 13", "Season 14"]
-    assert data["teams_by_season"][0]["members"] == [{"name": "Team A", "sub": False}]
+    assert data["teams_by_season"][0]["members"] == [
+        {"name": "Team A", "sub": False, "average": 200.0}
+    ]
 
 
 def test_team_detail_lists_the_roster_per_season(client):
@@ -320,6 +322,8 @@ def test_team_detail_lists_the_roster_per_season(client):
     assert all(
         [m["name"] for m in g["members"]] == ["Alice"] for g in data["rosters"]
     )
+    # S13 is her 150s and 250s, S14 the 200s in range.
+    assert [g["members"][0]["average"] for g in data["rosters"]] == [200.0, 200.0]
 
 
 def test_player_detail_unknown_player_is_404(client):

@@ -1418,6 +1418,9 @@
        * the points and with them their tooltips. */
       '<svg class="prof-chart" width="' + W + '" height="' + H +
       '" viewBox="0 0 ' + W + " " + H +
+      '"' + (live.length <= FIT ? ' data-fit="1"' : "") +
+      ' data-ml="' + ml + '" data-mr="' + mr + '" data-plotw="' + plotW +
+      '" data-points="' + live.length +
       '" preserveAspectRatio="xMinYMin meet" aria-label="' +
       esc(o.label || "Trend") + '">' +
       parts.join("") +
@@ -1432,6 +1435,69 @@
           fmt(o.leagueAverage, 2)
         : "") +
       "</p>"
+    );
+  }
+
+  /* A series short enough not to pan is drawn at a nominal width, since the
+   * card's width is unknown until the markup is in the document. Once it is,
+   * the horizontal geometry is stretched to whatever width is actually there,
+   * rather than letterboxing the chart against the right of the card. Dots and
+   * strokes keep their size because the coordinates move, not the scale. */
+  function fitChart(svg) {
+    var scroll = svg.parentNode;
+    if (!scroll) return;
+    var ml = parseFloat(svg.getAttribute("data-ml"));
+    var mr = parseFloat(svg.getAttribute("data-mr"));
+    var plotW = parseFloat(svg.getAttribute("data-plotw"));
+    var target = scroll.clientWidth - ml - mr;
+    if (!plotW || !(target > 0) || Math.abs(target - plotW) < 1) return;
+
+    var sx = target / plotW;
+    function at(v) {
+      return (ml + (parseFloat(v) - ml) * sx).toFixed(1);
+    }
+
+    Array.prototype.forEach.call(svg.querySelectorAll("line"), function (el) {
+      el.setAttribute("x1", at(el.getAttribute("x1")));
+      el.setAttribute("x2", at(el.getAttribute("x2")));
+    });
+    Array.prototype.forEach.call(svg.querySelectorAll("polyline"), function (el) {
+      el.setAttribute(
+        "points",
+        el.getAttribute("points").split(" ").map(function (pair) {
+          var xy = pair.split(",");
+          return at(xy[0]) + "," + xy[1];
+        }).join(" ")
+      );
+    });
+    Array.prototype.forEach.call(svg.querySelectorAll("circle"), function (el) {
+      el.setAttribute("cx", at(el.getAttribute("cx")));
+    });
+    Array.prototype.forEach.call(svg.querySelectorAll("text"), function (el) {
+      el.setAttribute("x", at(el.getAttribute("x")));
+    });
+
+    var n = parseFloat(svg.getAttribute("data-points"));
+    if (n > 1) {
+      var hitR = Math.max(5, Math.min(11, target / (n - 1) / 2)).toFixed(1);
+      Array.prototype.forEach.call(svg.querySelectorAll(".prof-hit"), function (el) {
+        el.setAttribute("r", hitR);
+      });
+    }
+
+    var W = ml + target + mr;
+    svg.setAttribute("width", W);
+    svg.setAttribute("viewBox", "0 0 " + W + " " + svg.getAttribute("height"));
+    svg.setAttribute("data-plotw", target);
+  }
+
+  /* Charts inside a collapsed section have no width to measure, so this runs
+   * again whenever one is opened or the window is resized. */
+  function fitCharts(root) {
+    var scope = root && root.querySelectorAll ? root : document;
+    Array.prototype.forEach.call(
+      scope.querySelectorAll('.prof-chart[data-fit="1"]'),
+      fitChart
     );
   }
 
@@ -1478,10 +1544,13 @@
           '<div class="mem-list">' +
           (g.members || [])
             .map(function (m) {
+              var avg = typeof m.average === "number"
+                ? '<span class="mem-avg">' + fmt(m.average, 2) + "</span>"
+                : "";
               return (
                 '<span class="mem">' + esc(m.name) +
                 (m.sub ? ' <span class="wk-tag wk-tag--sub">sub</span>' : "") +
-                "</span>"
+                avg + "</span>"
               );
             })
             .join("") +
@@ -1628,7 +1697,7 @@
     return "Absent \u00b7 " + fmt(week.absentAverage, 1) + " credited";
   }
 
-  function absentBody(week) {
+  function absentChips(week) {
     var chips = (week.absentGames || [])
       .map(function (score) {
         return (
@@ -1637,9 +1706,13 @@
         );
       })
       .join("");
+    return chips ? '<div class="games">' + chips + "</div>" : "";
+  }
+
+  function absentBody(week) {
     return (
       '<div class="games-absent">' + esc(absentLabel(week)) + "</div>" +
-      (chips ? '<div class="games">' + chips + "</div>" : "")
+      absentChips(week)
     );
   }
 
@@ -1658,11 +1731,7 @@
           weekTags(w) + "</div>" + body + "</div>"
         );
       });
-      return (
-        '<div class="detail-sub">Individual games</div>' +
-        gamesLegend(weeks) +
-        groups.join("")
-      );
+      return gamesLegend(weeks) + groups.join("");
     }
 
     var lines = weeks.map(function (w) {
@@ -1674,16 +1743,21 @@
 
       if (!scores.length) {
         return (
+          '<div class="week-block">' +
           '<div class="week-line week-line--absent">' +
           '<span class="week-line-label">' + esc(w.label) + weekTags(w) + "</span>" +
           '<span class="week-line-note">' +
           esc(w.absent ? absentLabel(w) : "No counting games") +
-          "</span></div>"
+          "</span></div>" +
+          // The note already names the credit, so only the scores follow.
+          absentChips(w) +
+          "</div>"
         );
       }
 
       var avg = scores.reduce(function (a, b) { return a + b; }, 0) / scores.length;
       return (
+        '<div class="week-block">' +
         '<div class="week-line">' +
         '<span class="week-line-label">' + esc(w.label) + weekTags(w) + "</span>" +
         '<span class="week-line-avg">' + fmt(avg, 1) + "</span>" +
@@ -1693,16 +1767,74 @@
         '<span class="fig-bad">' + fmt(Math.min.apply(null, scores)) + "</span>" +
         "</span>" +
         '<span class="week-line-games">' + scores.length + "g</span>" +
+        "</div>" +
+        // Every score for the week, not just its summary figures.
+        '<div class="games">' + gameChips(w.games, high, low) + "</div>" +
         "</div>"
       );
     });
 
     return (
-      '<div class="detail-sub">Weekly breakdown ' +
-      '<span class="detail-sub-note">avg &middot; high / low</span></div>' +
+      '<div class="detail-sub-note">avg &middot; high / low</div>' +
       gamesLegend(weeks) +
       '<div class="week-lines">' + lines.join("") + "</div>"
     );
+  }
+
+  /* A table row cannot be a button, so the open state lives on the row itself
+   * and its games row is found by key within the same table. */
+  function toggleWeekRow(row) {
+    var key = row.getAttribute("data-wk-toggle");
+    var table = row.closest(".wk-table");
+    if (!table) return;
+    var games = table.querySelector('[data-wk-games="' + key + '"]');
+    if (!games) return;
+    var open = !row.classList.contains("is-open");
+    row.classList.toggle("is-open", open);
+    row.setAttribute("aria-expanded", open ? "true" : "false");
+    games.hidden = !open;
+  }
+
+  /* The week's games side by side with the opponent's, the way the old weekly
+   * results screen read. Lives in a row of its own that the week toggles. */
+  function weekGamesBody(week, ourColor) {
+    var pins = week.game_pins || [];
+    if (!pins.length) return "";
+    var ours = ourColor ? ' style="color:' + esc(ourColor) + '"' : "";
+    var theirs = week.opponent_color
+      ? ' style="color:' + esc(week.opponent_color) + '"'
+      : "";
+
+    var lines = pins.map(function (g, i) {
+      var mark = g.result
+        ? '<span class="wk-game-mark wk-game-mark--' + esc(g.result.toLowerCase()) +
+          '">' + esc(g.result) + "</span>"
+        : '<span class="wk-game-mark"></span>';
+      return (
+        '<div class="wk-game">' +
+        '<span class="wk-game-n">G' + (i + 1) + "</span>" +
+        '<span class="wk-game-pins"' + ours + ">" + fmt(g.pins) + "</span>" +
+        '<span class="wk-game-sep" aria-hidden="true">\u2013</span>' +
+        '<span class="wk-game-pins"' + theirs + ">" +
+        (g.opp_pins ? fmt(g.opp_pins) : "\u2014") + "</span>" +
+        mark +
+        "</div>"
+      );
+    });
+
+    var total = pins.reduce(function (a, g) { return a + (g.pins || 0); }, 0);
+    var oppTotal = pins.reduce(function (a, g) { return a + (g.opp_pins || 0); }, 0);
+    lines.push(
+      '<div class="wk-game wk-game--total">' +
+      '<span class="wk-game-n">Total</span>' +
+      '<span class="wk-game-pins"' + ours + ">" + fmt(total) + "</span>" +
+      '<span class="wk-game-sep" aria-hidden="true">\u2013</span>' +
+      '<span class="wk-game-pins"' + theirs + ">" +
+      (oppTotal ? fmt(oppTotal) : "\u2014") + "</span>" +
+      '<span class="wk-game-mark"></span>' +
+      "</div>"
+    );
+    return '<div class="wk-games">' + lines.join("") + "</div>";
   }
 
   /* Opponents and W-L only exist inside a single season, so a cross-season
@@ -1711,51 +1843,31 @@
     if (!detail || !detail.weeks || !detail.weeks.length) return "";
     var records = !!detail.records_available;
 
-    var slots = 0;
-    if (records) {
-      detail.weeks.forEach(function (w) {
-        var n = (w.game_pins || []).length;
-        if (n > slots) slots = n;
-      });
-    }
-
-    var gameHeads = [];
-    for (var i = 1; i <= slots; i++) gameHeads.push("G" + i);
-
-    // Per-game columns need a single matchup, so a range spanning seasons
-    // carries the record without them and falls back to a games count.
     var head = records
-      ? ["Wk", "Opponent", "W-L"].concat(slots ? gameHeads : ["Games"], ["Avg"])
+      ? ["Wk", "Opponent", "W-L", "Games", "Avg"]
       : ["Wk", "Pins", "Games", "Avg"];
 
     var body = detail.weeks
-      .map(function (w) {
-        var cells = ['<td class="wk-wk">' + esc(w.label) + "</td>"];
+      .map(function (w, idx) {
+        var games = records ? weekGamesBody(w, detail.color) : "";
+        var key = "wk-" + idx;
+        var cells = [
+          '<td class="wk-wk">' + esc(w.label) +
+          (games ? '<span class="chev" aria-hidden="true"></span>' : "") +
+          "</td>"
+        ];
+        var style = "";
         if (records) {
-          var style = w.opponent_color ? ' style="color:' + w.opponent_color + '"' : "";
+          style = w.opponent_color ? ' style="color:' + w.opponent_color + '"' : "";
           var rec = (w.wins || 0) + "-" + (w.losses || 0) + (w.ties ? "-" + w.ties : "");
           var recCls = "wk-rec";
           if ((w.wins || 0) > (w.losses || 0)) recCls += " fig-good";
           else if ((w.wins || 0) < (w.losses || 0)) recCls += " fig-bad";
           cells.push(
             '<td class="wk-opp"' + style + ">" + esc(w.opponent || "\u2014") + "</td>",
-            '<td class="' + recCls + '">' + esc(rec) + "</td>"
+            '<td class="' + recCls + '">' + esc(rec) + "</td>",
+            '<td class="wk-num">' + fmt(w.games) + "</td>"
           );
-          var pins = w.game_pins || [];
-          for (var s = 0; s < slots; s++) {
-            var game = pins[s];
-            var cls = "wk-num wk-g";
-            if (game && game.result === "W") cls += " fig-good";
-            // Both sides stack in the cell, ours over theirs, so a week reads
-            // game by game the way the weekly results screen does.
-            var body = game
-              ? '<span class="wk-g-ours">' + fmt(game.pins) + "</span>" +
-                '<span class="wk-g-opp">' +
-                (game.opp_pins ? fmt(game.opp_pins) : "\u2014") + "</span>"
-              : "\u2014";
-            cells.push('<td class="' + cls + '">' + body + "</td>");
-          }
-          if (!slots) cells.push('<td class="wk-num">' + fmt(w.games) + "</td>");
         } else {
           cells.push(
             '<td class="wk-num">' + fmt(w.pins) + "</td>",
@@ -1763,23 +1875,30 @@
           );
         }
         cells.push('<td class="wk-num wk-avg">' + fmt(w.avg, 2) + "</td>");
+
         // Narrow screens leave the opponent column no usable width, so the name
         // also rides on its own full-width line that CSS swaps in there. The
         // span counts only the columns visible at that width: a colspan past
         // the column count makes the browser widen the table for that row.
         var oppRow = records
           ? '<tr class="wk-opp-row"><td class="wk-opp-line" colspan="' +
-            (head.length - (slots ? 2 : 1)) + '"' + style + ">" +
+            (head.length - 1) + '"' + style + ">" +
             esc(w.opponent ? "vs " + w.opponent : "\u2014") + "</td></tr>"
           : "";
-        return "<tr>" + cells.join("") + "</tr>" + oppRow;
+        var gamesRow = games
+          ? '<tr class="wk-games-row" data-wk-games="' + key + '" hidden>' +
+            '<td colspan="' + head.length + '">' + games + "</td></tr>"
+          : "";
+        var attrs = games
+          ? ' class="wk-row wk-row--open-able" data-wk-toggle="' + key +
+            '" role="button" tabindex="0" aria-expanded="false"'
+          : ' class="wk-row"';
+        return "<tr" + attrs + ">" + cells.join("") + "</tr>" + oppRow + gamesRow;
       })
       .join("");
 
     return (
-      '<div class="detail-sub">Week by week</div>' +
-      '<table class="wk-table' + (slots ? " wk-table--pergame" : "") +
-      '"><thead><tr>' +
+      '<table class="wk-table"><thead><tr>' +
       head
         .map(function (h) {
           return '<th class="wk-h-' + h.toLowerCase().replace(/[^a-z0-9]/g, "") + '">' +
@@ -1825,7 +1944,12 @@
         "Roster",
         detail && detail.rosters
       ) +
-      weekTableMarkup(detail);
+      profileSection(
+        detailKey(row) + ":weeks",
+        "Weekly Breakdown",
+        weekTableMarkup(detail)
+      );
+    fitCharts(box);
   }
 
   function renderPlayerDetail(box, row, detail) {
@@ -1871,12 +1995,17 @@
       (seasonTeams.length > 1
         ? membersSection(detailKey(row) + ":members", "Teams", seasonTeams)
         : "") +
-      gamesMarkup(
-        detail ? detail.games : null,
-        row.highest_game,
-        row.lowest_game,
-        detail ? detail.absent_weeks : null
+      profileSection(
+        detailKey(row) + ":weeks",
+        "Weekly Breakdown",
+        gamesMarkup(
+          detail ? detail.games : null,
+          row.highest_game,
+          row.lowest_game,
+          detail ? detail.absent_weeks : null
+        )
       );
+    fitCharts(box);
   }
 
   function openDetail(li) {
@@ -2327,6 +2456,15 @@
       pan = null;
     }
 
+    // A row with role="button" gets no free Enter/Space activation.
+    el.board.addEventListener("keydown", function (e) {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      var wk = e.target.closest("[data-wk-toggle]");
+      if (!wk) return;
+      e.preventDefault();
+      toggleWeekRow(wk);
+    });
+
     el.board.addEventListener("click", function (e) {
       if (panSwallowClick) {
         panSwallowClick = false;
@@ -2337,6 +2475,11 @@
         showChartTip(point);
         return;
       }
+      var wk = e.target.closest("[data-wk-toggle]");
+      if (wk) {
+        toggleWeekRow(wk);
+        return;
+      }
       var prof = e.target.closest("[data-prof-toggle]");
       if (prof) {
         var card = prof.closest(".prof");
@@ -2345,11 +2488,18 @@
         prof.setAttribute("aria-expanded", profOpen ? "true" : "false");
         card.querySelector(".prof-body").hidden = !profOpen;
         profilesOpen[prof.getAttribute("data-prof-toggle")] = profOpen;
+        if (profOpen) fitCharts(card);
         return;
       }
       var btn = e.target.closest(".row-main");
       if (!btn) return;
       toggleRow(btn.closest(".row"));
+    });
+
+    var fitTimer = null;
+    window.addEventListener("resize", function () {
+      if (fitTimer) clearTimeout(fitTimer);
+      fitTimer = setTimeout(function () { fitCharts(document); }, 120);
     });
 
     // Settings
