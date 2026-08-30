@@ -1294,10 +1294,36 @@ a { color: var(--accent); }
 
 .prof-plot { position: relative; }
 
+/* A long range spreads out and pans rather than compressing to card width.
+ * Dragging stands in for the scrollbar, which would crowd the card. */
+.prof-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  cursor: grab;
+  scrollbar-width: none;
+}
+.prof-scroll::-webkit-scrollbar { display: none; }
+.prof-scroll.is-dragging { cursor: grabbing; }
+
 .prof-chart {
   display: block;
-  width: 100%;
-  height: auto;
+  height: 200px;
+  /* The width attribute governs; this only stretches a short series to fill. */
+  min-width: 100%;
+}
+
+/* Sits over the chart's own left gutter and does not scroll with it. */
+.prof-axis-panel {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 2;
+  height: 200px;
+  background: var(--bg-elevated);
+  pointer-events: none;
 }
 
 .prof-tip {

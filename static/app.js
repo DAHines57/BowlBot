@@ -1295,9 +1295,9 @@
     );
   }
 
-  /* A scaled-to-fit line chart over `points`, each {value, label, tone}. The
-   * two dashed reference lines are the series' own average and the league's.
-   * Dots carry a native title tooltip, so the chart needs no script. */
+  /* A line chart over `points`, each {value, label, tone}. The two dashed
+   * reference lines are the series' own average and the league's. Wide ranges
+   * scroll horizontally rather than compressing; see the width below. */
   function trendChart(points, opts) {
     var live = (points || []).filter(function (p) {
       return typeof p.value === "number" && !isNaN(p.value);
@@ -1305,9 +1305,14 @@
     if (live.length < 2) return "";
 
     var o = opts || {};
-    var W = 420, H = 200;
+    var H = 200;
     var ml = 34, mr = 8, mt = 10, mb = 22;
-    var plotW = W - ml - mr;
+    /* Up to FIT points still read fine at card width, so they stay put; a
+     * player's season is per-game and lands near that mark. Past it each point
+     * takes a fixed slice of width and the chart pans instead of collapsing. */
+    var FIT = 30, STEP = 26;
+    var plotW = live.length <= FIT ? 378 : (live.length - 1) * STEP;
+    var W = ml + plotW + mr;
     var plotH = H - mt - mb;
 
     var values = live.map(function (p) { return p.value; });
@@ -1331,11 +1336,16 @@
     }
 
     var parts = [];
+    // The value labels go in their own panel that does not scroll, so only the
+    // grid lines themselves belong to the scrolling chart.
+    var axisParts = [];
     [hi, (hi + lo) / 2, lo].forEach(function (v) {
       var gy = y(v).toFixed(1);
       parts.push(
         '<line class="prof-grid" x1="' + ml + '" y1="' + gy +
-        '" x2="' + (W - mr) + '" y2="' + gy + '"></line>',
+        '" x2="' + (W - mr) + '" y2="' + gy + '"></line>'
+      );
+      axisParts.push(
         '<text class="prof-axis" x="' + (ml - 6) + '" y="' + (y(v) + 3).toFixed(1) +
         '" text-anchor="end">' + Math.round(v) + "</text>"
       );
@@ -1358,10 +1368,12 @@
       '"></polyline>'
     );
 
-    /* A 3px dot in a chart scaled down to card width is far too small to point
-     * at, so each one is paired with an invisible, much larger target. The
-     * reading itself rides on the group as `data-tip`; a native <title> would
-     * never show on touch and takes a long hover on a desktop. */
+    /* A 3px dot is far too small to point at, so each one is paired with an
+     * invisible, much larger target, sized to the spacing so that neighbours
+     * never overlap and steal each other's hover. The reading itself rides on
+     * the group as `data-tip`; a native <title> would never show on touch and
+     * takes a long hover on a desktop. */
+    var hitR = Math.max(5, Math.min(11, plotW / (live.length - 1) / 2));
     live.forEach(function (p, i) {
       var cls = "prof-dot" + (p.tone ? " prof-dot--" + esc(p.tone) : "");
       var cx = x(i).toFixed(1);
@@ -1370,27 +1382,46 @@
         '<g class="prof-point" tabindex="0" data-tip="' +
         esc((p.label ? p.label + " \u00b7 " : "") + fmt(p.value, o.decimals || 0)) +
         '"><circle class="' + cls + '" cx="' + cx + '" cy="' + cy + '" r="3"></circle>' +
-        '<circle class="prof-hit" cx="' + cx + '" cy="' + cy + '" r="11"></circle>' +
+        '<circle class="prof-hit" cx="' + cx + '" cy="' + cy +
+        '" r="' + hitR.toFixed(1) + '"></circle>' +
         "</g>"
       );
     });
 
-    // Only the ends are labelled; one label per point crowds a narrow card.
-    parts.push(
-      '<text class="prof-axis" x="' + ml + '" y="' + (H - 6) +
-      '" text-anchor="start">' + esc(live[0].label || "") + "</text>",
-      '<text class="prof-axis" x="' + (W - mr) + '" y="' + (H - 6) +
-      '" text-anchor="end">' + esc(live[live.length - 1].label || "") + "</text>"
-    );
+    /* Roughly eight labels however long the series is, so a long scroll stays
+     * oriented without the labels running into each other. The two ends anchor
+     * inward to keep them off the edges. */
+    var last = live.length - 1;
+    var every = Math.max(1, Math.ceil(live.length / 8));
+    live.forEach(function (p, i) {
+      if (i !== 0 && i !== last && (i % every !== 0 || last - i < every)) return;
+      var anchor = i === 0 ? "start" : i === last ? "end" : "middle";
+      parts.push(
+        '<text class="prof-axis" x="' + x(i).toFixed(1) + '" y="' + (H - 6) +
+        '" text-anchor="' + anchor + '">' + esc(p.label || "") + "</text>"
+      );
+    });
 
     return (
       // The wrapper is the tooltip's positioning context.
       '<div class="prof-plot"><div class="prof-tip" hidden></div>' +
-      // No role="img": that hides the points, and with them their tooltips.
-      '<svg class="prof-chart" viewBox="0 0 ' + W + " " + H +
-      '" aria-label="' + esc(o.label || "Trend") + '">' +
+      /* Pinned over the chart's own left gutter, so the values stay readable
+       * while the line scrolls underneath them. */
+      '<svg class="prof-axis-panel" width="' + ml + '" height="' + H +
+      '" viewBox="0 0 ' + ml + " " + H + '" aria-hidden="true">' +
+      axisParts.join("") +
+      "</svg>" +
+      '<div class="prof-scroll">' +
+      /* Drawn at natural size and pinned left: a short series still fills the
+       * card via min-width, and letterboxing rather than stretching keeps the
+       * geometry lined up with the axis panel. No role="img", which would hide
+       * the points and with them their tooltips. */
+      '<svg class="prof-chart" width="' + W + '" height="' + H +
+      '" viewBox="0 0 ' + W + " " + H +
+      '" preserveAspectRatio="xMinYMin meet" aria-label="' +
+      esc(o.label || "Trend") + '">' +
       parts.join("") +
-      "</svg></div>" +
+      "</svg></div></div>" +
       '<p class="prof-legend">' +
       (typeof o.average === "number" && o.average > 0
         ? '<span class="prof-key prof-key--avg"></span>own avg ' +
@@ -2258,7 +2289,49 @@
       if (point) hideChartTip(point.closest(".prof-plot"));
     });
 
+    /* Drag to pan the chart, since it carries no scrollbar. Mouse only: a touch
+     * already pans natively and taking the gesture over would fight it. */
+    var pan = null;
+    var panSwallowClick = false;
+    el.board.addEventListener("pointerdown", function (e) {
+      panSwallowClick = false;
+      if (e.pointerType !== "mouse" || e.button !== 0) return;
+      var scroller = e.target.closest(".prof-scroll");
+      if (!scroller || scroller.scrollWidth <= scroller.clientWidth) return;
+      pan = {
+        el: scroller,
+        startX: e.clientX,
+        startLeft: scroller.scrollLeft,
+        moved: 0
+      };
+      scroller.classList.add("is-dragging");
+      // Otherwise the drag selects the axis labels as it goes.
+      e.preventDefault();
+    });
+
+    window.addEventListener("pointermove", function (e) {
+      if (!pan) return;
+      var dx = e.clientX - pan.startX;
+      pan.moved = Math.max(pan.moved, Math.abs(dx));
+      pan.el.scrollLeft = pan.startLeft - dx;
+    });
+
+    window.addEventListener("pointerup", endPan);
+    window.addEventListener("pointercancel", endPan);
+
+    function endPan() {
+      if (!pan) return;
+      pan.el.classList.remove("is-dragging");
+      // A drag that ends over a dot should not leave its tooltip pinned.
+      panSwallowClick = pan.moved > 4;
+      pan = null;
+    }
+
     el.board.addEventListener("click", function (e) {
+      if (panSwallowClick) {
+        panSwallowClick = false;
+        return;
+      }
       var point = e.target.closest(".prof-point");
       if (point) {
         showChartTip(point);
