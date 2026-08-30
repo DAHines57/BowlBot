@@ -10,7 +10,9 @@ from typing import Optional, Tuple
 from flask import Blueprint, current_app, jsonify, request
 
 from db.team_colors import lookup_team_color, readable_hex
-from stats import compute
+from playoff_champion import champion_from_playoff_snapshots
+from stats import compute, playoffs
+from stats.bests import get_bests
 from stats.range_stats import (
     get_player_range_detail,
     get_range_stats,
@@ -41,6 +43,19 @@ def _facts():
     if not svc:
         return None
     return svc.data._facts_list()
+
+
+def _overrides():
+    """Matchup overrides when the data source keeps them, else an empty list.
+
+    The sheets-backed source has no override table, so this stays optional
+    rather than being part of the ``LeagueDataSource`` contract.
+    """
+    svc = _svc()
+    if not svc:
+        return []
+    getter = getattr(svc.data, "_overrides_list", None)
+    return list(getter()) if callable(getter) else []
 
 
 # The filter used to be a checkbox, so links and saved sessions still carry
@@ -158,6 +173,18 @@ def _attach_team_colors(data: dict) -> None:
             card["color"] = color_for(card.get("team", ""))
 
 
+def _attach_bests_colors(data: dict) -> None:
+    """Add the display colour to every record row, across all categories."""
+    cache: dict = {}
+
+    for entries in (data.get("categories") or {}).values():
+        for row in entries:
+            key = (row.get("team") or "").strip()
+            if key not in cache:
+                cache[key] = _team_color(key)
+            row["color"] = cache[key]
+
+
 @api_bp.errorhandler(Exception)
 def _api_error(err):  # pragma: no cover - defensive
     return jsonify({"error": str(err)}), 500
@@ -222,6 +249,30 @@ def leaderboard():
         for row in data["players"]:
             row["par"] = None
     data["par_available"] = season_num is not None
+
+    return jsonify(data)
+
+
+@api_bp.route("/bests")
+def bests():
+    """Record lists for the range, for the Bests tab.
+
+    Its own endpoint rather than more keys on ``/leaderboard`` so opening the
+    page does not pay for records until the tab is actually used.
+    """
+    facts = _facts()
+    if facts is None:
+        return jsonify({"error": "Database not ready."}), 503
+
+    scope, err = _scope_from_args()
+    if err:
+        return jsonify({"error": err}), 400
+
+    # The consistency list reuses the leaderboard's own player rows so its
+    # standard deviations cannot drift from the ones shown on the board.
+    board = get_range_stats(facts, scope)
+    data = get_bests(facts, scope, board["players"])
+    _attach_bests_colors(data)
 
     return jsonify(data)
 
@@ -357,3 +408,124 @@ def team_detail(name: str):
     detail["record"] = _record_string(detail["weeks"]) if records else None
 
     return jsonify(detail)
+
+
+# Champions for a completed season never change, so they are memoized by season
+# label to avoid re-deriving every bracket on each page view. The current season
+# is excluded because its playoff weeks are still being entered.
+_CHAMPION_CACHE: dict = {}
+
+
+def _champion_for_season(svc, season: str, *, cacheable: bool) -> Optional[str]:
+    if cacheable and season in _CHAMPION_CACHE:
+        return _CHAMPION_CACHE[season]
+    _, snapshots = svc.playoff_snapshots_for_season(season)
+    champion = champion_from_playoff_snapshots(snapshots)
+    if cacheable:
+        _CHAMPION_CACHE[season] = champion
+    return champion
+
+
+def _attach_playoff_colors(data: dict) -> None:
+    """Add display colours to every team name in seeds, rounds, and history."""
+    cache: dict = {}
+
+    def color_for(team):
+        key = (team or "").strip()
+        if not key:
+            return None
+        if key not in cache:
+            cache[key] = _team_color(key)
+        return cache[key]
+
+    for row in (data.get("seeds") or []) + (data.get("standings") or []):
+        row["color"] = color_for(row.get("team"))
+
+    groups = list(data.get("rounds") or [])
+    if data.get("upcoming"):
+        groups.append(data["upcoming"])
+    for group in groups:
+        for m in group.get("matchups") or []:
+            m["home_color"] = color_for(m.get("home"))
+            m["away_color"] = color_for(m.get("away"))
+
+    for row in data.get("history") or []:
+        row["champion_color"] = color_for(row.get("champion"))
+
+
+@api_bp.route("/playoffs")
+def playoff_bracket():
+    """Seeding, projected upcoming matchups, played rounds, and champions.
+
+    Season-scoped rather than range-scoped: a bracket only makes sense within
+    one season, so the shared ``from``/``to`` filters are ignored here.
+    """
+    svc = _svc()
+    facts = _facts()
+    if not svc or facts is None:
+        return jsonify({"error": "Database not ready."}), 503
+
+    current = svc.data.get_current_season()
+    season = svc.resolve_season(request.args.get("season")) or current
+    if season == "all":
+        season = current
+    season_num = _season_number(season)
+    if season_num is None:
+        return jsonify({"error": f"Unknown season '{season}'."}), 400
+
+    overrides = _overrides()
+    last_regular = playoffs.last_regular_week(facts, season_num)
+    all_weeks = compute.list_weeks_for_season(facts, season, season_num=season_num)
+    last_week = max(all_weeks) if all_weeks else None
+    seeds = playoffs.season_seeding(
+        facts,
+        season_num,
+        matchup_overrides=overrides,
+        through_week=last_regular,
+    )
+
+    playoff_weeks, snapshots = svc.playoff_snapshots_for_season(season)
+
+    next_week = (last_regular + 1) if last_regular else None
+    record_weeks = list(playoff_weeks)
+    if next_week and next_week not in record_weeks:
+        record_weeks.append(next_week)
+    records = playoffs.records_before_weeks(
+        facts, season_num, record_weeks, matchup_overrides=overrides
+    )
+
+    data = {
+        "season": season,
+        "season_number": season_num,
+        "last_regular_week": last_regular,
+        "last_week": last_week,
+        "playoff_weeks": playoff_weeks,
+        "seeds": seeds,
+        "standings": playoffs.standings_through_latest(
+            facts, season_num, seeds, matchup_overrides=overrides
+        ),
+        "rounds": playoffs.played_rounds(
+            playoff_weeks, snapshots, seeds, records=records
+        ),
+        "upcoming": playoffs.upcoming_round(
+            playoff_weeks,
+            snapshots,
+            seeds,
+            next_week=next_week,
+            records=records,
+        ),
+        "champion": champion_from_playoff_snapshots(snapshots),
+        "history": [
+            {
+                "season": label,
+                "season_number": _season_number(label),
+                "champion": _champion_for_season(
+                    svc, label, cacheable=label != current
+                ),
+            }
+            for label in svc.seasons_sorted()
+        ],
+    }
+    _attach_playoff_colors(data)
+
+    return jsonify(data)

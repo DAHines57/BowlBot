@@ -262,9 +262,10 @@ class LeagueService:
             "",
         )
 
-    def _playoff_snapshots_for_season(
+    def playoff_snapshots_for_season(
         self, season: str
     ) -> Tuple[List[int], List[Optional[dict]]]:
+        """Playoff weeks and their matchup snapshots, ``None`` for unbowled weeks."""
         pweeks = self.data.list_playoff_weeks_for_season(season)
         pweeks_sorted = sorted(pweeks)
         snapshots: List[Optional[dict]] = []
@@ -284,7 +285,7 @@ class LeagueService:
             return None, data["error"]
         if not data:
             return None, "No team data."
-        _, snapshots = self._playoff_snapshots_for_season(season)
+        _, snapshots = self.playoff_snapshots_for_season(season)
         champion = champion_from_playoff_snapshots(snapshots)
         return inject_web_chrome(
             build_teams_html(data, season, champion_team=champion), embed=embed
@@ -423,7 +424,7 @@ class LeagueService:
             raw = self.data.get_team_scores(None, season)
             if isinstance(raw, dict) and "error" in raw:
                 continue
-            _, snapshots = self._playoff_snapshots_for_season(season)
+            _, snapshots = self.playoff_snapshots_for_season(season)
             champion = champion_from_playoff_snapshots(snapshots)
             for name, stats in raw.items():
                 rows.append(
@@ -523,7 +524,7 @@ class LeagueService:
                         key=lambda x: x[1].get("avg_per_game", 0),
                     )
                 )
-            _, snapshots = self._playoff_snapshots_for_season(season)
+            _, snapshots = self.playoff_snapshots_for_season(season)
             champion_team = champion_from_playoff_snapshots(snapshots)
         return (
             inject_web_chrome(

@@ -517,6 +517,7 @@ def get_team_scores(
     *,
     season_num: Optional[int] = None,
     matchup_overrides: Optional[List[dict]] = None,
+    include_playoffs: bool = False,
 ) -> Dict:
     week_param = week
     through_param = through_week
@@ -536,7 +537,9 @@ def get_team_scores(
         rows = filter_facts(season_rows, week=week_param)
     elif through_param is not None:
         rows = filter_facts(
-            season_rows, through_week=through_param, exclude_playoffs=True
+            season_rows,
+            through_week=through_param,
+            exclude_playoffs=not include_playoffs,
         )
     else:
         rows = season_rows

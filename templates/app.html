@@ -141,6 +141,10 @@
                   aria-selected="true" aria-controls="leaderboard" data-view="players">Players</button>
           <button type="button" class="tab" id="tab-teams" role="tab"
                   aria-selected="false" aria-controls="leaderboard" data-view="teams">Teams</button>
+          <button type="button" class="tab" id="tab-bests" role="tab"
+                  aria-selected="false" aria-controls="bests" data-view="bests">Bests</button>
+          <button type="button" class="tab" id="tab-playoffs" role="tab"
+                  aria-selected="false" aria-controls="playoffs" data-view="playoffs">Playoffs</button>
         </div>
         <div class="spanflip" id="spanflip" role="group" aria-label="Week span">
           <button type="button" class="spanflip-btn" data-span="single"
@@ -153,7 +157,7 @@
 
     <div class="summary-band">
       <section class="panel" id="panel-highlights">
-        <h2 class="panel-title" id="highlights-title">Weekly Summary</h2>
+        <h2 class="panel-title" id="highlights-title">Highlights</h2>
         <!-- Focusable so the strip can be scrolled by keyboard where it
              overflows instead of trapping cards off-screen. -->
         <div class="carousel" id="highlights" tabindex="0"
@@ -190,6 +194,34 @@
           <p class="status" id="status" role="status" aria-live="polite">Loading&hellip;</p>
           <ol class="board" id="leaderboard" aria-labelledby="sort-label"></ol>
           <div class="board-more" id="board-more" hidden></div>
+        </section>
+
+        <section class="panel" id="panel-bests" hidden>
+          <h2 class="panel-title">Bests</h2>
+          <p class="status" id="bests-status" role="status" aria-live="polite" hidden></p>
+          <div class="bests" id="bests"></div>
+        </section>
+
+        <section class="panel" id="panel-playoffs" hidden>
+          <div class="panel-head">
+            <h2 class="panel-title">Playoffs</h2>
+            <div class="sortbar">
+              <span class="sortbar-label" id="playoff-season-label">Season</span>
+              <div class="sortbar-controls">
+                <label class="sr-only" for="playoff-season">Playoff season</label>
+                <select id="playoff-season" class="mini-select"
+                        aria-describedby="playoff-season-label"></select>
+              </div>
+            </div>
+          </div>
+
+          <p class="status" id="playoffs-status" role="status" aria-live="polite" hidden></p>
+          <div class="playoffs" id="playoffs">
+            <div id="playoff-seeds"></div>
+            <div id="playoff-upcoming"></div>
+            <div id="playoff-rounds"></div>
+            <div id="playoff-history"></div>
+          </div>
         </section>
       </main>
     </div>

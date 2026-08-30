@@ -55,8 +55,22 @@ def test_app_page_renders_shell():
         'data-playoffs="only"',
         'data-view="players"',
         'data-view="teams"',
+        'data-view="bests"',
+        'id="panel-bests"',
+        'data-view="playoffs"',
+        'id="panel-playoffs"',
+        'id="playoff-season"',
+        'id="playoff-upcoming"',
+        'id="playoff-rounds"',
+        'id="playoff-seeds"',
+        'id="playoff-history"',
     ]:
         assert anchor in html, anchor
+
+    # Card order on the Playoffs tab comes from the container order, so standings
+    # leading the tab is a property of the shell rather than of the renderer.
+    assert html.index('id="playoff-seeds"') < html.index('id="playoff-upcoming"')
+    assert html.index('id="playoff-upcoming"') < html.index('id="playoff-rounds"')
 
 
 def test_app_page_needs_a_service():
@@ -77,6 +91,9 @@ def test_static_assets_exist_and_are_wired():
     js_text = open(js, encoding="utf-8").read()
     assert "/api/leaderboard" in js_text
     assert "/api/meta" in js_text
+    assert "/api/playoffs" in js_text
+    # The playoff sections collapse, so the toggle wiring has to be present.
+    assert "data-po-toggle" in js_text
 
 
 def test_bracket_routes_are_gone():

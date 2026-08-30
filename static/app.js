@@ -19,6 +19,8 @@
 
   /* Which half of the schedule counts. Was a boolean before, so stored
    * sessions and old links still carry true/false and 1/0. */
+  var VIEWS = ["players", "teams", "bests", "playoffs"];
+
   var PLAYOFF_MODES = ["regular", "both", "only"];
   var PLAYOFFS_DEFAULT = "both";
   var PLAYOFF_LABELS = { regular: "Regular", both: "All", only: "Playoffs" };
@@ -98,14 +100,43 @@
     { key: 0, label: "All" }
   ];
 
+  /* Order and presentation of the record lists. `digits` and `unit` describe
+   * the headline value; `sub` names an extra field shown after the value. */
+  var BEST_SECTIONS = [
+    { key: "games", title: "Best games", unit: "" },
+    { key: "weeks", title: "Best weeks", digits: 2, unit: "avg" },
+    { key: "seasons", title: "Best seasons", digits: 2, unit: "avg" },
+    { key: "most_200s", title: "Most 200s", unit: "games" },
+    { key: "streaks", title: "Longest 200+ streak", unit: "in a row" },
+    { key: "consistent", title: "Most consistent", digits: 2, unit: "st dev" },
+    { key: "career_nights", title: "Biggest career night", digits: 2, unit: "over avg" },
+    { key: "improved", title: "Most improved", digits: 2, unit: "gain" },
+    { key: "team_weeks", title: "Best team weeks", digits: 2, unit: "avg" },
+    { key: "team_seasons", title: "Best team seasons", digits: 2, unit: "avg" }
+  ];
+
+  var BESTS_PREVIEW = 5;
+
+  /* `bestsOpen` is a set of record lists the reader has opened. Every list
+   * starts closed, so the Bests tab opens as a short index. */
   var DEFAULT_PREFS = {
     sortPlayers: "average",
     sortPlayersDir: "desc",
     sortTeams: "avg_per_game",
     sortTeamsDir: "desc",
     density: "comfortable",
-    rowLimit: 0
+    rowLimit: 0,
+    bestsOpen: {}
   };
+
+  /* A fresh copy every time. Handing out DEFAULT_PREFS.bestsOpen itself would
+   * let a toggle mutate the defaults, so the reset button would stop working. */
+  function defaultPrefs() {
+    var out = {};
+    for (var k in DEFAULT_PREFS) out[k] = DEFAULT_PREFS[k];
+    out.bestsOpen = {};
+    return out;
+  }
 
   var meta = null;
   var prefs = loadPrefs();
@@ -116,14 +147,28 @@
   // Set by the Show all button, cleared whenever the list underneath changes.
   var showAllRows = false;
   var fetchToken = 0;
+  // Records are fetched only when the Bests tab is opened, then kept per scope
+  // so flipping back and forth costs nothing.
+  var bestsCache = {};
+  var bestsToken = 0;
+  // Which record lists the reader has expanded; each expands on its own.
+  var bestsExpanded = {};
+  // The bracket is season-scoped rather than range-scoped, so it keeps its own
+  // selected season and caches by that instead of by the range query.
+  var playoffsCache = {};
+  var playoffsToken = 0;
+  var playoffSeason = null;
+  /* Which playoff sections are open. Only the standings card starts open; round
+   * keys carry a week number and so differ per season, which is why this is
+   * session state rather than a stored preference. */
+  var playoffsOpen = { standings: true };
 
   var el = {};
 
   /* ---------------- storage ---------------- */
 
   function loadPrefs() {
-    var out = {};
-    for (var k in DEFAULT_PREFS) out[k] = DEFAULT_PREFS[k];
+    var out = defaultPrefs();
     try {
       var raw = localStorage.getItem(PREFS_KEY);
       if (raw) {
@@ -144,6 +189,16 @@
     // Stored as a number, but a stale or hand-edited entry could be anything.
     out.rowLimit = parseInt(out.rowLimit, 10);
     if (!isRowLimit(out.rowLimit)) out.rowLimit = DEFAULT_PREFS.rowLimit;
+    // Rebuilt rather than trusted, so a retired or hand-edited record key
+    // cannot linger in the stored set.
+    var open = out.bestsOpen;
+    out.bestsOpen = {};
+    if (open && typeof open === "object") {
+      for (var i = 0; i < BEST_SECTIONS.length; i++) {
+        var key = BEST_SECTIONS[i].key;
+        if (open[key]) out.bestsOpen[key] = true;
+      }
+    }
     return out;
   }
 
@@ -240,7 +295,13 @@
    * so those fields drop out of the teams list entirely. */
   var SINGLE_WEEK_HIDDEN = { high_week_avg: true, low_week_avg: true };
 
+  /* The Bests lists carry their own fixed ordering, so that view has no sort
+   * fields at all and every sort helper has to tolerate an empty list. */
+  function isBests() { return !!state && state.view === "bests"; }
+  function isPlayoffs() { return !!state && state.view === "playoffs"; }
+
   function fieldsFor(view) {
+    if (view === "bests" || view === "playoffs") return [];
     var list = SORT_FIELDS[view] || SORT_FIELDS.players;
     if (view !== "teams" || !isSingle()) return list;
     return list.filter(function (f) { return !SINGLE_WEEK_HIDDEN[f.key]; });
@@ -288,7 +349,7 @@
       if (stored.week) state.week = stored.week;
       var storedPo = normalizePlayoffs(stored.playoffs);
       if (storedPo) state.playoffs = storedPo;
-      if (stored.view) state.view = stored.view;
+      if (VIEWS.indexOf(stored.view) >= 0) state.view = stored.view;
       if (stored.sort) state.sort = stored.sort;
       if (stored.dir) state.dir = stored.dir;
     }
@@ -304,7 +365,7 @@
     if (q.get("span") === "single" || q.get("span") === "multi") state.span = q.get("span");
     var urlPo = normalizePlayoffs(q.get("playoffs"));
     if (urlPo) state.playoffs = urlPo;
-    if (q.get("view") === "teams" || q.get("view") === "players") state.view = q.get("view");
+    if (VIEWS.indexOf(q.get("view")) >= 0) state.view = q.get("view");
     if (q.get("sort")) state.sort = q.get("sort");
     if (q.get("dir") === "asc" || q.get("dir") === "desc") state.dir = q.get("dir");
 
@@ -322,6 +383,7 @@
   /* A sort field can vanish under the current span (the week figures in
    * single-week view), so fall back to the preferred field, then the default. */
   function ensureSortField() {
+    if (isBests() || isPlayoffs()) return;
     if (findField(state.view, state.sort)) return;
     var isTeams = state.view === "teams";
     state.sort = isTeams ? prefs.sortTeams : prefs.sortPlayers;
@@ -383,6 +445,10 @@
   function load() {
     var token = ++fetchToken;
     detailCache = {};
+    // Records are derived from the same facts, so a reload must not serve the
+    // previous answer for an unchanged range.
+    bestsCache = {};
+    playoffsCache = {};
     openRow = null;
     showAllRows = false;
     setStatus("Loading\u2026");
@@ -458,6 +524,362 @@
     renderTiles();
     renderSortControl();
     renderBoard();
+    syncViewPanels();
+  }
+
+  /* Bests and Playoffs replace the leaderboard rather than sitting beside it,
+   * and both make the sort bar and the highlight strip redundant. */
+  function syncViewPanels() {
+    var bests = isBests();
+    var playoffs = isPlayoffs();
+    el.panelLeaderboard.hidden = bests || playoffs;
+    el.panelBests.hidden = !bests;
+    el.panelPlayoffs.hidden = !playoffs;
+    el.panelHighlights.hidden = bests || playoffs;
+    if (el.panelLeague) el.panelLeague.hidden = bests || playoffs;
+    // The bracket follows its own season selector, so the week/range flip has
+    // nothing to act on. Greyed out rather than hidden so the tabbar holds its
+    // shape as the reader moves between tabs.
+    el.spanflip.classList.toggle("is-locked", playoffs);
+    el.spanButtons.forEach(function (btn) { btn.disabled = playoffs; });
+    if (playoffs) {
+      el.spanflip.title = "The Playoffs tab uses its own season selector";
+    } else {
+      el.spanflip.removeAttribute("title");
+    }
+    if (bests) loadBests();
+    if (playoffs) {
+      syncPlayoffSeason();
+      loadPlayoffs();
+    }
+  }
+
+  function loadBests() {
+    var key = apiQuery();
+    if (bestsCache[key]) {
+      renderBests(bestsCache[key]);
+      return;
+    }
+    var token = ++bestsToken;
+    setBestsStatus("Loading\u2026");
+    el.bests.innerHTML = "";
+    fetch("/api/bests?" + key, { headers: { Accept: "application/json" } })
+      .then(function (r) {
+        return r.json().then(function (body) {
+          if (!r.ok) throw new Error(body.error || "Request failed");
+          return body;
+        });
+      })
+      .then(function (body) {
+        if (token !== bestsToken) return;
+        bestsCache[key] = body;
+        setBestsStatus("");
+        renderBests(body);
+      })
+      .catch(function (err) {
+        if (token !== bestsToken) return;
+        el.bests.innerHTML = "";
+        setBestsStatus(err.message || "Could not load records.", true);
+      });
+  }
+
+  function bestRow(entry, spec, place) {
+    var name = entry.player || entry.team;
+    // A player row names their team underneath; a team row is already named.
+    var sub = entry.player ? entry.team : "";
+    var tint = entry.color ? ' style="color:' + esc(entry.color) + '"' : "";
+    var detail = entry.when || "";
+    if (entry.average !== undefined) {
+      detail = fmt(entry.average, 2) + (detail ? " \u00b7 " + detail : "");
+    }
+    return (
+      '<li class="best-row">' +
+      '<span class="best-place">' + place + "</span>" +
+      '<span class="best-id">' +
+      '<span class="best-name"' + (entry.player ? "" : tint) + ">" + esc(name) + "</span>" +
+      (sub ? '<span class="best-sub"' + tint + ">" + esc(sub) + "</span>" : "") +
+      "</span>" +
+      '<span class="best-value">' + fmt(entry.score, spec.digits) +
+      (spec.unit ? '<span class="best-unit">' + esc(spec.unit) + "</span>" : "") +
+      "</span>" +
+      (detail ? '<span class="best-when">' + esc(detail) + "</span>" : "") +
+      "</li>"
+    );
+  }
+
+  function bestSection(spec, entries) {
+    var expanded = !!bestsExpanded[spec.key];
+    var open = !!prefs.bestsOpen[spec.key];
+    var bodyId = "bests-body-" + spec.key;
+    var shown = expanded ? entries : entries.slice(0, BESTS_PREVIEW);
+    var more = entries.length > BESTS_PREVIEW
+      ? '<div class="best-more"><button type="button" class="btn btn--ghost" ' +
+        'data-bests-more="' + esc(spec.key) + '">' +
+        (expanded ? "Show fewer" : "Show all " + entries.length) + "</button></div>"
+      : "";
+    return (
+      '<section class="best-card' + (open ? " is-open" : "") + '">' +
+      '<h3 class="best-head-wrap">' +
+      '<button type="button" class="best-head" data-bests-toggle="' + esc(spec.key) + '" ' +
+      'aria-expanded="' + (open ? "true" : "false") + '" aria-controls="' + bodyId + '">' +
+      '<span class="best-title">' + esc(spec.title) + "</span>" +
+      '<span class="best-count">' + entries.length + "</span>" +
+      '<span class="chev" aria-hidden="true"></span>' +
+      "</button></h3>" +
+      '<div class="best-body" id="' + bodyId + '"' + (open ? "" : " hidden") + ">" +
+      '<ol class="best-list">' +
+      shown.map(function (e, i) { return bestRow(e, spec, i + 1); }).join("") +
+      "</ol>" + more +
+      "</div></section>"
+    );
+  }
+
+  function renderBests(data) {
+    var cats = (data && data.categories) || {};
+    var html = BEST_SECTIONS.map(function (spec) {
+      var entries = cats[spec.key] || [];
+      // An empty list means the range cannot support that record at all, most
+      // often most-improved inside a single season. Saying nothing beats an
+      // empty card.
+      return entries.length ? bestSection(spec, entries) : "";
+    }).join("");
+
+    el.bests.innerHTML = html;
+    if (!html) setBestsStatus("No records in this range.");
+  }
+
+  function setBestsStatus(text, isError) {
+    if (!text) {
+      el.bestsStatus.hidden = true;
+      return;
+    }
+    el.bestsStatus.hidden = false;
+    el.bestsStatus.textContent = text;
+    el.bestsStatus.classList.toggle("status--error", !!isError);
+  }
+
+  /* ---------------- playoffs ---------------- */
+
+  function syncPlayoffSeason() {
+    if (!playoffSeason) {
+      playoffSeason = meta.current_season ||
+        (meta.seasons[0] && meta.seasons[0].label) || null;
+    }
+    if (!el.playoffSeason.options.length) {
+      el.playoffSeason.innerHTML = meta.seasons.map(function (s) {
+        return '<option value="' + esc(s.label) + '">' + esc(s.label) + "</option>";
+      }).join("");
+    }
+    if (playoffSeason) el.playoffSeason.value = playoffSeason;
+  }
+
+  function loadPlayoffs() {
+    var season = playoffSeason || "";
+    if (playoffsCache[season]) {
+      renderPlayoffs(playoffsCache[season]);
+      return;
+    }
+    var token = ++playoffsToken;
+    setPlayoffsStatus("Loading\u2026");
+    el.playoffUpcoming.innerHTML = "";
+    el.playoffRounds.innerHTML = "";
+    el.playoffSeeds.innerHTML = "";
+    el.playoffHistory.innerHTML = "";
+    fetch("/api/playoffs?season=" + encodeURIComponent(season), {
+      headers: { Accept: "application/json" }
+    })
+      .then(function (r) {
+        return r.json().then(function (body) {
+          if (!r.ok) throw new Error(body.error || "Request failed");
+          return body;
+        });
+      })
+      .then(function (body) {
+        if (token !== playoffsToken) return;
+        playoffsCache[season] = body;
+        setPlayoffsStatus("");
+        renderPlayoffs(body);
+      })
+      .catch(function (err) {
+        if (token !== playoffsToken) return;
+        setPlayoffsStatus(err.message || "Could not load playoffs.", true);
+      });
+  }
+
+  function setPlayoffsStatus(text, isError) {
+    if (!text) {
+      el.playoffsStatus.hidden = true;
+      return;
+    }
+    el.playoffsStatus.hidden = false;
+    el.playoffsStatus.textContent = text;
+    el.playoffsStatus.classList.toggle("status--error", !!isError);
+  }
+
+  function seedTag(seed) {
+    return seed ? '<span class="mu-seed">' + seed + "</span>" : "";
+  }
+
+  /* `record` is where the team stood going into this week; `scoreHtml` is the
+   * matchup score, which the caller puts on one row only. */
+  function matchupSide(name, seed, color, record, scoreHtml, result) {
+    if (!name) {
+      return '<div class="mu-side is-bye"><span class="mu-team">Bye</span></div>';
+    }
+    var tint = color ? ' style="color:' + esc(color) + '"' : "";
+    var mark = result && result !== "\u2014"
+      ? '<span class="mu-mark mu-mark--' + esc(result.toLowerCase()) + '">' +
+        esc(result) + "</span>"
+      : "";
+    return (
+      '<div class="mu-side' + (result === "W" ? " is-winner" : "") + '">' +
+      seedTag(seed) +
+      '<span class="mu-team"' + tint + ">" + esc(name) +
+      (record ? ' <span class="mu-record">' + esc(record) + "</span>" : "") +
+      "</span>" +
+      (scoreHtml || "") +
+      mark +
+      "</div>"
+    );
+  }
+
+  /* Games won by each side, each number in its own team's colour. It belongs to
+   * the matchup rather than a side, so it is drawn once on the top row and the
+   * bottom row gets an empty cell to keep the two grids in step. */
+  function matchupScore(m) {
+    if (typeof m.home_game_wins !== "number" ||
+        typeof m.away_game_wins !== "number") {
+      return "";
+    }
+    function part(wins, color) {
+      var tint = color ? ' style="color:' + esc(color) + '"' : "";
+      return "<span" + tint + ">" + wins + "</span>";
+    }
+    return (
+      '<span class="mu-games">' +
+      part(m.home_game_wins, m.home_color) + "-" +
+      part(m.away_game_wins, m.away_color) +
+      "</span>"
+    );
+  }
+
+  function matchupCard(m) {
+    var score = matchupScore(m);
+    return (
+      '<div class="matchup' + (m.projected ? " is-projected" : "") + '">' +
+      (m.label ? '<div class="mu-label">' + esc(m.label) + "</div>" : "") +
+      matchupSide(m.home, m.home_seed, m.home_color, m.home_record,
+                  score, m.home_result) +
+      matchupSide(m.away, m.away_seed, m.away_color, m.away_record,
+                  score ? '<span class="mu-games"></span>' : "", m.away_result) +
+      (m.record_overridden ? '<div class="mu-note">Adjusted record</div>' : "") +
+      "</div>"
+    );
+  }
+
+  /* Every playoff section is one collapsible card. `title` and `flag` are
+   * already-escaped HTML because a round title mixes text with a week number. */
+  function poSection(key, title, flag, body, extraClass) {
+    var open = !!playoffsOpen[key];
+    var bodyId = "po-body-" + key;
+    return (
+      '<section class="po-card' + (extraClass ? " " + extraClass : "") +
+      (open ? " is-open" : "") + '">' +
+      '<h3 class="po-head-wrap">' +
+      '<button type="button" class="po-head" data-po-toggle="' + esc(key) + '" ' +
+      'aria-expanded="' + (open ? "true" : "false") + '" aria-controls="' + bodyId + '">' +
+      '<span class="po-title">' + title + "</span>" +
+      (flag || "") +
+      '<span class="chev" aria-hidden="true"></span>' +
+      "</button></h3>" +
+      '<div class="po-body" id="' + bodyId + '"' + (open ? "" : " hidden") + ">" +
+      body +
+      "</div></section>"
+    );
+  }
+
+  function roundSection(group, key, extraClass) {
+    var title = esc(group.label || "Playoffs") +
+      (group.week ? " \u00b7 Week " + group.week : "");
+    return poSection(
+      key,
+      title,
+      group.projected ? '<span class="po-flag">Projected</span>' : "",
+      '<div class="mu-list">' +
+        (group.matchups || []).map(matchupCard).join("") +
+        "</div>",
+      extraClass
+    );
+  }
+
+  function renderPlayoffs(data) {
+    var upcoming = data && data.upcoming;
+    el.playoffUpcoming.innerHTML = upcoming
+      ? roundSection(upcoming, "next", "")
+      : "";
+
+    var rounds = (data && data.rounds) || [];
+    // Newest round first so the reader lands on the most recent results.
+    el.playoffRounds.innerHTML = rounds
+      .slice()
+      .reverse()
+      .map(function (r) { return roundSection(r, "round-" + r.week, ""); })
+      .join("");
+
+    /* Seed order and numbers come from the frozen playoff seeding, but the
+     * records shown run through the newest week bowled. */
+    var standings = (data && (data.standings || data.seeds)) || [];
+    var throughWeek = data && (data.last_week || data.last_regular_week);
+    el.playoffSeeds.innerHTML = standings.length
+      ? poSection(
+          "standings",
+          "Standings",
+          throughWeek
+            ? '<span class="po-flag">Through week ' + throughWeek + "</span>"
+            : "",
+          '<ol class="seed-list">' +
+            standings.map(function (row) {
+              var tint = row.color ? ' style="color:' + esc(row.color) + '"' : "";
+              return (
+                '<li class="seed-row">' +
+                '<span class="mu-seed">' + row.seed + "</span>" +
+                '<span class="seed-team"' + tint + ">" + esc(row.team) + "</span>" +
+                '<span class="seed-record">' + esc(row.record || "") + "</span>" +
+                '<span class="seed-pins">' + fmt(row.pins_for, 0) + "</span>" +
+                "</li>"
+              );
+            }).join("") +
+            "</ol>"
+        )
+      : "";
+
+    var history = ((data && data.history) || []).filter(function (h) {
+      return !!h.champion;
+    });
+    el.playoffHistory.innerHTML = history.length
+      ? poSection(
+          "history",
+          "Season Winners",
+          "",
+          '<ol class="champ-list">' +
+            history.map(function (h) {
+              var tint = h.champion_color
+                ? ' style="color:' + esc(h.champion_color) + '"'
+                : "";
+              return (
+                '<li class="champ-row">' +
+                '<span class="champ-season">' + esc(h.season) + "</span>" +
+                '<span class="champ-team"' + tint + ">\uD83C\uDFC6 " +
+                esc(h.champion) + "</span></li>"
+              );
+            }).join("") +
+            "</ol>"
+        )
+      : "";
+
+    if (!upcoming && !rounds.length && !standings.length) {
+      setPlayoffsStatus("No playoff data for this season yet.");
+    }
   }
 
   function renderRangeText() {
@@ -468,9 +890,6 @@
       text = posText(state.start) + " \u2013 " + posText(state.end);
     }
     el.rangePillText.textContent = text;
-    if (el.highlightsTitle) {
-      el.highlightsTitle.textContent = isSingle() ? "Weekly Summary" : "Range Summary";
-    }
     // Shown inside the panel so the range stays visible when the panel is
     // inline in the desktop rail and the pill is hidden.
     if (el.filterRangeText) el.filterRangeText.textContent = text;
@@ -712,10 +1131,11 @@
 
   function playerFigures(row) {
     var sorted = sortedFigureKey();
-    // A credited average is not a bowled one; label it so the ranking reads honestly.
+    // A credited average is not a bowled one. The tinted value carries that on
+    // its own, so the label stays the same as every other row's.
     var credited = row.average_from_absences;
     var lines = [
-      figureLine(credited ? "Avg cr" : "Avg", row.average, {
+      figureLine("Avg", row.average, {
         digits: 2,
         keyLabel: true,
         cls: credited ? "fig-val fig-val--credited" : "fig-val",
@@ -1114,10 +1534,12 @@
         }
         cells.push('<td class="wk-num wk-avg">' + fmt(w.avg, 2) + "</td>");
         // Narrow screens leave the opponent column no usable width, so the name
-        // also rides on its own full-width line that CSS swaps in there.
+        // also rides on its own full-width line that CSS swaps in there. The
+        // span counts only the columns visible at that width: a colspan past
+        // the column count makes the browser widen the table for that row.
         var oppRow = records
           ? '<tr class="wk-opp-row"><td class="wk-opp-line" colspan="' +
-            head.length + '"' + style + ">" +
+            (head.length - (slots ? 2 : 1)) + '"' + style + ">" +
             esc(w.opponent ? "vs " + w.opponent : "\u2014") + "</td></tr>"
           : "";
         return "<tr>" + cells.join("") + "</tr>" + oppRow;
@@ -1539,8 +1961,12 @@
         var view = tab.getAttribute("data-view");
         if (view === state.view) return;
         state.view = view;
-        state.sort = view === "teams" ? prefs.sortTeams : prefs.sortPlayers;
-        state.dir = view === "teams" ? prefs.sortTeamsDir : prefs.sortPlayersDir;
+        // Bests and Playoffs have no sort, so the stored sort preference is
+        // left untouched and restored as-is on return to a board view.
+        if (view !== "bests" && view !== "playoffs") {
+          state.sort = view === "teams" ? prefs.sortTeams : prefs.sortPlayers;
+          state.dir = view === "teams" ? prefs.sortTeamsDir : prefs.sortPlayersDir;
+        }
         el.tabs.forEach(function (t) {
           t.setAttribute("aria-selected", t === tab ? "true" : "false");
         });
@@ -1549,8 +1975,14 @@
         renderSortControl();
         renderHighlights();
         renderBoard();
+        syncViewPanels();
         persist();
       });
+    });
+
+    el.playoffSeason.addEventListener("change", function () {
+      playoffSeason = el.playoffSeason.value;
+      loadPlayoffs();
     });
 
     el.sortField.addEventListener("change", function () {
@@ -1609,6 +2041,39 @@
       renderBoard();
       syncSettingsPanel();
     });
+    el.playoffs.addEventListener("click", function (e) {
+      var head = e.target.closest("[data-po-toggle]");
+      if (!head) return;
+      var card = head.closest(".po-card");
+      var open = !card.classList.contains("is-open");
+      card.classList.toggle("is-open", open);
+      head.setAttribute("aria-expanded", open ? "true" : "false");
+      card.querySelector(".po-body").hidden = !open;
+      playoffsOpen[head.getAttribute("data-po-toggle")] = open;
+    });
+    el.bests.addEventListener("click", function (e) {
+      // Collapsing flips the one card in place, so the other lists hold still.
+      var head = e.target.closest("[data-bests-toggle]");
+      if (head) {
+        var card = head.closest(".best-card");
+        var open = !card.classList.contains("is-open");
+        card.classList.toggle("is-open", open);
+        head.setAttribute("aria-expanded", open ? "true" : "false");
+        card.querySelector(".best-body").hidden = !open;
+        if (open) prefs.bestsOpen[head.getAttribute("data-bests-toggle")] = true;
+        else delete prefs.bestsOpen[head.getAttribute("data-bests-toggle")];
+        savePrefs();
+        return;
+      }
+
+      var btn = e.target.closest("[data-bests-more]");
+      if (!btn) return;
+      var cached = bestsCache[apiQuery()];
+      if (!cached) return;
+      var key = btn.getAttribute("data-bests-more");
+      bestsExpanded[key] = !bestsExpanded[key];
+      renderBests(cached);
+    });
     el.boardMore.addEventListener("click", function (e) {
       if (!e.target.closest("#board-more-btn")) return;
       showAllRows = !showAllRows;
@@ -1616,13 +2081,15 @@
       renderBoard();
     });
     el.settingsReset.addEventListener("click", function () {
-      prefs = {};
-      for (var k in DEFAULT_PREFS) prefs[k] = DEFAULT_PREFS[k];
+      prefs = defaultPrefs();
       savePrefs();
       applyDensity();
       openRow = null;
       showAllRows = false;
       renderBoard();
+      // The records on screen still carry the old open set.
+      var records = bestsCache[apiQuery()];
+      if (records) renderBests(records);
       syncSettingsPanel();
     });
 
@@ -1660,7 +2127,6 @@
     el.spanButtons = Array.prototype.slice.call(
       document.querySelectorAll("[data-span]")
     );
-    el.highlightsTitle = document.getElementById("highlights-title");
     el.filterReset = document.getElementById("filter-reset");
     el.filterClose = document.getElementById("filter-close");
     el.playoffGroup = document.getElementById("playoff-group");
@@ -1688,6 +2154,20 @@
     el.sortDirArrow = document.getElementById("sort-dir-arrow");
     el.sortDirText = document.getElementById("sort-dir-text");
     el.status = document.getElementById("status");
+    el.panelLeaderboard = document.getElementById("panel-leaderboard");
+    el.panelBests = document.getElementById("panel-bests");
+    el.panelHighlights = document.getElementById("panel-highlights");
+    el.panelLeague = document.getElementById("panel-league");
+    el.bests = document.getElementById("bests");
+    el.bestsStatus = document.getElementById("bests-status");
+    el.panelPlayoffs = document.getElementById("panel-playoffs");
+    el.playoffsStatus = document.getElementById("playoffs-status");
+    el.playoffs = document.getElementById("playoffs");
+    el.playoffSeason = document.getElementById("playoff-season");
+    el.playoffUpcoming = document.getElementById("playoff-upcoming");
+    el.playoffRounds = document.getElementById("playoff-rounds");
+    el.playoffSeeds = document.getElementById("playoff-seeds");
+    el.playoffHistory = document.getElementById("playoff-history");
     el.board = document.getElementById("leaderboard");
     el.scrim = document.getElementById("scrim");
   }

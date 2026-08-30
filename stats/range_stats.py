@@ -138,7 +138,12 @@ class _PlayerAccumulator:
         return _mean(self.all_games)
 
 
-def _player_rows(rows: List[dict], mode: str) -> List[dict]:
+def build_player_accumulators(rows: List[dict]) -> Dict[str, _PlayerAccumulator]:
+    """Per-player games, absences, and sub appearances over the given rows.
+
+    Split out from :func:`_player_rows` so other views can reuse the counting
+    rules; ``games_by_season`` in particular is what a per-season record needs.
+    """
     acc: Dict[str, _PlayerAccumulator] = {}
     for f in rows:
         player = str(f.get("player_display_name") or "").strip()
@@ -176,6 +181,12 @@ def _player_rows(rows: List[dict], mode: str) -> List[dict]:
                 entry.absent_credits.append(credit)
             continue
         entry.add(season_num, games_list_for_player_stats(f), label=week_label(f))
+
+    return acc
+
+
+def _player_rows(rows: List[dict], mode: str) -> List[dict]:
+    acc = build_player_accumulators(rows)
 
     out: List[dict] = []
     for player, entry in acc.items():
@@ -215,7 +226,7 @@ def _player_rows(rows: List[dict], mode: str) -> List[dict]:
     return out
 
 
-def _team_pins_by_week(
+def team_pins_by_week(
     rows: List[dict],
 ) -> Dict[str, Dict[Position, List[List[float]]]]:
     """Counting team games per ``(season, week)``, keyed by team name.
@@ -311,7 +322,7 @@ def _team_row(team: str, by_week: Dict[Position, List[List[float]]]) -> Optional
 def _team_rows(rows: List[dict]) -> List[dict]:
     """Team pins and per-week totals over the range."""
     out: List[dict] = []
-    for team, by_week in _team_pins_by_week(rows).items():
+    for team, by_week in team_pins_by_week(rows).items():
         row = _team_row(team, by_week)
         if row is not None:
             out.append(row)
@@ -545,7 +556,7 @@ def get_team_range_detail(
     if not target:
         return None
 
-    pins = _team_pins_by_week(filter_facts(facts, scope=scope))
+    pins = team_pins_by_week(filter_facts(facts, scope=scope))
     match = None
     for team in pins:
         if canonical_team_name(team).strip().lower() == target:

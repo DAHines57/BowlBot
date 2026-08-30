@@ -426,6 +426,12 @@ a { color: var(--accent); }
 .spanflip-btn:hover,
 .playoff-btn:hover { color: var(--text); }
 
+/* Inert on tabs that ignore the range, so it reads as unavailable rather
+   than broken. */
+.spanflip.is-locked { opacity: 0.45; }
+.spanflip-btn:disabled { cursor: not-allowed; }
+.spanflip-btn:disabled:hover { color: var(--muted); }
+
 /* Switching view leads over narrowing the range, so the tabs run a step
    larger, and take the accent tint to stay distinct from the flips. */
 .tab {
@@ -448,6 +454,17 @@ a { color: var(--accent); }
 
 /* Inside the filter panel there is room to span the full width. */
 .playoff-btn { flex: 1; }
+
+/* Three view tabs plus the week/range flip no longer fit one line here, so
+   each group takes a row of its own and stretches to fill it. Left to wrap on
+   its own the flip lands adrift under the tabs, reading as a mistake. */
+@media (max-width: 430px) {
+  .tabs,
+  .spanflip { flex: 1 1 100%; }
+
+  .tab,
+  .spanflip-btn { flex: 1; }
+}
 
 .settings-btn {
   display: flex;
@@ -618,7 +635,12 @@ a { color: var(--accent); }
   .carousel {
     display: flex;
     gap: 0.5rem;
-    padding: 0 0.1rem 0.2rem;
+    padding: 0 0.35rem 0.2rem;
+    scroll-padding-left: 0.35rem;
+    /* Two cards leave the sliver of a third unused, which reads as a stray gap
+     * on the right. `safe` keeps the first card reachable once the strip does
+     * overflow; browsers without it fall back to the flex-start above. */
+    justify-content: safe center;
     overflow-x: auto;
     scroll-snap-type: x mandatory;
     -webkit-overflow-scrolling: touch;
@@ -760,6 +782,333 @@ a { color: var(--accent); }
   margin-top: var(--gap);
 }
 .board-more[hidden] { display: none; }
+
+/* ---------- Bests ---------- */
+
+.bests {
+  display: grid;
+  gap: var(--gap);
+}
+
+.best-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition: border-color var(--dur) var(--ease);
+}
+.best-card.is-open { border-color: var(--accent); }
+
+.best-head-wrap { margin: 0; }
+
+.best-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.7rem 0.85rem;
+  background: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.best-title {
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.best-card.is-open .best-title { color: var(--accent); }
+
+.best-count {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.best-body {
+  padding: 0.15rem 0.85rem 0.85rem;
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+}
+.best-body[hidden] { display: none; }
+
+.best-card.is-open .chev {
+  transform: rotate(180deg);
+  border-top-color: var(--accent);
+}
+
+.best-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.1rem;
+}
+
+/* Place, who, value, when. The when column collapses when a record spans the
+   whole range and has no single week to name. */
+.best-row {
+  display: grid;
+  grid-template-columns: 1.4rem minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+  border-top: 1px solid var(--border-soft);
+  font-size: 0.85rem;
+}
+.best-row:first-child { border-top: 0; }
+
+.best-place {
+  font-size: 0.75rem;
+  color: var(--muted-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.best-id { min-width: 0; }
+
+.best-name {
+  display: block;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.best-sub {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.best-value {
+  font-weight: 700;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.best-unit {
+  display: block;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-dim);
+}
+
+/* Its own row under the value so a long label never squeezes the name. */
+.best-when {
+  grid-column: 2 / -1;
+  font-size: 0.7rem;
+  color: var(--muted-dim);
+}
+
+.best-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 0.6rem;
+}
+
+/* ---------- Playoffs ---------- */
+
+.playoffs { display: grid; gap: 0.8rem; }
+
+.po-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition: border-color var(--dur) var(--ease);
+}
+.po-card.is-open { border-color: var(--accent); }
+.po-head-wrap { margin: 0; }
+
+.po-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.7rem 0.85rem;
+  background: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.po-title {
+  min-width: 0;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.po-card.is-open .po-title { color: var(--accent); }
+
+.po-body {
+  padding: 0.15rem 0.85rem 0.85rem;
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+}
+.po-body[hidden] { display: none; }
+
+.po-card.is-open .chev {
+  transform: rotate(180deg);
+  border-top-color: var(--accent);
+}
+
+.po-flag {
+  padding: 0.15rem 0.45rem;
+  border: 1px solid var(--violet-border);
+  border-radius: var(--radius-pill);
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  color: var(--violet);
+}
+
+.mu-list { display: grid; gap: 0.55rem; padding-top: 0.5rem; }
+
+/* Sits on the elevated card body, so it takes the card background to lift. */
+.matchup {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.45rem 0.55rem;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+}
+
+/* Projected pairings are guesses from seeding, so they read as provisional. */
+.matchup.is-projected { border-style: dashed; }
+
+.mu-label {
+  font-size: 0.66rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-dim);
+}
+
+.mu-side {
+  display: grid;
+  grid-template-columns: 1.7rem minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+}
+
+.mu-side.is-bye { color: var(--muted-dim); font-style: italic; }
+.mu-side.is-winner .mu-team { font-weight: 700; }
+
+.mu-seed {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--muted-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.mu-team {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Where the team stood going into the week, tucked after the name. */
+.mu-record {
+  font-size: 0.72rem;
+  color: var(--muted-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Games won in this matchup, in the slot the pin total used to hold. Only the
+ * top row carries the score, so the width is reserved to keep the empty cell
+ * below it the same size and the W/L marks in one column. */
+.mu-games {
+  min-width: 2.2rem;
+  text-align: right;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.mu-mark {
+  width: 1.2rem;
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--muted-dim);
+}
+.mu-mark--w { color: var(--mint); }
+.mu-mark--l { color: var(--rose); }
+
+.mu-note { font-size: 0.68rem; color: var(--muted-dim); }
+
+.seed-list,
+.champ-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.1rem;
+}
+
+.seed-row {
+  display: grid;
+  grid-template-columns: 1.7rem minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+  border-top: 1px solid var(--border-soft);
+  font-size: 0.85rem;
+}
+.seed-row:first-child { border-top: 0; }
+
+.seed-team {
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.seed-record { font-variant-numeric: tabular-nums; }
+
+.seed-pins {
+  font-size: 0.78rem;
+  color: var(--muted-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.champ-row {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+  border-top: 1px solid var(--border-soft);
+  font-size: 0.85rem;
+}
+.champ-row:first-child { border-top: 0; }
+
+.champ-season { font-size: 0.78rem; color: var(--muted); }
+
+.champ-team {
+  min-width: 0;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .row {
   background: var(--card);
@@ -1097,7 +1446,9 @@ a { color: var(--accent); }
   .wk-table .wk-h-g5 { width: 2.6rem; }
 
   /* The column has no room left here, so the name moves to a full-width line
-   * that reads as a continuation of the week above it. */
+   * that reads as a continuation of the week above it. The line's colspan is
+   * built from how many columns these rules leave standing, so keep the two in
+   * step when adding or hiding a column. */
   .wk-table .wk-h-opponent,
   .wk-table td.wk-opp { display: none; }
   .wk-table .wk-opp-row { display: table-row; }
@@ -1224,6 +1575,9 @@ a { color: var(--accent); }
     grid-template-columns: auto minmax(0, 1.4fr) repeat(4, minmax(0, 0.6fr)) auto;
     gap: 0.85rem;
   }
+
+  /* Eleven record lists stack too tall on one column at this width. */
+  .bests { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
 
   /* Desktop reveals each figure in its own column instead of stacked lines. */
   .row-figs { display: contents; }
