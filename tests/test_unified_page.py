@@ -44,6 +44,8 @@ def test_app_page_renders_shell():
         'id="sort-field"',
         'id="sort-dir"',
         'id="settings-panel"',
+        'id="rowlimit-radios"',
+        'id="board-more"',
         'id="playoff-group"',
         'id="playoff-flip"',
         'id="range-pill-tag"',

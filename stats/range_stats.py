@@ -37,6 +37,14 @@ from stats.scope import (
 from utils import safe_float, safe_int
 
 
+# Consistency rewards a low spread, which a tiny sample wins by accident, so a
+# player needs roughly three full weeks before the card will name them.
+MIN_GAMES_FOR_CONSISTENCY = 9
+
+# Below this a "week" is a fragment left by per-game absences, not a night.
+MIN_GAMES_FOR_HIGH_WEEK = 2
+
+
 def position_label(pos: Position) -> str:
     """Season-qualified week label, unique across seasons."""
     return f"S{pos[0]} W{pos[1]}"
@@ -314,6 +322,10 @@ def _team_rows(rows: List[dict]) -> List[dict]:
 def _league_and_highlights(rows: List[dict]) -> Tuple[dict, dict]:
     scored: List[tuple] = []
     players_with_games: set = set()
+    # (average, player, team, label) for the best single night bowled.
+    best_week: Optional[tuple] = None
+    # player -> (count of 200+ games, team), so the leader can be named.
+    over_200: Dict[str, Tuple[int, str]] = {}
     for f in rows:
         player = str(f.get("player_display_name") or "").strip()
         if not player:
@@ -328,6 +340,37 @@ def _league_and_highlights(rows: List[dict]) -> Tuple[dict, dict]:
         label = week_label(f)
         for g in games:
             scored.append((g, player, team, label))
+
+        # A per-game absence can leave a single scored game, which is not a
+        # night's work and would flatter whoever bowled it.
+        if len(games) >= MIN_GAMES_FOR_HIGH_WEEK:
+            week_avg = sum(games) / len(games)
+            if best_week is None or week_avg > best_week[0]:
+                best_week = (week_avg, player, team, label)
+
+        count = len([g for g in games if g >= 200])
+        if count:
+            prior = over_200.get(player)
+            over_200[player] = ((prior[0] if prior else 0) + count, team)
+
+    high_week = None
+    if best_week is not None:
+        high_week = {
+            "score": round(best_week[0], 2),
+            "player": best_week[1],
+            "team": best_week[2],
+            "when": best_week[3],
+        }
+
+    most_200s = None
+    if over_200:
+        leader = max(over_200.items(), key=lambda kv: kv[1][0])
+        most_200s = {
+            "score": leader[1][0],
+            "player": leader[0],
+            "team": leader[1][1],
+            "when": None,
+        }
 
     high_game = low_game = None
     if scored:
@@ -351,7 +394,36 @@ def _league_and_highlights(rows: List[dict]) -> Tuple[dict, dict]:
         "games_200_plus": len([s for s in scores if s >= 200]),
         "total_games": len(scores),
     }
-    return league, {"high_game": high_game, "low_game": low_game}
+    return league, {
+        "high_game": high_game,
+        "low_game": low_game,
+        "high_week": high_week,
+        "most_200s": most_200s,
+    }
+
+
+def _consistency_highlight(player_rows: List[dict]) -> Optional[dict]:
+    """Smallest standard deviation among players with a real sample.
+
+    Takes the finished leaderboard rows rather than the raw facts so the games
+    counted here are exactly the ones the player's own row reports.
+    """
+    scored = [
+        r
+        for r in player_rows
+        if r.get("std_dev") is not None
+        and (r.get("games") or 0) >= MIN_GAMES_FOR_CONSISTENCY
+    ]
+    if not scored:
+        return None
+    pick = min(scored, key=lambda r: r["std_dev"])
+    return {
+        "score": pick["std_dev"],
+        "player": pick["player"],
+        "team": pick["team"],
+        "when": None,
+        "label": "Most consistent",
+    }
 
 
 def _team_week_highlight(team_rows: List[dict], *, high: bool) -> Optional[dict]:
@@ -381,6 +453,7 @@ def get_range_stats(facts: List[dict], scope: Scope) -> dict:
     league, highlights = _league_and_highlights(rows)
     highlights["team_high"] = _team_week_highlight(teams, high=True)
     highlights["team_low"] = _team_week_highlight(teams, high=False)
+    highlights["consistent"] = _consistency_highlight(players)
 
     seasons_covered = sorted(
         {safe_int(f.get("season_number"), 0) for f in rows if f.get("season_number")}

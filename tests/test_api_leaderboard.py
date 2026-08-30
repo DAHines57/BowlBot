@@ -227,10 +227,58 @@ def test_highlight_cards_carry_a_team_color(client, monkeypatch):
 
 
 def test_highlights_tolerate_a_missing_card(client):
-    """The team cards are None when no team has a scored week; must not raise."""
+    """Every card is None when no week in the range has a scored game."""
     data = client.get("/api/leaderboard?from=13.9&to=13.9").get_json()
-    assert data["highlights"]["team_high"] is None
-    assert data["highlights"]["team_low"] is None
+    highlights = data["highlights"]
+    assert all(highlights[k] is None for k in highlights)
+
+
+def test_highlights_name_the_best_single_week(client):
+    """Alice's S13 W2 pair of 250s is the best night in the range."""
+    h = client.get("/api/leaderboard?from=13.1&to=14.1").get_json()["highlights"]
+    assert h["high_week"]["player"] == "Alice"
+    assert h["high_week"]["score"] == 250.0
+    assert h["high_week"]["when"] == "S13 W2"
+
+
+def test_high_week_ignores_a_single_game_fragment(client):
+    """A lone scored game is a per-game absence, not a night's work."""
+    app = Flask(__name__)
+    facts = FACTS + [_fact("Solo", 14, 1, games=(300,), team="Team C")]
+    app.config["LEAGUE_SERVICE"] = LeagueService(_FakeData(facts))
+    app.register_blueprint(api.api_bp)
+
+    data = app.test_client().get("/api/leaderboard?from=13.1&to=14.1").get_json()
+    assert data["highlights"]["high_week"]["player"] == "Alice"
+
+
+def test_highlights_count_the_most_200s(client):
+    """Alice has 250, 250, 200, 200 in the range; Bob has 220, 220."""
+    h = client.get("/api/leaderboard?from=13.1&to=14.1").get_json()["highlights"]
+    assert h["most_200s"]["player"] == "Alice"
+    assert h["most_200s"]["score"] == 4
+    # The count describes the whole range, so there is no single week to name.
+    assert h["most_200s"]["when"] is None
+
+
+def test_consistency_card_needs_a_real_sample(client):
+    """Six games is under MIN_GAMES_FOR_CONSISTENCY, so nobody qualifies."""
+    h = client.get("/api/leaderboard?from=13.1&to=14.1").get_json()["highlights"]
+    assert h["consistent"] is None
+
+
+def test_consistency_card_ignores_a_short_perfect_sample():
+    """A two-game player with zero spread must not beat a full-season bowler."""
+    app = Flask(__name__)
+    facts = [_fact("Steady", 14, w, games=(190, 210)) for w in range(1, 6)]
+    facts.append(_fact("Rookie", 14, 1, games=(200, 200), team="Team B"))
+    app.config["LEAGUE_SERVICE"] = LeagueService(_FakeData(facts))
+    app.register_blueprint(api.api_bp)
+
+    data = app.test_client().get("/api/leaderboard?from=14.1&to=14.5").get_json()
+    card = data["highlights"]["consistent"]
+    assert card["player"] == "Steady"
+    assert card["score"] == 10.0
 
 
 def test_single_week_scope_is_a_range_of_one(client):

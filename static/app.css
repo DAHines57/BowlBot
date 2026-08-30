@@ -562,6 +562,9 @@ a { color: var(--accent); }
   text-transform: uppercase;
   margin-bottom: 0.3rem;
 }
+/* Escapes the uppercasing above, so "200s" keeps its lowercase plural. */
+.hl-head-plain { text-transform: none; }
+
 .hl-card--good .hl-head { color: var(--mint); }
 .hl-card--bad .hl-head { color: var(--rose); }
 .hl-card--violet .hl-head { color: var(--violet); }
@@ -608,16 +611,34 @@ a { color: var(--accent); }
 
 .hl-when { font-size: 0.7rem; color: var(--muted-dim); }
 
-/* Three cards across a phone leaves roughly 100px each, so the type scales
- * down and the text lines wrap instead of truncating to nothing. */
+/* A phone fits two cards at a time, so the strip scrolls a pair per swipe. The
+ * pair is sized a little narrow so a sliver of the next card shows and
+ * advertises that there is more to see. */
 @media (max-width: 599px) {
-  .carousel { gap: 0.4rem; }
+  .carousel {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0 0.1rem 0.2rem;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .carousel::-webkit-scrollbar { display: none; }
 
-  .hl-card { padding: 0.5rem 0.35rem 0.55rem; }
+  .hl-card {
+    flex: 0 0 calc((100% - 0.5rem) / 2.12);
+    padding: 0.6rem 0.45rem 0.65rem;
+    /* Only every second card is a snap target, so a swipe advances a whole
+     * pair rather than shuffling along one card at a time. */
+    scroll-snap-align: none;
+  }
+  .hl-card:nth-child(odd) { scroll-snap-align: start; }
 
+  /* Half-width cards need the type to come down a step. */
   .hl-head {
     gap: 0;
-    font-size: 0.54rem;
+    font-size: 0.58rem;
     letter-spacing: 0.02em;
     line-height: 1.2;
     flex-wrap: wrap;
@@ -628,6 +649,7 @@ a { color: var(--accent); }
   .hl-score { font-size: 1.5rem; }
   .hl-score-unit { font-size: 0.55rem; letter-spacing: 0.03em; }
 
+  /* A long team name needs a second line rather than an ellipsis. */
   .hl-name, .hl-sub {
     white-space: normal;
     overflow-wrap: break-word;
@@ -635,10 +657,11 @@ a { color: var(--accent); }
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
     line-clamp: 2;
+    line-height: 1.25;
   }
-  .hl-name { font-size: 0.72rem; line-height: 1.25; }
-  .hl-sub { font-size: 0.64rem; line-height: 1.25; }
-  .hl-when { font-size: 0.55rem; }
+  .hl-name { font-size: 0.78rem; }
+  .hl-sub { font-size: 0.68rem; }
+  .hl-when { font-size: 0.6rem; }
 }
 
 /* ---------- League tiles ---------- */
@@ -731,6 +754,13 @@ a { color: var(--accent); }
   gap: var(--gap);
 }
 
+.board-more {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--gap);
+}
+.board-more[hidden] { display: none; }
+
 .row {
   background: var(--card);
   border: 1px solid var(--border);
@@ -801,6 +831,11 @@ a { color: var(--accent); }
 .fig-bad { color: var(--rose); font-weight: 700; }
 .fig-key { color: var(--muted); }
 .fig-val { font-weight: 700; }
+
+/* The figure the board is ranked by. Only the label is tinted, because the
+   values already use colour to mean good and bad. */
+.fig-line--sorted .fig-label,
+.fig-line--sorted .fig-key { color: var(--accent); }
 /* Credited from a book average rather than bowled. */
 .fig-val--credited { color: var(--rose); }
 
@@ -1149,13 +1184,20 @@ a { color: var(--accent); }
   /* Full-width band: highlights across the left, league tiles on the right. */
   .summary-band {
     display: grid;
-    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
     gap: 1.5rem;
     align-items: start;
     margin-bottom: 1.35rem;
   }
 
   .summary-band .panel { margin-bottom: 0; }
+
+  /* Up to five cards share this row, so they trade size for the extra slots. */
+  .hl-card { padding: 0.6rem 0.5rem 0.7rem; }
+
+  .hl-head { font-size: 0.62rem; letter-spacing: 0.04em; }
+
+  .hl-score { font-size: 1.55rem; }
 
   .rail-filters {
     padding: 0.9rem;

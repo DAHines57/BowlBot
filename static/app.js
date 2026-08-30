@@ -55,9 +55,47 @@
     ]
   };
 
+  /* How each numeric sort field renders as a row figure: which row property
+   * holds it, how many decimals it takes, its value colour, and a short label
+   * for the narrow fourth column where the sort menu's wording is too long. */
+  var FIGURE_SPECS = {
+    players: {
+      average: { key: "average", digits: 2, label: "Avg" },
+      highest_game: { key: "highest_game", cls: "fig-good", label: "High" },
+      lowest_game: { key: "lowest_game", cls: "fig-bad", label: "Low" },
+      std_dev: { key: "std_dev", digits: 2, label: "St dev" },
+      games: { key: "games", label: "Games" },
+      absences: { key: "absences", label: "Abs" },
+      par: { key: "par", label: "PAR" }
+    },
+    teams: {
+      avg_per_game: { key: "avg_per_game", digits: 2, label: "Avg" },
+      week_avg: { key: "week_avg", digits: 2, label: "Avg" },
+      total_pins: { key: "total_pins", label: "Pins" },
+      high_game: { key: "high_game", cls: "fig-good", label: "High game" },
+      high_week_avg: {
+        key: "high_week_avg", digits: 2, cls: "fig-good", label: "High week"
+      },
+      low_week_avg: {
+        key: "low_week_avg", digits: 2, cls: "fig-bad", label: "Low week"
+      },
+      games: { key: "games", label: "Games" },
+      weeks: { key: "weeks", label: "Weeks" }
+    }
+  };
+
   var DENSITIES = [
     { key: "comfortable", label: "Comfortable" },
     { key: "compact", label: "Compact" }
+  ];
+
+  /* How many rows the board renders before the Show all button. Zero is no
+   * limit, which is the default so the page behaves as it always has. */
+  var ROW_LIMITS = [
+    { key: 10, label: "Top 10" },
+    { key: 25, label: "Top 25" },
+    { key: 50, label: "Top 50" },
+    { key: 0, label: "All" }
   ];
 
   var DEFAULT_PREFS = {
@@ -65,7 +103,8 @@
     sortPlayersDir: "desc",
     sortTeams: "avg_per_game",
     sortTeamsDir: "desc",
-    density: "comfortable"
+    density: "comfortable",
+    rowLimit: 0
   };
 
   var meta = null;
@@ -74,6 +113,8 @@
   var payload = null;
   var detailCache = {};
   var openRow = null;
+  // Set by the Show all button, cleared whenever the list underneath changes.
+  var showAllRows = false;
   var fetchToken = 0;
 
   var el = {};
@@ -100,7 +141,17 @@
     if (!findField("teams", out.sortTeams)) {
       out.sortTeams = DEFAULT_PREFS.sortTeams;
     }
+    // Stored as a number, but a stale or hand-edited entry could be anything.
+    out.rowLimit = parseInt(out.rowLimit, 10);
+    if (!isRowLimit(out.rowLimit)) out.rowLimit = DEFAULT_PREFS.rowLimit;
     return out;
+  }
+
+  function isRowLimit(value) {
+    for (var i = 0; i < ROW_LIMITS.length; i++) {
+      if (ROW_LIMITS[i].key === value) return true;
+    }
+    return false;
   }
 
   function savePrefs() {
@@ -333,6 +384,7 @@
     var token = ++fetchToken;
     detailCache = {};
     openRow = null;
+    showAllRows = false;
     setStatus("Loading\u2026");
     fetch("/api/leaderboard?" + apiQuery(), { headers: { Accept: "application/json" } })
       .then(function (r) {
@@ -453,7 +505,13 @@
     return (
       '<article class="hl-card ' + o.cls + '">' +
       '<div class="hl-head"><span aria-hidden="true">' + o.icon + "</span>" +
-      esc(o.head) + "</div>" +
+      /* One span, because .hl-head is a flex row and its gap would otherwise
+       * detach the suffix from the label it belongs to. */
+      '<span>' + esc(o.head) +
+      (o.headSuffix
+        ? '<span class="hl-head-plain">' + esc(o.headSuffix) + "</span>"
+        : "") +
+      "</span></div>" +
       '<div class="hl-score">' + esc(o.score) +
       (o.unit ? '<span class="hl-score-unit">' + esc(o.unit) + "</span>" : "") +
       "</div>" +
@@ -506,6 +564,37 @@
         color: h.low_game.color, teamLine: "sub"
       }));
     }
+
+    /* Over one night these three either duplicate a leaderboard column or rest
+     * on a three-game sample, so they are range-only. */
+    if (!isSingle()) {
+      if (h.high_week) {
+        cards.push(highlightCard({
+          cls: "hl-card--violet", icon: "\u{1F525}", head: "High Week",
+          score: fmt(h.high_week.score, 2), unit: "avg",
+          name: h.high_week.player, sub: h.high_week.team,
+          when: h.high_week.when, color: h.high_week.color, teamLine: "sub"
+        }));
+      }
+      if (h.most_200s) {
+        cards.push(highlightCard({
+          cls: "hl-card--good", icon: "\u{1F3AF}", head: "Most 200",
+          headSuffix: "s",
+          score: fmt(h.most_200s.score), unit: "games",
+          name: h.most_200s.player, sub: h.most_200s.team,
+          color: h.most_200s.color, teamLine: "sub"
+        }));
+      }
+      if (h.consistent) {
+        cards.push(highlightCard({
+          cls: "hl-card--violet", icon: "\u{1F4CF}", head: "Most Consistent",
+          score: fmt(h.consistent.score, 2), unit: "st dev",
+          name: h.consistent.player, sub: h.consistent.team,
+          color: h.consistent.color, teamLine: "sub"
+        }));
+      }
+    }
+
     el.highlights.innerHTML = cards.length
       ? cards.join("")
       : '<p class="detail-empty">No games in this range.</p>';
@@ -578,41 +667,118 @@
     return row.team;
   }
 
+  function figureLine(label, value, o) {
+    o = o || {};
+    var cls =
+      "fig-line" +
+      (o.extra ? " fig-line--extra" : "") +
+      (o.sorted ? " fig-line--sorted" : "");
+    return (
+      '<div class="' + cls + '"><span class="' +
+      (o.keyLabel ? "fig-key" : "fig-label") + '">' + esc(label) +
+      '</span> <span class="' + (o.cls || "fig-val") + '">' +
+      fmt(value, o.digits) + "</span></div>"
+    );
+  }
+
+  /* The row property the board is ordered by, or null when it is ordered by a
+   * name. Resolves the team average the same way sortRows does, so the figure
+   * marked as sorted is the one actually doing the ordering. */
+  function sortedFigureKey() {
+    var field = findField(state.view, state.sort);
+    if (!field || !field.numeric) return null;
+    // A disabled PAR sort leaves every row null; nothing worth showing.
+    if (field.needsPar && payload && payload.par_available === false) return null;
+    return field.key === "avg_per_game" ? teamAvgKey() : field.key;
+  }
+
+  /* The fourth figure follows the sort whenever the first three do not already
+   * show it, so the number the list is ranked by is visible without expanding
+   * the row. In its default form it stays desktop-only, but it comes along to
+   * mobile while carrying the sort, since there it is the point of the view. */
+  function sortSlotFigure(view, shownKeys, sortedKey, row, fallback) {
+    var spec = sortedKey && shownKeys.indexOf(sortedKey) < 0
+      ? FIGURE_SPECS[view][sortedKey]
+      : null;
+    if (spec) {
+      return figureLine(spec.label, row[spec.key], {
+        digits: spec.digits, cls: spec.cls, sorted: true
+      });
+    }
+    return figureLine(fallback.label, row[fallback.key], {
+      extra: true, sorted: sortedKey === fallback.key
+    });
+  }
+
   function playerFigures(row) {
+    var sorted = sortedFigureKey();
     // A credited average is not a bowled one; label it so the ranking reads honestly.
-    var avgKey = row.average_from_absences ? "Avg cr" : "Avg";
-    var avgCls = row.average_from_absences ? "fig-val fig-val--credited" : "fig-val";
+    var credited = row.average_from_absences;
     var lines = [
-      '<div class="fig-line"><span class="fig-key">' + avgKey +
-        '</span> <span class="' + avgCls + '">' + fmt(row.average, 2) + "</span></div>",
-      '<div class="fig-line"><span class="fig-label">High</span> <span class="fig-good">' +
-        fmt(row.highest_game) + "</span></div>",
-      '<div class="fig-line"><span class="fig-label">Low</span> <span class="fig-bad">' +
-        fmt(row.lowest_game) + "</span></div>",
-      '<div class="fig-line fig-line--extra"><span class="fig-label">Games</span> <span class="fig-val">' +
-        fmt(row.games) + "</span></div>"
+      figureLine(credited ? "Avg cr" : "Avg", row.average, {
+        digits: 2,
+        keyLabel: true,
+        cls: credited ? "fig-val fig-val--credited" : "fig-val",
+        sorted: sorted === "average"
+      }),
+      figureLine("High", row.highest_game, {
+        cls: "fig-good", sorted: sorted === "highest_game"
+      }),
+      figureLine("Low", row.lowest_game, {
+        cls: "fig-bad", sorted: sorted === "lowest_game"
+      })
     ];
+    lines.push(
+      sortSlotFigure(
+        "players",
+        ["average", "highest_game", "lowest_game"],
+        sorted,
+        row,
+        { key: "games", label: "Games" }
+      )
+    );
     return lines.join("");
   }
 
   function teamFigures(row) {
+    var sorted = sortedFigureKey();
+    var avgKey = teamAvgKey();
+    var shown = [avgKey, "high_game"];
     var lines = [
-      '<div class="fig-line"><span class="fig-key">Avg</span> <span class="fig-val">' +
-        fmt(row[teamAvgKey()], 2) + "</span></div>"
+      figureLine("Avg", row[avgKey], {
+        digits: 2, keyLabel: true, sorted: sorted === avgKey
+      })
     ];
     if (!isSingle()) {
+      shown.push("high_week_avg");
       lines.push(
-        '<div class="fig-line"><span class="fig-label">High week</span> <span class="fig-good">' +
-          fmt(row.high_week_avg, 2) + "</span></div>"
+        figureLine("High week", row.high_week_avg, {
+          digits: 2, cls: "fig-good", sorted: sorted === "high_week_avg"
+        })
       );
     }
     lines.push(
-      '<div class="fig-line"><span class="fig-label">High game</span> <span class="fig-good">' +
-        fmt(row.high_game) + "</span></div>",
-      '<div class="fig-line fig-line--extra"><span class="fig-label">Pins</span> <span class="fig-val">' +
-        fmt(row.total_pins) + "</span></div>"
+      figureLine("High game", row.high_game, {
+        cls: "fig-good", sorted: sorted === "high_game"
+      })
+    );
+    lines.push(
+      sortSlotFigure("teams", shown, sorted, row, {
+        key: "total_pins", label: "Pins"
+      })
     );
     return lines.join("");
+  }
+
+  /* Shown only when a cap is actually in play, so it offers the way back once
+   * the list is expanded rather than disappearing at the moment it is needed. */
+  function renderBoardMore(total) {
+    var capped = prefs.rowLimit > 0 && total > prefs.rowLimit;
+    el.boardMore.hidden = !capped;
+    el.boardMore.innerHTML = capped
+      ? '<button type="button" class="btn btn--ghost" id="board-more-btn">' +
+        (showAllRows ? "Show fewer" : "Show all " + total) + "</button>"
+      : "";
   }
 
   function renderBoard() {
@@ -622,10 +788,16 @@
 
     if (!rows.length) {
       el.board.innerHTML = "";
+      el.boardMore.hidden = true;
+      el.boardMore.innerHTML = "";
       setStatus("No " + (isTeams ? "teams" : "players") + " in this range.");
       return;
     }
     setStatus("");
+
+    var total = rows.length;
+    if (!showAllRows && prefs.rowLimit > 0) rows = rows.slice(0, prefs.rowLimit);
+    renderBoardMore(total);
 
     el.board.innerHTML = rows
       .map(function (row) {
@@ -1201,6 +1373,15 @@
         "</span></button>"
       );
     }).join("");
+
+    el.rowLimitRadios.innerHTML = ROW_LIMITS.map(function (r) {
+      return (
+        '<button type="button" class="radio-row" role="radio" data-rowlimit="' + r.key + '" ' +
+        'aria-checked="' + (prefs.rowLimit === r.key ? "true" : "false") + '">' +
+        '<span class="radio-dot" aria-hidden="true"></span><span>' + esc(r.label) +
+        "</span></button>"
+      );
+    }).join("");
   }
 
   function applyDensity() {
@@ -1364,6 +1545,7 @@
           t.setAttribute("aria-selected", t === tab ? "true" : "false");
         });
         openRow = null;
+        showAllRows = false;
         renderSortControl();
         renderHighlights();
         renderBoard();
@@ -1416,11 +1598,31 @@
       applyDensity();
       syncSettingsPanel();
     });
+    el.rowLimitRadios.addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-rowlimit]");
+      if (!btn) return;
+      prefs.rowLimit = parseInt(btn.getAttribute("data-rowlimit"), 10);
+      savePrefs();
+      // A row expanded past the new cap would otherwise vanish while open.
+      openRow = null;
+      showAllRows = false;
+      renderBoard();
+      syncSettingsPanel();
+    });
+    el.boardMore.addEventListener("click", function (e) {
+      if (!e.target.closest("#board-more-btn")) return;
+      showAllRows = !showAllRows;
+      openRow = null;
+      renderBoard();
+    });
     el.settingsReset.addEventListener("click", function () {
       prefs = {};
       for (var k in DEFAULT_PREFS) prefs[k] = DEFAULT_PREFS[k];
       savePrefs();
       applyDensity();
+      openRow = null;
+      showAllRows = false;
+      renderBoard();
       syncSettingsPanel();
     });
 
@@ -1476,6 +1678,8 @@
     el.defaultSortTeams = document.getElementById("default-sort-teams");
     el.defaultSortTeamsDir = document.getElementById("default-sort-teams-dir");
     el.densityRadios = document.getElementById("density-radios");
+    el.rowLimitRadios = document.getElementById("rowlimit-radios");
+    el.boardMore = document.getElementById("board-more");
     el.rail = document.querySelector(".rail");
     el.highlights = document.getElementById("highlights");
     el.leagueTiles = document.getElementById("league-tiles");
