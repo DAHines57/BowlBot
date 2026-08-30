@@ -163,6 +163,10 @@
    * session state rather than a stored preference. */
   var playoffsOpen = { standings: true };
 
+  /* Which expanded rows have their profile chart open, keyed the same way as
+   * `detailCache`. Session state: a chart is a look, not a setting. */
+  var profilesOpen = {};
+
   var el = {};
 
   /* ---------------- storage ---------------- */
@@ -716,8 +720,9 @@
     el.playoffsStatus.classList.toggle("status--error", !!isError);
   }
 
+  /* Always a cell, empty or not, so seedless rows keep the columns aligned. */
   function seedTag(seed) {
-    return seed ? '<span class="mu-seed">' + seed + "</span>" : "";
+    return '<span class="mu-seed">' + (seed ? seed : "") + "</span>";
   }
 
   /* `record` is where the team stood going into this week; `scoreHtml` is the
@@ -734,9 +739,10 @@
     return (
       '<div class="mu-side' + (result === "W" ? " is-winner" : "") + '">' +
       seedTag(seed) +
-      '<span class="mu-team"' + tint + ">" + esc(name) +
-      (record ? ' <span class="mu-record">' + esc(record) + "</span>" : "") +
-      "</span>" +
+      '<span class="mu-team"' + tint + ">" + esc(name) + "</span>" +
+      // Its own cell, so the name's ellipsis cannot eat the record. Always
+      // emitted, even when empty, to keep the two sides' grids in step.
+      '<span class="mu-record">' + esc(record || "") + "</span>" +
       (scoreHtml || "") +
       mark +
       "</div>"
@@ -1021,9 +1027,13 @@
 
   function renderTiles() {
     var lg = (payload && payload.league) || {};
+    // The count follows the tab, so the strip is about whatever is listed.
+    var countTile = state.view === "teams"
+      ? { value: fmt(lg.total_teams), label: "Teams" }
+      : { value: fmt(lg.total_players), label: "Players" };
     var tiles = [
       { value: fmt(lg.league_avg, 2), label: "League Avg" },
-      { value: fmt(lg.total_players), label: "Players" },
+      countTile,
       { value: fmt(lg.games_200_plus), label: "200+ Games" },
       { value: fmt(lg.total_games), label: "Total Games" }
     ];
@@ -1265,6 +1275,11 @@
     return null;
   }
 
+  /* Namespaced so a team and a player sharing a name cannot collide. */
+  function detailKey(row) {
+    return state.view + ":" + (state.view === "teams" ? row.team : row.player);
+  }
+
   function statBlock(pairs) {
     return (
       '<div class="detail-grid">' +
@@ -1277,6 +1292,190 @@
         })
         .join("") +
       "</div>"
+    );
+  }
+
+  /* A scaled-to-fit line chart over `points`, each {value, label, tone}. The
+   * two dashed reference lines are the series' own average and the league's.
+   * Dots carry a native title tooltip, so the chart needs no script. */
+  function trendChart(points, opts) {
+    var live = (points || []).filter(function (p) {
+      return typeof p.value === "number" && !isNaN(p.value);
+    });
+    if (live.length < 2) return "";
+
+    var o = opts || {};
+    var W = 420, H = 200;
+    var ml = 34, mr = 8, mt = 10, mb = 22;
+    var plotW = W - ml - mr;
+    var plotH = H - mt - mb;
+
+    var values = live.map(function (p) { return p.value; });
+    var refs = [o.average, o.leagueAverage].filter(function (v) {
+      return typeof v === "number" && v > 0;
+    });
+    var lo = Math.min.apply(null, values.concat(refs));
+    var hi = Math.max.apply(null, values.concat(refs));
+    // A flat series would give a zero-height plot, so always keep some spread.
+    var pad = Math.max(10, (hi - lo) * 0.15);
+    lo = Math.max(0, Math.floor((lo - pad) / 10) * 10);
+    hi = Math.ceil((hi + pad) / 10) * 10;
+
+    function x(i) {
+      return live.length < 2
+        ? ml + plotW / 2
+        : ml + (plotW * i) / (live.length - 1);
+    }
+    function y(v) {
+      return mt + plotH - ((v - lo) / (hi - lo)) * plotH;
+    }
+
+    var parts = [];
+    [hi, (hi + lo) / 2, lo].forEach(function (v) {
+      var gy = y(v).toFixed(1);
+      parts.push(
+        '<line class="prof-grid" x1="' + ml + '" y1="' + gy +
+        '" x2="' + (W - mr) + '" y2="' + gy + '"></line>',
+        '<text class="prof-axis" x="' + (ml - 6) + '" y="' + (y(v) + 3).toFixed(1) +
+        '" text-anchor="end">' + Math.round(v) + "</text>"
+      );
+    });
+
+    refs.forEach(function (v, idx) {
+      var cls = idx === 0 && typeof o.average === "number" && o.average > 0
+        ? "prof-avg"
+        : "prof-league";
+      parts.push(
+        '<line class="' + cls + '" x1="' + ml + '" y1="' + y(v).toFixed(1) +
+        '" x2="' + (W - mr) + '" y2="' + y(v).toFixed(1) + '"></line>'
+      );
+    });
+
+    parts.push(
+      '<polyline class="prof-line" points="' +
+      live.map(function (p, i) { return x(i).toFixed(1) + "," + y(p.value).toFixed(1); })
+        .join(" ") +
+      '"></polyline>'
+    );
+
+    /* A 3px dot in a chart scaled down to card width is far too small to point
+     * at, so each one is paired with an invisible, much larger target. The
+     * reading itself rides on the group as `data-tip`; a native <title> would
+     * never show on touch and takes a long hover on a desktop. */
+    live.forEach(function (p, i) {
+      var cls = "prof-dot" + (p.tone ? " prof-dot--" + esc(p.tone) : "");
+      var cx = x(i).toFixed(1);
+      var cy = y(p.value).toFixed(1);
+      parts.push(
+        '<g class="prof-point" tabindex="0" data-tip="' +
+        esc((p.label ? p.label + " \u00b7 " : "") + fmt(p.value, o.decimals || 0)) +
+        '"><circle class="' + cls + '" cx="' + cx + '" cy="' + cy + '" r="3"></circle>' +
+        '<circle class="prof-hit" cx="' + cx + '" cy="' + cy + '" r="11"></circle>' +
+        "</g>"
+      );
+    });
+
+    // Only the ends are labelled; one label per point crowds a narrow card.
+    parts.push(
+      '<text class="prof-axis" x="' + ml + '" y="' + (H - 6) +
+      '" text-anchor="start">' + esc(live[0].label || "") + "</text>",
+      '<text class="prof-axis" x="' + (W - mr) + '" y="' + (H - 6) +
+      '" text-anchor="end">' + esc(live[live.length - 1].label || "") + "</text>"
+    );
+
+    return (
+      // The wrapper is the tooltip's positioning context.
+      '<div class="prof-plot"><div class="prof-tip" hidden></div>' +
+      // No role="img": that hides the points, and with them their tooltips.
+      '<svg class="prof-chart" viewBox="0 0 ' + W + " " + H +
+      '" aria-label="' + esc(o.label || "Trend") + '">' +
+      parts.join("") +
+      "</svg></div>" +
+      '<p class="prof-legend">' +
+      (typeof o.average === "number" && o.average > 0
+        ? '<span class="prof-key prof-key--avg"></span>own avg ' +
+          fmt(o.average, 2) + " "
+        : "") +
+      (typeof o.leagueAverage === "number" && o.leagueAverage > 0
+        ? '<span class="prof-key prof-key--league"></span>league avg ' +
+          fmt(o.leagueAverage, 2)
+        : "") +
+      "</p>"
+    );
+  }
+
+  /* The tooltip is placed from measured geometry rather than the viewBox, since
+   * the chart is scaled to whatever width the card happens to have. */
+  function showChartTip(point) {
+    var plot = point.closest(".prof-plot");
+    if (!plot) return;
+    var tip = plot.querySelector(".prof-tip");
+    if (!tip) return;
+
+    var prev = plot.querySelector(".prof-point--active");
+    if (prev) prev.classList.remove("prof-point--active");
+    point.classList.add("prof-point--active");
+
+    tip.textContent = point.getAttribute("data-tip") || "";
+    tip.hidden = false;
+
+    var pr = plot.getBoundingClientRect();
+    var gr = point.getBoundingClientRect();
+    var half = tip.offsetWidth / 2;
+    var cx = gr.left - pr.left + gr.width / 2;
+    // Kept inside the card, so an end point does not hang off the edge.
+    tip.style.left = Math.min(Math.max(cx, half + 2), pr.width - half - 2) + "px";
+    tip.style.top = gr.top - pr.top + "px";
+  }
+
+  function hideChartTip(plot) {
+    if (!plot) return;
+    var tip = plot.querySelector(".prof-tip");
+    if (tip) tip.hidden = true;
+    var active = plot.querySelector(".prof-point--active");
+    if (active) active.classList.remove("prof-point--active");
+  }
+
+  /* One block per season, since a range can cross a roster change. `groups`
+   * comes straight from the API as [{label, members: [{name, sub}]}]. */
+  function membersSection(key, title, groups) {
+    if (!groups || !groups.length) return "";
+    var body = groups
+      .map(function (g) {
+        return (
+          '<div class="mem-season">' + esc(g.label) + "</div>" +
+          '<div class="mem-list">' +
+          (g.members || [])
+            .map(function (m) {
+              return (
+                '<span class="mem">' + esc(m.name) +
+                (m.sub ? ' <span class="wk-tag wk-tag--sub">sub</span>' : "") +
+                "</span>"
+              );
+            })
+            .join("") +
+          "</div>"
+        );
+      })
+      .join("");
+    return profileSection(key, title, body);
+  }
+
+  /* Collapsible, same open/close vocabulary as the bests and playoff cards. */
+  function profileSection(key, title, bodyHtml) {
+    if (!bodyHtml) return "";
+    var open = !!profilesOpen[key];
+    var bodyId = "prof-body-" + key.replace(/[^a-zA-Z0-9_-]/g, "-");
+    return (
+      '<div class="prof' + (open ? " is-open" : "") + '">' +
+      '<button type="button" class="prof-toggle" data-prof-toggle="' + esc(key) + '" ' +
+      'aria-expanded="' + (open ? "true" : "false") + '" aria-controls="' + bodyId + '">' +
+      "<span>" + esc(title) + "</span>" +
+      '<span class="chev" aria-hidden="true"></span>' +
+      "</button>" +
+      '<div class="prof-body" id="' + bodyId + '"' + (open ? "" : " hidden") + ">" +
+      bodyHtml +
+      "</div></div>"
     );
   }
 
@@ -1575,7 +1774,27 @@
     pairs.push(["Weeks", fmt(row.weeks)], ["Games", fmt(row.games)]);
     if (detail && detail.record) pairs.push(["Record", detail.record]);
 
-    box.innerHTML = statBlock(pairs) + weekTableMarkup(detail);
+    var weekPoints = ((detail && detail.weeks) || []).map(function (w) {
+      return { value: w.avg, label: w.label };
+    });
+    box.innerHTML =
+      statBlock(pairs) +
+      profileSection(
+        detailKey(row),
+        "Graph",
+        trendChart(weekPoints, {
+          average: row[teamAvgKey()],
+          leagueAverage: payload.league ? payload.league.league_avg : null,
+          label: "Weekly average by week for " + row.team,
+          decimals: 2
+        })
+      ) +
+      membersSection(
+        detailKey(row) + ":members",
+        "Roster",
+        detail && detail.rosters
+      ) +
+      weekTableMarkup(detail);
   }
 
   function renderPlayerDetail(box, row, detail) {
@@ -1598,17 +1817,35 @@
     }
     if (payload.par_available) pairs.push(["PAR", fmt(row.par)]);
 
+    var seasonTeams = (detail && detail.teams_by_season) || [];
+    var gamePoints = ((detail && detail.games) || []).map(function (g) {
+      return {
+        value: g.score,
+        label: g.label + " G" + g.game,
+        tone: g.game_absent ? "miss" : (g.is_substitute ? "sub" : "")
+      };
+    });
     box.innerHTML =
       statBlock(pairs) +
+      profileSection(
+        detailKey(row),
+        "Graph",
+        trendChart(gamePoints, {
+          average: row.average,
+          leagueAverage: payload.league ? payload.league.league_avg : null,
+          label: "Game scores over the range for " + row.player
+        })
+      ) +
+      // Inside one season this would only repeat the team on the row itself.
+      (seasonTeams.length > 1
+        ? membersSection(detailKey(row) + ":members", "Teams", seasonTeams)
+        : "") +
       gamesMarkup(
         detail ? detail.games : null,
         row.highest_game,
         row.lowest_game,
         detail ? detail.absent_weeks : null
-      ) +
-      '<a class="detail-link" href="/player/' + encodeURIComponent(row.player) +
-      "?season=" + encodeURIComponent("Season " + (isSingle() ? state.week : state.end).season) +
-      '">View player profile</a>';
+      );
   }
 
   function openDetail(li) {
@@ -1624,8 +1861,7 @@
 
     var teams = state.view === "teams";
     var render = teams ? renderTeamDetail : renderPlayerDetail;
-    // Namespaced so a team and a player sharing a name cannot collide.
-    var key = state.view + ":" + id;
+    var key = detailKey(row);
 
     if (detailCache[key]) {
       render(box, row, detailCache[key]);
@@ -1974,6 +2210,7 @@
         showAllRows = false;
         renderSortControl();
         renderHighlights();
+        renderTiles();
         renderBoard();
         syncViewPanels();
         persist();
@@ -2003,7 +2240,40 @@
       persist();
     });
 
+    // Hover for a mouse, tap or keyboard focus for everything else.
+    el.board.addEventListener("mouseover", function (e) {
+      var point = e.target.closest(".prof-point");
+      if (point) showChartTip(point);
+    });
+    el.board.addEventListener("mouseout", function (e) {
+      var point = e.target.closest(".prof-point");
+      if (point) hideChartTip(point.closest(".prof-plot"));
+    });
+    el.board.addEventListener("focusin", function (e) {
+      var point = e.target.closest(".prof-point");
+      if (point) showChartTip(point);
+    });
+    el.board.addEventListener("focusout", function (e) {
+      var point = e.target.closest(".prof-point");
+      if (point) hideChartTip(point.closest(".prof-plot"));
+    });
+
     el.board.addEventListener("click", function (e) {
+      var point = e.target.closest(".prof-point");
+      if (point) {
+        showChartTip(point);
+        return;
+      }
+      var prof = e.target.closest("[data-prof-toggle]");
+      if (prof) {
+        var card = prof.closest(".prof");
+        var profOpen = !card.classList.contains("is-open");
+        card.classList.toggle("is-open", profOpen);
+        prof.setAttribute("aria-expanded", profOpen ? "true" : "false");
+        card.querySelector(".prof-body").hidden = !profOpen;
+        profilesOpen[prof.getAttribute("data-prof-toggle")] = profOpen;
+        return;
+      }
       var btn = e.target.closest(".row-main");
       if (!btn) return;
       toggleRow(btn.closest(".row"));

@@ -92,7 +92,7 @@ def test_whole_week_absence_overrides_per_game_flags():
 def test_build_player_detail_html_chart_shows_miss_indicator():
     html = build_player_detail_html(
         page_title="Alice",
-        subtitle="Alice · Season 9",
+        scope="Season 9",
         team="Team A",
         stats_title="Season stats",
         stat_rows=[("Average", "210.0", "gold")],
@@ -125,7 +125,7 @@ def test_build_player_detail_html_chart_shows_miss_indicator():
 def test_build_player_detail_html_chart_shows_sub_indicator():
     html = build_player_detail_html(
         page_title="Alice",
-        subtitle="Alice · Season 9",
+        scope="Season 9",
         team="Team A",
         stats_title="Season stats",
         stat_rows=[("Average", "210.0", "gold")],
@@ -157,7 +157,7 @@ def test_build_player_detail_html_chart_shows_sub_indicator():
 def test_build_player_detail_html_includes_chart():
     html = build_player_detail_html(
         page_title="Alice",
-        subtitle="Alice · Season 9",
+        scope="Season 9",
         team="Team A",
         stats_title="Season stats",
         stat_rows=[("Average", "200.0", "gold")],
@@ -178,7 +178,7 @@ def test_build_player_detail_html_includes_chart():
 def test_build_player_detail_html_chart_includes_league_avg_line():
     html = build_player_detail_html(
         page_title="Alice",
-        subtitle="Alice · Season 9",
+        scope="Season 9",
         team="Team A",
         stats_title="Season stats",
         stat_rows=[("Average", "200.0", "gold")],

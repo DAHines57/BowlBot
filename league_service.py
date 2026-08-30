@@ -613,7 +613,7 @@ class LeagueService:
             league_summary = self.data.get_league_game_stats(all_time=True)
             return {
                 "page_title": name,
-                "subtitle": f"{name} · All Time",
+                "scope": "All Time",
                 "team": team,
                 "stats_title": "Career stats",
                 "stat_rows": stat_rows,
@@ -657,12 +657,11 @@ class LeagueService:
             stat_rows = None
             empty_message = "No scores for this scope."
         scope = season if season != "all" else ""
-        subtitle = f"{player} · {scope}" if scope else player
         game_history = self.data.get_player_game_history(player, season, limit=30)
         league_summary = self.data.get_league_game_stats(season)
         return {
             "page_title": player,
-            "subtitle": subtitle,
+            "scope": scope,
             "team": team,
             "stats_title": "Season stats",
             "stat_rows": stat_rows,

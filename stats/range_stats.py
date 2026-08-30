@@ -185,6 +185,43 @@ def build_player_accumulators(rows: List[dict]) -> Dict[str, _PlayerAccumulator]
     return acc
 
 
+def _names_by_season(rows: List[dict], name_key: str) -> List[dict]:
+    """Distinct ``name_key`` values per season, oldest season first.
+
+    Used both ways round: the players on a team, and the teams a player was on.
+    A name is flagged ``sub`` only when every row behind it that season was a
+    substitute appearance, which is the same "an appearance is not membership"
+    rule ``build_player_accumulators`` follows. Absences stay in, since a
+    rostered player who sat out is still on the roster.
+    """
+    by_season: Dict[int, Dict[str, dict]] = {}
+    for f in rows:
+        name = str(f.get(name_key) or "").strip()
+        if not name:
+            continue
+        season_num, _ = fact_position(f)
+        entry = by_season.setdefault(season_num, {}).setdefault(
+            name, {"name": name, "sub": True}
+        )
+        if not bool(f.get("substitute")):
+            entry["sub"] = False
+
+    out: List[dict] = []
+    for season_num in sorted(by_season):
+        members = sorted(
+            by_season[season_num].values(),
+            key=lambda m: (m["sub"], m["name"].lower()),
+        )
+        out.append(
+            {
+                "season": season_num,
+                "label": f"Season {season_num}",
+                "members": members,
+            }
+        )
+    return out
+
+
 def _player_rows(rows: List[dict], mode: str) -> List[dict]:
     acc = build_player_accumulators(rows)
 
@@ -462,6 +499,8 @@ def get_range_stats(facts: List[dict], scope: Scope) -> dict:
     players = _player_rows(rows, scope.mode)
     teams = _team_rows(rows)
     league, highlights = _league_and_highlights(rows)
+    # Counted off the finished rows so the tile agrees with the board.
+    league["total_teams"] = len(teams)
     highlights["team_high"] = _team_week_highlight(teams, high=True)
     highlights["team_low"] = _team_week_highlight(teams, high=False)
     highlights["consistent"] = _consistency_highlight(players)
@@ -541,6 +580,7 @@ def get_player_range_detail(
         "summary": detail,
         "games": games,
         "absent_weeks": absent_weeks,
+        "teams_by_season": _names_by_season(rows, "team"),
     }
 
 
@@ -556,7 +596,8 @@ def get_team_range_detail(
     if not target:
         return None
 
-    pins = team_pins_by_week(filter_facts(facts, scope=scope))
+    rows = filter_facts(facts, scope=scope)
+    pins = team_pins_by_week(rows)
     match = None
     for team in pins:
         if canonical_team_name(team).strip().lower() == target:
@@ -588,4 +629,18 @@ def get_team_range_detail(
             }
         )
 
-    return {"team": match, "summary": summary, "weeks": weeks}
+    # team_pins_by_week drops player identity, so the roster comes off the
+    # facts again, keeping only this team's rows.
+    team_rows = [
+        f
+        for f in rows
+        if canonical_team_name(str(f.get("team") or "").strip()).strip().lower()
+        == target
+    ]
+
+    return {
+        "team": match,
+        "summary": summary,
+        "weeks": weeks,
+        "rosters": _names_by_season(team_rows, "player_display_name"),
+    }

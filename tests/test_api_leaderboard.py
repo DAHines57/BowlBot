@@ -298,6 +298,30 @@ def test_player_detail_lists_games(client):
     assert data["summary"]["games"] == 6
 
 
+def test_league_block_carries_the_average_for_chart_reference_lines(client):
+    league = client.get("/api/leaderboard?from=13.1&to=14.1").get_json()["league"]
+    assert league["league_avg"] > 0
+
+
+def test_league_block_counts_teams_for_the_teams_tile(client):
+    data = client.get("/api/leaderboard?from=13.1&to=14.1").get_json()
+    assert data["league"]["total_teams"] == len(data["teams"])
+
+
+def test_player_detail_lists_the_teams_per_season(client):
+    data = client.get("/api/player/Alice?from=13.1&to=14.1").get_json()
+    assert [g["label"] for g in data["teams_by_season"]] == ["Season 13", "Season 14"]
+    assert data["teams_by_season"][0]["members"] == [{"name": "Team A", "sub": False}]
+
+
+def test_team_detail_lists_the_roster_per_season(client):
+    data = client.get("/api/team/Team A?from=13.1&to=14.1").get_json()
+    assert [g["label"] for g in data["rosters"]] == ["Season 13", "Season 14"]
+    assert all(
+        [m["name"] for m in g["members"]] == ["Alice"] for g in data["rosters"]
+    )
+
+
 def test_player_detail_unknown_player_is_404(client):
     assert client.get("/api/player/Nobody").status_code == 404
 

@@ -94,6 +94,10 @@ def test_static_assets_exist_and_are_wired():
     assert "/api/playoffs" in js_text
     # The playoff sections collapse, so the toggle wiring has to be present.
     assert "data-po-toggle" in js_text
+    # Profiles are drawn inline from the range-scoped detail rather than linked
+    # out to the season-only page.
+    assert "data-prof-toggle" in js_text
+    assert '"/player/' not in js_text
 
 
 def test_bracket_routes_are_gone():

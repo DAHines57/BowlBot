@@ -4,7 +4,11 @@ import pytest
 
 from stats.compute import compute_player_par
 from stats.facts import fact_counts_for_stats, filter_facts
-from stats.range_stats import get_player_range_detail, get_range_stats
+from stats.range_stats import (
+    get_player_range_detail,
+    get_range_stats,
+    get_team_range_detail,
+)
 from stats.scope import (
     MODE_CAREER,
     MODE_RANGE,
@@ -412,6 +416,46 @@ def test_sub_games_join_the_roster_average():
     assert alice["sub_games"] == 2
     # The roster team wins over whichever team they filled in for.
     assert alice["team"] == "Team A"
+
+
+def test_membership_lists_tag_a_sub_only_appearance():
+    """An appearance is not membership, so the filled-in team is marked."""
+    facts = [
+        _fact("Alice", 9, 1, games=(200, 200)),
+        _fact("Alice", 9, 2, games=(180, 180), team="Team B", substitute=True),
+        _fact("Bob", 9, 2, games=(190, 190), team="Team B"),
+    ]
+    scope = Scope(start=(9, 1), end=(9, 9))
+
+    seasons = get_player_range_detail(facts, "Alice", scope)["teams_by_season"]
+    assert [g["season"] for g in seasons] == [9]
+    assert seasons[0]["members"] == [
+        {"name": "Team A", "sub": False},
+        {"name": "Team B", "sub": True},
+    ]
+
+    # Same rule from the team's side: Alice only filled in for Team B.
+    rosters = get_team_range_detail(facts, "Team B", scope)["rosters"]
+    assert rosters[0]["members"] == [
+        {"name": "Bob", "sub": False},
+        {"name": "Alice", "sub": True},
+    ]
+
+
+def test_rosters_are_grouped_by_season_and_exclude_other_teams():
+    facts = [
+        _fact("Alice", 9, 1, games=(200, 200)),
+        _fact("Bob", 9, 1, games=(190, 190)),
+        _fact("Cara", 10, 1, games=(180, 180)),
+        _fact("Dan", 10, 1, games=(170, 170), team="Team B"),
+    ]
+    rosters = get_team_range_detail(
+        facts, "Team A", Scope(start=(9, 1), end=(10, 9))
+    )["rosters"]
+
+    assert [g["label"] for g in rosters] == ["Season 9", "Season 10"]
+    assert [m["name"] for m in rosters[0]["members"]] == ["Alice", "Bob"]
+    assert [m["name"] for m in rosters[1]["members"]] == ["Cara"]
 
 
 def test_sub_row_seen_first_does_not_claim_the_roster_team():

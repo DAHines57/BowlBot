@@ -1280,33 +1280,122 @@ _HIGHLIGHTS_CSS = """
 }
 """
 
+# Mirrors the :root block in static/app.css so the pages that opt into it read
+# as part of the unified app. Keep the two in step when a token changes.
+_APP_TOKENS_CSS = """
+:root {
+  --bg: #12101a;
+  --bg-elevated: #16121f;
+  --card: #1a1730;
+  --card-hi: #201c3a;
+  --border: #2a2050;
+  --border-soft: #241d45;
+  --text: #e8e6ef;
+  --muted: #9a96a8;
+  --muted-dim: #6f6b80;
+
+  --accent: #ffb86c;
+  --mint: #50fa7b;
+  --rose: #ff6b81;
+  --violet: #bd93f9;
+
+  --good-bg: rgba(80, 250, 123, 0.07);
+  --good-border: rgba(80, 250, 123, 0.45);
+  --bad-bg: rgba(255, 107, 129, 0.07);
+  --bad-border: rgba(255, 107, 129, 0.45);
+  --accent-bg: rgba(255, 184, 108, 0.08);
+  --accent-border: rgba(255, 184, 108, 0.45);
+
+  --shadow: rgba(0, 0, 0, 0.35);
+  --radius: 14px;
+  --radius-sm: 10px;
+  --radius-pill: 999px;
+
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+"""
+
 _PLAYER_DETAIL_CSS_EXTRA = """
-.player-detail-team { font-size: 15px; font-weight: 600; color: #fff; line-height: 1.45; }
-.player-stat-rows { border: 1px solid #2a2050; border-radius: 2px; overflow: hidden; }
+body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+}
+/* Left-aligned like the panel headings on the app page. */
+.header { margin-bottom: 1.1rem; text-align: left; }
+.header .title {
+    font-size: 1.5rem;
+    letter-spacing: 0.04em;
+    color: var(--accent);
+}
+.header .subtitle {
+    margin-top: 0.35rem;
+    font-size: 0.86rem;
+    color: var(--muted);
+}
+.player-scope { color: var(--muted-dim); }
+.player-team { font-weight: 700; }
+
+.section-title {
+    font-size: 0.76rem;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border-soft);
+    padding-bottom: 0.4rem;
+    margin-bottom: 0.6rem;
+}
+
+/* Same shape as the .detail-grid tiles inside an expanded row on the app page. */
+.player-stat-rows {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+    gap: 0.5rem;
+}
 .player-stat-row {
-    display: flex; justify-content: space-between; align-items: baseline; gap: 16px;
-    padding: 10px 12px; border-bottom: 1px solid #2a2050; background: #16132a;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+    padding: 0.55rem 0.5rem;
+    background: var(--card);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-sm);
+    text-align: center;
 }
-.player-stat-row:last-child { border-bottom: none; }
-.player-stat-row:nth-child(even) { background: #1a1730; }
 .player-stat-label {
-    font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: #888; flex-shrink: 0;
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--muted-dim);
 }
-.player-stat-val { font-size: 15px; font-weight: 700; color: #ddd; text-align: right; }
-.player-stat-val--gold { color: #ffb86c; }
-.player-stat-val--green { color: #50fa7b; }
-.player-stat-val--muted { color: #888; font-weight: 600; }
+.player-stat-val {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+}
+.player-stat-val--gold { color: var(--accent); }
+.player-stat-val--green { color: var(--mint); }
+.player-stat-val--muted { color: var(--muted); }
 .player-empty {
-    margin: 0; padding: 12px; color: #888; font-size: 13px; line-height: 1.5;
-    background: #16132a; border: 1px solid #2a2050; border-radius: 2px;
+    margin: 0;
+    padding: 0.75rem 0.85rem;
+    color: var(--muted);
+    font-size: 0.85rem;
+    line-height: 1.5;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
 }
 .player-chart-wrap {
     position: relative;
     overflow: visible;
-    background: #16132a;
-    border: 1px solid #2a2050;
-    border-radius: 6px;
-    padding: 10px 8px 6px 8px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.7rem 0.6rem 0.4rem;
 }
 .player-chart-tip {
     position: absolute;
@@ -1316,11 +1405,11 @@ _PLAYER_DETAIL_CSS_EXTRA = """
     min-width: 128px;
     max-width: calc(100% - 16px);
     box-sizing: border-box;
-    padding: 9px 12px 10px 12px;
-    background: linear-gradient(180deg, #2a2448 0%, #1a1730 100%);
-    border: 1px solid #6a5f9e;
-    border-radius: 8px;
-    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+    padding: 0.55rem 0.75rem 0.6rem;
+    background: var(--card-hi);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 10px 28px var(--shadow);
     text-align: center;
     line-height: 1.35;
 }
@@ -1328,44 +1417,44 @@ _PLAYER_DETAIL_CSS_EXTRA = """
 .player-chart-tip-score {
     font-size: 1.45rem;
     font-weight: 800;
-    color: #ffb86c;
+    color: var(--accent);
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.02em;
 }
 .player-chart-tip-meta {
     margin-top: 3px;
-    font-size: 10px;
-    color: #9a94b0;
+    font-size: 0.62rem;
+    color: var(--muted);
     letter-spacing: 0.03em;
 }
 .player-chart-tip-vs {
     display: inline-block;
     margin-top: 5px;
-    padding: 2px 7px;
-    border-radius: 4px;
-    font-size: 10px;
+    padding: 0.1rem 0.45rem;
+    border-radius: var(--radius-pill);
+    font-size: 0.62rem;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
 }
 .player-chart-tip-vs--up {
-    color: #7bf5a8;
-    background: rgba(80, 250, 123, 0.14);
-    border: 1px solid rgba(80, 250, 123, 0.35);
+    color: var(--mint);
+    background: var(--good-bg);
+    border: 1px solid var(--good-border);
 }
 .player-chart-tip-vs--down {
-    color: #ff9aaa;
-    background: rgba(255, 107, 129, 0.12);
-    border: 1px solid rgba(255, 107, 129, 0.32);
+    color: var(--rose);
+    background: var(--bad-bg);
+    border: 1px solid var(--bad-border);
 }
 .player-chart-point { cursor: pointer; }
 .player-chart-point:focus { outline: none; }
 .player-chart-point:focus-visible .player-chart-dot {
-    stroke: #ffb86c;
+    stroke: var(--accent);
     stroke-width: 2;
 }
 .player-chart-point--active .player-chart-dot {
-    fill: #7bf5a8;
-    stroke: #ffb86c;
+    fill: var(--mint);
+    stroke: var(--accent);
     stroke-width: 2;
     transform: scale(1.45);
     transform-box: fill-box;
@@ -1373,53 +1462,56 @@ _PLAYER_DETAIL_CSS_EXTRA = """
 }
 .player-chart-hit { fill: transparent; stroke: none; pointer-events: all; }
 .player-chart-caption {
-    margin: 0 0 8px 0;
-    font-size: 11px;
-    color: #8b849c;
+    margin: 0 0 0.5rem;
+    font-size: 0.7rem;
+    color: var(--muted);
     line-height: 1.4;
 }
-.player-chart-caption strong { color: #ffb86c; font-weight: 700; }
+.player-chart-caption strong { color: var(--accent); font-weight: 700; }
 .player-chart {
     display: block;
     width: 100%;
     max-width: 100%;
     height: auto;
 }
-.player-chart-grid { stroke: #2a2445; stroke-width: 1; }
-.player-chart-axis { fill: #6d6785; font-size: 9px; font-family: inherit; }
-.player-chart-line { fill: none; stroke: #ffb86c; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.player-chart-grid { stroke: var(--border); stroke-width: 1; }
+.player-chart-axis { fill: var(--muted-dim); font-size: 9px; font-family: inherit; }
+.player-chart-line {
+    fill: none; stroke: var(--accent); stroke-width: 2;
+    stroke-linejoin: round; stroke-linecap: round;
+}
 .player-chart-avg {
-    stroke: #7c6ec4; stroke-width: 1.25; stroke-dasharray: 5 4; opacity: 0.9;
+    stroke: var(--violet); stroke-width: 1.25; stroke-dasharray: 5 4; opacity: 0.9;
 }
 .player-chart-league-avg {
-    stroke: #6ec4e8; stroke-width: 1.25; stroke-dasharray: 3 4; opacity: 0.85;
+    stroke: var(--muted-dim); stroke-width: 1.25; stroke-dasharray: 3 4; opacity: 0.9;
 }
-.player-chart-dot { fill: #50fa7b; stroke: #0d0c14; stroke-width: 1; pointer-events: none; }
-.player-chart-point--sub .player-chart-dot { fill: #50fa7b; stroke: #2d6a4a; stroke-width: 2; }
-.player-chart-point--miss .player-chart-dot { fill: #ff6b81; stroke: #6a2d38; stroke-width: 2; }
-.player-chart-tip-miss {
-    display: inline-block;
-    margin-left: 4px;
-    background: #2e1a1f;
-    color: #ff6b81;
-    font-size: 9px;
-    font-weight: 700;
-    padding: 1px 5px;
-    border-radius: 3px;
-    letter-spacing: 0.08em;
-    vertical-align: middle;
+/* The dot outline is the page background, so points read as lifted off the line. */
+.player-chart-dot { fill: var(--mint); stroke: var(--bg); stroke-width: 1; pointer-events: none; }
+.player-chart-point--sub .player-chart-dot { stroke: var(--good-border); stroke-width: 2; }
+.player-chart-point--miss .player-chart-dot {
+    fill: var(--rose); stroke: var(--bad-border); stroke-width: 2;
 }
+.player-chart-tip-miss,
 .player-chart-tip-sub {
     display: inline-block;
     margin-left: 4px;
-    background: #1a2e2a;
-    color: #50fa7b;
-    font-size: 9px;
+    font-size: 0.6rem;
     font-weight: 700;
-    padding: 1px 5px;
-    border-radius: 3px;
+    padding: 0.05rem 0.4rem;
+    border-radius: var(--radius-pill);
     letter-spacing: 0.08em;
     vertical-align: middle;
+}
+.player-chart-tip-miss {
+    background: var(--bad-bg);
+    border: 1px solid var(--bad-border);
+    color: var(--rose);
+}
+.player-chart-tip-sub {
+    background: var(--good-bg);
+    border: 1px solid var(--good-border);
+    color: var(--mint);
 }
 """
 
@@ -1877,7 +1969,7 @@ def _player_game_chart_html(
 def build_player_detail_html(
     *,
     page_title: str,
-    subtitle: str,
+    scope: str,
     team: str,
     stats_title: str,
     stat_rows: Optional[List[Tuple[str, str, str]]] = None,
@@ -1886,11 +1978,13 @@ def build_player_detail_html(
     chart_scope: str = "",
     league_avg: Optional[float] = None,
 ) -> str:
-    """Single-player lookup: same header/section styling as list pages (players, teams, leaders)."""
-    sub_esc = html_module.escape(subtitle)
+    """Single-player lookup, styled with the unified app's tokens and card shapes."""
     team_esc = html_module.escape(team)
     tstyle = _team_color_style(team)
-    team_inner = f'<span style="{tstyle}">{team_esc}</span>'
+    # The name is the page heading, so the subtitle carries the team and scope.
+    subtitle = f'<span class="player-team" style="{tstyle}">{team_esc}</span>'
+    if scope:
+        subtitle += f' <span class="player-scope">&middot; {html_module.escape(scope)}</span>'
 
     stats_body = ""
     if empty_message:
@@ -1916,10 +2010,6 @@ def build_player_detail_html(
 
     sections = f"""
     <div class="section">
-      <div class="section-title">Team</div>
-      <div class="player-detail-team">{team_inner}</div>
-    </div>
-    <div class="section">
       <div class="section-title">{html_module.escape(stats_title)}</div>
       {stats_body}
     </div>
@@ -1928,9 +2018,9 @@ def build_player_detail_html(
       {_player_game_chart_html(game_history or [], chart_scope=chart_scope, league_avg=league_avg)}
     </div>
     """
-    css = _LIST_CSS + _PLAYER_DETAIL_CSS_EXTRA
-    doc = _render_list_page(css=css, title="👤 PLAYER", subtitle=sub_esc, sections=sections)
+    css = _LIST_CSS + _APP_TOKENS_CSS + _PLAYER_DETAIL_CSS_EXTRA
     title_esc = html_module.escape(page_title)
+    doc = _render_list_page(css=css, title=title_esc, subtitle=subtitle, sections=sections)
     doc = doc.replace(
         '<head><meta charset="UTF-8"><style>',
         f'<head><meta charset="UTF-8"><title>{title_esc}</title><style>',
