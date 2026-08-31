@@ -1781,131 +1781,187 @@
     );
   }
 
-  /* A table row cannot be a button, so the open state lives on the row itself
-   * and its games row is found by key within the same table. */
-  function toggleWeekRow(row) {
-    var key = row.getAttribute("data-wk-toggle");
-    var table = row.closest(".wk-table");
-    if (!table) return;
-    var games = table.querySelector('[data-wk-games="' + key + '"]');
+  function toggleWeekRow(head) {
+    var block = head.closest(".wk-block");
+    if (!block) return;
+    var games = block.querySelector("[data-wk-games]");
     if (!games) return;
-    var open = !row.classList.contains("is-open");
-    row.classList.toggle("is-open", open);
-    row.setAttribute("aria-expanded", open ? "true" : "false");
+    var open = !block.classList.contains("is-open");
+    block.classList.toggle("is-open", open);
+    head.setAttribute("aria-expanded", open ? "true" : "false");
     games.hidden = !open;
   }
 
-  /* The week's games side by side with the opponent's, the way the old weekly
-   * results screen read. Lives in a row of its own that the week toggles. */
+  /* One bowler's line: their name, then a cell per game slot. Missed games and
+   * sub appearances keep the same marks the score chips use elsewhere. */
+  function bowlerLine(p, slots) {
+    var tags = "";
+    if (p.is_substitute) {
+      tags += '<span class="wk-tag wk-tag--sub">' +
+        esc(p.sub_for ? "sub for " + p.sub_for : "sub") + "</span>";
+    }
+    if (p.absent || p.subbed_out) {
+      tags += '<span class="wk-tag wk-tag--miss">abs</span>';
+    }
+
+    var cells = "";
+    for (var i = 0; i < slots; i++) {
+      var score = (p.games || [])[i];
+      var missed = ((p.game_absent || [])[i]) === true;
+      var cls = "bwl-g";
+      if (missed) cls += " bwl-g--miss";
+      cells += '<span class="' + cls + '"' +
+        (missed ? ' title="Missed game, book average taken"' : "") + ">" +
+        (score === null || score === undefined ? "\u2014" : fmt(score)) +
+        "</span>";
+    }
+
+    return (
+      '<div class="bwl' + (p.counts ? "" : " bwl--nocount") + '">' +
+      '<span class="bwl-name">' + esc(p.name || "") + tags + "</span>" +
+      cells + "</div>"
+    );
+  }
+
+  /* One team's bowlers, counting scores first: a name below the divider did not
+   * feed the team's pins, so mixing the two would read as an error. */
+  function sideBlock(side, slots, color, pins, oursKey) {
+    if (!side) return "";
+    var players = (side.players || []).slice();
+    var counting = players.filter(function (p) { return p.counts; });
+    var rest = players.filter(function (p) { return !p.counts; });
+    var byName = function (a, b) {
+      return String(a.name || "").localeCompare(String(b.name || ""));
+    };
+    counting.sort(byName);
+    rest.sort(byName);
+
+    var heads = '<span class="bwl-name"></span>';
+    for (var i = 0; i < slots; i++) {
+      heads += '<span class="bwl-g bwl-g--head">G' + (i + 1) + "</span>";
+    }
+
+    var totals = '<span class="bwl-name">Total</span>';
+    for (var s = 0; s < slots; s++) {
+      var g = (pins || [])[s] || {};
+      var ourSide = oursKey === "ours";
+      var mine = ourSide ? g.pins : g.opp_pins;
+      // Only the expanded team's row is tinted, so a colour always speaks for
+      // the team you opened rather than whoever it happened to be playing.
+      var tone = "";
+      if (ourSide && g.result === "W") tone = " fig-good";
+      else if (ourSide && g.result === "L") tone = " fig-bad";
+      totals += '<span class="bwl-g' + tone + '">' +
+        (mine ? fmt(mine) : "\u2014") + "</span>";
+    }
+
+    var tint = color ? ' style="color:' + esc(color) + '"' : "";
+    return (
+      '<div class="bwl-side">' +
+      '<div class="bwl-team"' + tint + ">" + esc(side.name || "") + "</div>" +
+      '<div class="bwl-grid" style="--bwl-games:' + slots + '">' +
+      '<div class="bwl bwl--head">' + heads + "</div>" +
+      counting.map(function (p) { return bowlerLine(p, slots); }).join("") +
+      (rest.length ? '<div class="bwl-div"></div>' : "") +
+      rest.map(function (p) { return bowlerLine(p, slots); }).join("") +
+      '<div class="bwl bwl--total">' + totals + "</div>" +
+      "</div></div>"
+    );
+  }
+
+  /* Both rosters game by game, the way the old weekly results screen read. */
   function weekGamesBody(week, ourColor) {
+    var m = week.matchup;
+    if (!m || !m.ours || !m.theirs) return "";
     var pins = week.game_pins || [];
-    if (!pins.length) return "";
-    var ours = ourColor ? ' style="color:' + esc(ourColor) + '"' : "";
-    var theirs = week.opponent_color
-      ? ' style="color:' + esc(week.opponent_color) + '"'
-      : "";
 
-    var lines = pins.map(function (g, i) {
-      var mark = g.result
-        ? '<span class="wk-game-mark wk-game-mark--' + esc(g.result.toLowerCase()) +
-          '">' + esc(g.result) + "</span>"
-        : '<span class="wk-game-mark"></span>';
-      return (
-        '<div class="wk-game">' +
-        '<span class="wk-game-n">G' + (i + 1) + "</span>" +
-        '<span class="wk-game-pins"' + ours + ">" + fmt(g.pins) + "</span>" +
-        '<span class="wk-game-sep" aria-hidden="true">\u2013</span>' +
-        '<span class="wk-game-pins"' + theirs + ">" +
-        (g.opp_pins ? fmt(g.opp_pins) : "\u2014") + "</span>" +
-        mark +
-        "</div>"
-      );
+    var slots = pins.length;
+    [m.ours, m.theirs].forEach(function (side) {
+      (side.players || []).forEach(function (p) {
+        (p.games || []).forEach(function (g, i) {
+          if (g !== null && g !== undefined && i + 1 > slots) slots = i + 1;
+        });
+      });
     });
+    if (!slots) return "";
 
-    var total = pins.reduce(function (a, g) { return a + (g.pins || 0); }, 0);
-    var oppTotal = pins.reduce(function (a, g) { return a + (g.opp_pins || 0); }, 0);
-    lines.push(
-      '<div class="wk-game wk-game--total">' +
-      '<span class="wk-game-n">Total</span>' +
-      '<span class="wk-game-pins"' + ours + ">" + fmt(total) + "</span>" +
-      '<span class="wk-game-sep" aria-hidden="true">\u2013</span>' +
-      '<span class="wk-game-pins"' + theirs + ">" +
-      (oppTotal ? fmt(oppTotal) : "\u2014") + "</span>" +
-      '<span class="wk-game-mark"></span>' +
+    return (
+      '<div class="wk-games">' +
+      sideBlock(m.ours, slots, ourColor, pins, "ours") +
+      sideBlock(m.theirs, slots, week.opponent_color, pins, "theirs") +
       "</div>"
     );
-    return '<div class="wk-games">' + lines.join("") + "</div>";
   }
 
   /* Opponents and W-L only exist inside a single season, so a cross-season
-   * range falls back to pins-only columns. */
+   * range falls back to pins-only columns.
+   *
+   * A grid rather than a table: the week head and its expansion are siblings in
+   * one block, so nothing has to keep a colspan in step with which columns the
+   * narrow layout leaves standing. */
   function weekTableMarkup(detail) {
     if (!detail || !detail.weeks || !detail.weeks.length) return "";
     var records = !!detail.records_available;
 
-    var head = records
+    var heads = records
       ? ["Wk", "Opponent", "W-L", "Games", "Avg"]
       : ["Wk", "Pins", "Games", "Avg"];
 
-    var body = detail.weeks
-      .map(function (w, idx) {
+    var blocks = detail.weeks
+      .map(function (w) {
         var games = records ? weekGamesBody(w, detail.color) : "";
-        var key = "wk-" + idx;
+        var style = records && w.opponent_color
+          ? ' style="color:' + w.opponent_color + '"'
+          : "";
+
         var cells = [
-          '<td class="wk-wk">' + esc(w.label) +
-          (games ? '<span class="chev" aria-hidden="true"></span>' : "") +
-          "</td>"
+          '<span class="wk-c wk-wk">' + esc(w.label) +
+          (games ? '<span class="chev" aria-hidden="true"></span>' : "") + "</span>"
         ];
-        var style = "";
         if (records) {
-          style = w.opponent_color ? ' style="color:' + w.opponent_color + '"' : "";
           var rec = (w.wins || 0) + "-" + (w.losses || 0) + (w.ties ? "-" + w.ties : "");
-          var recCls = "wk-rec";
+          var recCls = "wk-c wk-rec";
           if ((w.wins || 0) > (w.losses || 0)) recCls += " fig-good";
           else if ((w.wins || 0) < (w.losses || 0)) recCls += " fig-bad";
           cells.push(
-            '<td class="wk-opp"' + style + ">" + esc(w.opponent || "\u2014") + "</td>",
-            '<td class="' + recCls + '">' + esc(rec) + "</td>",
-            '<td class="wk-num">' + fmt(w.games) + "</td>"
+            '<span class="wk-c wk-opp"' + style + ">" +
+            esc(w.opponent || "\u2014") + "</span>",
+            '<span class="' + recCls + '">' + esc(rec) + "</span>",
+            '<span class="wk-c wk-num">' + fmt(w.games) + "</span>"
           );
         } else {
           cells.push(
-            '<td class="wk-num">' + fmt(w.pins) + "</td>",
-            '<td class="wk-num">' + fmt(w.games) + "</td>"
+            '<span class="wk-c wk-num">' + fmt(w.pins) + "</span>",
+            '<span class="wk-c wk-num">' + fmt(w.games) + "</span>"
           );
         }
-        cells.push('<td class="wk-num wk-avg">' + fmt(w.avg, 2) + "</td>");
+        cells.push('<span class="wk-c wk-num wk-avg">' + fmt(w.avg, 2) + "</span>");
 
-        // Narrow screens leave the opponent column no usable width, so the name
-        // also rides on its own full-width line that CSS swaps in there. The
-        // span counts only the columns visible at that width: a colspan past
-        // the column count makes the browser widen the table for that row.
-        var oppRow = records
-          ? '<tr class="wk-opp-row"><td class="wk-opp-line" colspan="' +
-            (head.length - 1) + '"' + style + ">" +
-            esc(w.opponent ? "vs " + w.opponent : "\u2014") + "</td></tr>"
-          : "";
-        var gamesRow = games
-          ? '<tr class="wk-games-row" data-wk-games="' + key + '" hidden>' +
-            '<td colspan="' + head.length + '">' + games + "</td></tr>"
-          : "";
         var attrs = games
-          ? ' class="wk-row wk-row--open-able" data-wk-toggle="' + key +
-            '" role="button" tabindex="0" aria-expanded="false"'
-          : ' class="wk-row"';
-        return "<tr" + attrs + ">" + cells.join("") + "</tr>" + oppRow + gamesRow;
+          ? ' class="wk-head wk-head--open-able" data-wk-toggle="1"' +
+            ' role="button" tabindex="0" aria-expanded="false"'
+          : ' class="wk-head"';
+        return (
+          '<div class="wk-block">' +
+          "<div" + attrs + ">" + cells.join("") + "</div>" +
+          (games
+            ? '<div class="wk-games-wrap" data-wk-games="1" hidden>' + games + "</div>"
+            : "") +
+          "</div>"
+        );
       })
       .join("");
 
     return (
-      '<table class="wk-table"><thead><tr>' +
-      head
+      '<div class="wk-list' + (records ? " wk-list--records" : "") + '">' +
+      '<div class="wk-head wk-head--labels">' +
+      heads
         .map(function (h) {
-          return '<th class="wk-h-' + h.toLowerCase().replace(/[^a-z0-9]/g, "") + '">' +
-            esc(h) + "</th>";
+          return '<span class="wk-c wk-h-' +
+            h.toLowerCase().replace(/[^a-z0-9]/g, "") + '">' + esc(h) + "</span>";
         })
         .join("") +
-      "</tr></thead><tbody>" + body + "</tbody></table>"
+      "</div>" + blocks + "</div>"
     );
   }
 

@@ -1283,7 +1283,12 @@ a { color: var(--accent); }
   cursor: pointer;
 }
 .prof.is-open .prof-toggle { color: var(--accent); }
-.prof.is-open .chev { transform: rotate(180deg); border-top-color: var(--accent); }
+/* The section's own chevron only: its body holds collapsible weeks with
+ * chevrons of their own, and they answer to their own open state. */
+.prof.is-open > .prof-toggle > .chev {
+  transform: rotate(180deg);
+  border-top-color: var(--accent);
+}
 
 .prof-body {
   padding: 0.55rem 0.5rem 0.35rem;
@@ -1548,132 +1553,153 @@ a { color: var(--accent); }
 .week-line--absent { grid-template-columns: 4.5rem auto; }
 .week-line-note { color: var(--rose); font-size: 0.75rem; }
 
-/* Team expansion: one row per week, opponent and W-L only when the range
- * sits inside a single season. */
-.wk-table {
-  width: 100%;
-  border-collapse: collapse;
+/* Team expansion: one block per week, opponent and W-L only when the range
+ * sits inside a single season. A grid rather than a table, so a week and its
+ * expansion are siblings and no colspan has to track the visible columns. */
+.wk-list {
   margin-bottom: 0.85rem;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
   overflow: hidden;
   font-size: 0.8rem;
   font-variant-numeric: tabular-nums;
-  table-layout: fixed;
 }
 
-.wk-table th {
-  padding: 0.3rem 0.5rem;
+.wk-head {
+  display: grid;
+  grid-template-columns: 4.6rem minmax(0, 1fr) 3.4rem 4.2rem 4.6rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
   background: var(--card);
+  border-top: 1px solid var(--border-soft);
+}
+/* Without a matchup there is no opponent or record to place. */
+.wk-list:not(.wk-list--records) .wk-head {
+  grid-template-columns: 4.6rem minmax(0, 1fr) 4.2rem 4.6rem;
+}
+
+.wk-block:first-of-type .wk-head { border-top: none; }
+
+.wk-head--labels {
+  border-top: none;
   border-bottom: 1px solid var(--border-soft);
   font-size: 0.64rem;
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--muted-dim);
-  text-align: right;
-  white-space: nowrap;
 }
 
-.wk-table td {
-  padding: 0.35rem 0.5rem;
-  background: var(--card);
-  border-top: 1px solid var(--border-soft);
-  text-align: right;
-  white-space: nowrap;
-}
+.wk-c { text-align: right; white-space: nowrap; }
+.wk-h-wk,
+.wk-h-opponent,
+.wk-h-wl,
+.wk-wk,
+.wk-opp,
+.wk-rec { text-align: left; }
 
-/* table-layout: fixed sizes columns from the header row, so the widths live on
- * the th. Opponent is left unsized to soak up the remaining space. */
-.wk-table .wk-h-wk { width: 4.6rem; }
-.wk-table .wk-h-wl { width: 3.4rem; }
-.wk-table .wk-h-pins,
-.wk-table .wk-h-games { width: 4.2rem; }
-.wk-table .wk-h-avg { width: 4.6rem; }
-
-.wk-table .wk-h-g1,
-.wk-table .wk-h-g2,
-.wk-table .wk-h-g3,
-.wk-table .wk-h-g4,
-.wk-table .wk-h-g5 { width: 3.4rem; }
-
-.wk-table .wk-h-wk,
-.wk-table .wk-h-opponent,
-.wk-table .wk-h-wl,
-.wk-table td.wk-wk,
-.wk-table td.wk-opp,
-.wk-table td.wk-rec { text-align: left; }
-
-.wk-table td.wk-wk { color: var(--muted); }
-.wk-table td.wk-avg { font-weight: 700; }
-
-/* A week opens into its games against the opponent. */
-.wk-row--open-able { cursor: pointer; }
-.wk-row--open-able:hover { background: var(--card-hi); }
-.wk-row .wk-wk .chev { margin-left: 0.3rem; vertical-align: middle; }
-.wk-row.is-open .wk-wk .chev { transform: rotate(180deg); }
-
-.wk-games-row[hidden] { display: none; }
-.wk-games-row > td { border-top: none; padding-top: 0; }
-
-.wk-games {
-  display: grid;
-  gap: 0.15rem;
-  padding: 0.15rem 0 0.35rem;
-}
-
-.wk-game {
-  display: grid;
-  grid-template-columns: 2.6rem 3.4rem 0.8rem 3.4rem 1.2rem;
+/* Flex so the chevron can sit against the column's right edge rather than
+ * trailing the label, whose width varies between W1 and W10. */
+.wk-wk {
+  display: flex;
   align-items: center;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
+  color: var(--muted);
 }
-
-.wk-game-n { text-align: left; color: var(--muted-dim); font-size: 0.92em; }
-.wk-game-pins { font-weight: 600; }
-.wk-game-sep { color: var(--muted-dim); text-align: center; }
-.wk-game-mark { text-align: center; font-size: 0.85em; font-weight: 700; }
-.wk-game-mark--w { color: var(--good-border); }
-.wk-game-mark--l { color: var(--bad-border); }
-
-.wk-game--total {
-  margin-top: 0.15rem;
-  padding-top: 0.2rem;
-  border-top: 1px solid var(--border-soft);
-}
-.wk-game--total .wk-game-n { text-transform: uppercase; font-size: 0.8em; }
+.wk-avg { font-weight: 700; }
 
 /* Long team names ellipsis rather than wrap. */
-.wk-table td.wk-opp {
+.wk-opp {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* Wide enough for the opponent column, so the stacked line stays out. */
-.wk-table .wk-opp-row { display: none; }
+.wk-head--open-able { cursor: pointer; }
+.wk-head--open-able:hover { background: var(--card-hi); }
+.wk-head .chev { margin-left: auto; }
+.wk-block.is-open .wk-head .chev {
+  transform: rotate(180deg);
+  border-top-color: var(--accent);
+}
+
+/* Both rosters, game by game. */
+.wk-games-wrap[hidden] { display: none; }
+
+.wk-games {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.1rem 0.5rem 0.6rem;
+  background: var(--card);
+}
+
+.bwl-team {
+  margin-bottom: 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.bwl-grid { display: grid; gap: 1px; }
+
+.bwl {
+  display: grid;
+  /* Name takes what is left; every game slot gets the same width. */
+  grid-template-columns: minmax(0, 1fr) repeat(var(--bwl-games, 4), 2.9rem);
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.76rem;
+}
+
+.bwl-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bwl-g { text-align: right; font-variant-numeric: tabular-nums; }
+.bwl-g--head {
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-dim);
+}
+.bwl-g--miss { color: var(--muted-dim); text-decoration: line-through; }
+
+.bwl--head .bwl-name { color: var(--muted-dim); }
+/* Their scores did not feed the team's pins, so they read as an aside. */
+.bwl--nocount { color: var(--muted-dim); }
+
+.bwl-div {
+  height: 1px;
+  margin: 0.2rem 0;
+  background: var(--border-soft);
+}
+
+.bwl--total {
+  margin-top: 0.2rem;
+  padding-top: 0.25rem;
+  border-top: 1px solid var(--border-soft);
+  font-weight: 700;
+}
+.bwl--total .bwl-name {
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-dim);
+}
 
 @media (max-width: 479px) {
-  .wk-table { font-size: 0.74rem; }
-  .wk-table th, .wk-table td { padding: 0.3rem 0.35rem; }
-  .wk-table .wk-h-wk { width: 4.6rem; }
-  .wk-table .wk-h-pins,
-  .wk-table .wk-h-games { width: 3.5rem; }
-  .wk-table .wk-h-avg { width: 3.9rem; }
-
-  /* The column has no room left here, so the name moves to a full-width line
-   * that reads as a continuation of the week above it. The line's colspan is
-   * built from how many columns these rules leave standing, so keep the two in
-   * step when adding or hiding a column. */
-  .wk-table .wk-h-opponent,
-  .wk-table td.wk-opp { display: none; }
-  .wk-table .wk-opp-row { display: table-row; }
-  .wk-table td.wk-opp-line {
-    border-top: none;
-    padding-top: 0;
-    text-align: left;
-    font-size: 0.92em;
+  .wk-list { font-size: 0.74rem; }
+  .wk-head {
+    gap: 0.35rem;
+    padding: 0.3rem 0.35rem;
+    grid-template-columns: 4.3rem minmax(0, 1fr) 3rem 3.2rem 3.9rem;
   }
+  .wk-list:not(.wk-list--records) .wk-head {
+    grid-template-columns: 4.3rem minmax(0, 1fr) 3.2rem 3.9rem;
+  }
+  .bwl { grid-template-columns: minmax(0, 1fr) repeat(var(--bwl-games, 4), 2.5rem); }
 }
 
 .games-group { margin-bottom: 0.6rem; }

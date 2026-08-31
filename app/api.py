@@ -332,8 +332,79 @@ def _week_game_pins(info: dict) -> list:
     return out
 
 
-def _merge_week_records(detail: dict, *, per_game: bool) -> bool:
-    """Layer opponent and W-L onto each week row. ``True`` when any merged.
+def _matchup_player(p: dict) -> dict:
+    """One bowler's line in a week's matchup.
+
+    ``counts`` collapses the three ways a row can be discounted from team pins,
+    matching the rule the weekly results screen used: a bowler who was replaced
+    by a counting substitute never counts, a substitute counts only when their
+    scores were set to, and everyone else counts.
+    """
+    if p.get("subbed_out"):
+        counts = False
+    elif p.get("is_substitute"):
+        counts = bool(p.get("scores_count"))
+    else:
+        counts = True
+    return {
+        "name": p.get("name"),
+        "games": list(p.get("games") or []),
+        "game_absent": list(p.get("game_absent") or []),
+        "is_substitute": bool(p.get("is_substitute")),
+        "sub_for": p.get("sub_for"),
+        "absent": bool(p.get("absent")),
+        "subbed_out": bool(p.get("subbed_out")),
+        "counts": counts,
+    }
+
+
+def _week_matchup(team: str, season_num: int, week: int, cache: dict) -> Optional[dict]:
+    """Both sides' bowlers for one team-week, or ``None`` for a bye.
+
+    ``get_week_matchups`` resolves the whole league's week at once, which is the
+    only place per-bowler game slots are assembled, so the result is cached per
+    week for the length of the request rather than recomputed per row.
+    """
+    svc = _svc()
+    getter = getattr(svc.data, "get_week_matchups", None) if svc else None
+    if not callable(getter):
+        return None
+
+    key = (season_num, week)
+    if key not in cache:
+        cache[key] = getter(week, compute.season_label(season_num))
+    data = cache[key]
+    if not data:
+        return None
+
+    for m in data.get("matchups") or []:
+        home = m.get("home") or {}
+        away = m.get("away") or {}
+        if home.get("name") == team:
+            ours, theirs = home, away
+        elif away.get("name") == team:
+            ours, theirs = away, home
+        else:
+            continue
+        if not theirs.get("name"):
+            return None
+        return {
+            "ours": {
+                "name": ours.get("name"),
+                "players": [_matchup_player(p) for p in ours.get("players") or []],
+            },
+            "theirs": {
+                "name": theirs.get("name"),
+                "players": [_matchup_player(p) for p in theirs.get("players") or []],
+            },
+        }
+    return None
+
+
+def _merge_week_records(detail: dict) -> bool:
+    """Layer opponent, W-L, and the week's matchup onto each week row.
+
+    ``True`` when any merged.
 
     Matchups are per-season, so the weeks are grouped by the season they came
     from and looked up a season at a time. A team absent from one season of the
@@ -347,6 +418,7 @@ def _merge_week_records(detail: dict, *, per_game: bool) -> bool:
 
     seasons = sorted({w["season"] for w in detail["weeks"] if w.get("season")})
     merged = False
+    matchup_cache: dict = {}
     for season_num in seasons:
         summary = svc.data.get_team_weekly_summary(
             detail["team"], compute.season_label(season_num)
@@ -369,9 +441,12 @@ def _merge_week_records(detail: dict, *, per_game: bool) -> bool:
             row["ties"] = info.get("ties", 0)
             row["record_overridden"] = bool(info.get("record_overridden"))
             row["pins_against"] = info.get("pins_against")
-            # Per-game marks compare one matchup, so they stay within a season.
-            if per_game:
-                row["game_pins"] = _week_game_pins(info)
+            # A matchup belongs to one season, but so does every row here: the
+            # season loop above is what keeps a wide range resolving correctly.
+            row["game_pins"] = _week_game_pins(info)
+            row["matchup"] = _week_matchup(
+                detail["team"], season_num, row["week"], matchup_cache
+            )
             merged = True
     return merged
 
@@ -403,7 +478,7 @@ def team_detail(name: str):
 
     detail["color"] = _team_color(detail["team"])
 
-    records = _merge_week_records(detail, per_game=scope.single_season is not None)
+    records = _merge_week_records(detail)
     detail["records_available"] = records
     detail["record"] = _record_string(detail["weeks"]) if records else None
 

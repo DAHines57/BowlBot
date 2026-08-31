@@ -103,6 +103,10 @@ def test_static_assets_exist_and_are_wired():
     assert '"Weekly Breakdown"' in js_text
     assert "data-wk-toggle" in js_text
     assert "data-wk-games" in js_text
+    # The week list is a grid, not a table: a colspan cannot track which
+    # columns the narrow layout leaves standing.
+    assert "wk-table" not in js_text
+    assert "colspan=" not in js_text
 
 
 def test_bracket_routes_are_gone():

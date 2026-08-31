@@ -71,6 +71,14 @@ class _FakeData:
             }
         )
 
+    def get_week_matchups(self, week, season=None):
+        return compute.get_week_matchups(
+            self._facts,
+            week,
+            season,
+            season_num=compute.parse_season_number(season),
+        )
+
     def get_team_weekly_summary(self, team_name, season=None):
         return compute.get_team_weekly_summary(
             self._facts,
@@ -379,10 +387,46 @@ def test_team_detail_marks_each_game_against_the_opponent(client):
     ]
 
 
-def test_team_detail_has_no_game_pins_across_seasons(client):
-    """Per-game marks need matchups, which do not span seasons."""
+def test_team_detail_carries_both_rosters_for_a_week(client):
+    """The week expansion needs every bowler's games, not just team totals."""
+    data = client.get("/api/team/Team A?from=13.1&to=13.9").get_json()
+    weeks = {w["label"]: w for w in data["weeks"]}
+
+    m = weeks["S13 W1"]["matchup"]
+    assert m["ours"]["name"] == "Team A"
+    assert m["theirs"]["name"] == "Team B"
+
+    alice = m["ours"]["players"][0]
+    assert alice["name"] == "Alice"
+    assert alice["games"][:2] == [150, 150]
+    assert alice["counts"] is True
+    assert alice["is_substitute"] is False
+
+    bob = m["theirs"]["players"][0]
+    assert bob["name"] == "Bob"
+    assert bob["games"][:2] == [180, 180]
+
+
+def test_team_detail_has_no_matchup_without_an_opponent(client):
+    """W2 has nobody on the other side, so there is no roster to compare."""
+    data = client.get("/api/team/Team A?from=13.1&to=13.9").get_json()
+    weeks = {w["label"]: w for w in data["weeks"]}
+    assert weeks["S13 W2"]["matchup"] is None
+
+
+def test_team_detail_carries_per_game_data_across_seasons(client):
+    """A week is resolved against its own season, so a wide range keeps its
+    per-game detail and stays expandable."""
     data = client.get("/api/team/Team A?from=13.1&to=14.1").get_json()
-    assert all("game_pins" not in w for w in data["weeks"])
+    weeks = {w["label"]: w for w in data["weeks"]}
+    assert set(weeks) == {"S13 W1", "S13 W2", "S14 W1"}
+    assert all("game_pins" in w for w in data["weeks"])
+
+    # The S14 week resolves from season 14's matchups, not season 13's.
+    s14 = weeks["S14 W1"]["matchup"]
+    assert s14["ours"]["name"] == "Team A"
+    assert s14["theirs"]["name"] == "Team B"
+    assert s14["ours"]["players"][0]["games"][:2] == [200, 200]
 
 
 def test_team_detail_skips_seasons_the_team_missed(client):
