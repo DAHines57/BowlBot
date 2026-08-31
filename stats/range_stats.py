@@ -83,6 +83,19 @@ def absent_week_credit(fact: dict) -> Optional[float]:
     return _mean(games_list_for_team(fact))
 
 
+# Missing once is free; the league leans on a player harder each time after.
+ABSENCE_PENALTIES = (0.0, 0.05, 0.10)
+
+
+def absence_penalty(ordinal: int) -> float:
+    """Fraction docked from the average for a player's ``ordinal``-th absence
+    of a season, counting from 1. Third and later all sit at the last rung."""
+    index = max(1, ordinal) - 1
+    if index >= len(ABSENCE_PENALTIES):
+        index = len(ABSENCE_PENALTIES) - 1
+    return ABSENCE_PENALTIES[index]
+
+
 class _PlayerAccumulator:
     """Per-player games, split by season so all three modes can be derived."""
 
@@ -90,6 +103,7 @@ class _PlayerAccumulator:
         "team",
         "games_by_season",
         "absences",
+        "absences_by_season",
         "weeks",
         "sub_games",
         "sub_for",
@@ -100,6 +114,9 @@ class _PlayerAccumulator:
         self.team = team
         self.games_by_season: Dict[int, List[float]] = {}
         self.absences = 0
+        # The penalty ladder restarts each season, so the flat count above is
+        # not enough to price a miss.
+        self.absences_by_season: Dict[int, int] = {}
         self.weeks: set = set()
         self.sub_games: List[float] = []
         self.sub_for: List[str] = []
@@ -136,6 +153,23 @@ class _PlayerAccumulator:
             ]
             return _mean(season_avgs)
         return _mean(self.all_games)
+
+    def next_absence_credit(self, mode: str) -> Optional[float]:
+        """What this player's next absence would be credited.
+
+        The ladder restarts each season, so the rung comes from the misses
+        already taken in the latest season the player appears in over the range:
+        that is where a next miss would land. ``None`` only when nothing was
+        bowled, since then there is no average to discount.
+        """
+        base = self.average(mode)
+        if base is None:
+            return None
+        # A player can be absent through a season they never bowled in, and that
+        # season still has to be able to be the latest one.
+        seasons = set(self.games_by_season) | set(self.absences_by_season)
+        taken = self.absences_by_season.get(max(seasons), 0) if seasons else 0
+        return base * (1.0 - absence_penalty(taken + 1))
 
 
 def build_player_accumulators(rows: List[dict]) -> Dict[str, _PlayerAccumulator]:
@@ -176,6 +210,9 @@ def build_player_accumulators(rows: List[dict]) -> Dict[str, _PlayerAccumulator]
             entry.team = team
         if f.get("absent"):
             entry.absences += 1
+            entry.absences_by_season[season_num] = (
+                entry.absences_by_season.get(season_num, 0) + 1
+            )
             credit = absent_week_credit(f)
             if credit is not None:
                 entry.absent_credits.append(credit)
@@ -250,12 +287,18 @@ def _player_rows(rows: List[dict], mode: str) -> List[dict]:
         if not games and not entry.sub_games and not entry.absences:
             continue
         average = entry.average(mode)
-        absent_average = _mean(entry.absent_credits)
+        sheet_credit = _mean(entry.absent_credits)
+        projected = entry.next_absence_credit(mode)
         # With nothing bowled there is no real average, so the credited figure
         # stands in purely so the row sorts into position instead of sinking.
-        from_absences = average is None and absent_average is not None
+        from_absences = average is None and sheet_credit is not None
         if from_absences:
-            average = absent_average
+            average = sheet_credit
+        # Nothing bowled also means nothing to discount, so those rows fall back
+        # to what the sheet credited rather than showing no figure at all.
+        absent_average = projected
+        if absent_average is None and from_absences:
+            absent_average = sheet_credit
         out.append(
             {
                 "player": player,

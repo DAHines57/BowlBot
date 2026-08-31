@@ -2301,7 +2301,9 @@
     ];
     if (row.absent_average !== null && row.absent_average !== undefined &&
         !row.average_from_absences) {
-      pairs.push(["Absent avg", fmt(row.absent_average, 2)]);
+      // A projection, not a record of scores bowled: what their next miss
+      // would be credited, once this season's miss penalty is applied.
+      pairs.push(["If absent", fmt(row.absent_average, 2)]);
     }
     if (row.sub_games) pairs.push(["Sub games", fmt(row.sub_games)]);
     if (row.sub_for && row.sub_for.length) {

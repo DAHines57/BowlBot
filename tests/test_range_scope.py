@@ -5,6 +5,7 @@ import pytest
 from stats.compute import compute_player_par
 from stats.facts import fact_counts_for_stats, filter_facts
 from stats.range_stats import (
+    absence_penalty,
     get_player_range_detail,
     get_range_stats,
     get_team_range_detail,
@@ -593,7 +594,11 @@ def test_absence_only_player_is_sorted_by_what_they_were_credited():
 
 
 def test_absences_do_not_touch_a_bowling_players_average():
-    """Matches the legacy page: credited weeks are shown, never averaged in."""
+    """Matches the legacy page: credited weeks are shown, never averaged in.
+
+    The credited figure is projected from the player's own average rather than
+    read off the absent week, so the 100s stored on that row stay out of it.
+    """
     facts = [
         _fact("Alice", 9, 1, games=(200, 200)),
         _fact("Alice", 9, 2, games=(100, 100), absent=True),
@@ -601,9 +606,60 @@ def test_absences_do_not_touch_a_bowling_players_average():
     data = get_range_stats(facts, Scope(start=(9, 1), end=(9, 9)))
     alice = data["players"][0]
     assert alice["average"] == 200.0
-    assert alice["absent_average"] == 100.0
+    # One miss taken, so the next one is her second and costs 5 percent.
+    assert alice["absent_average"] == 190.0
     assert alice["average_from_absences"] is False
     assert alice["games"] == 2
+
+
+def test_absence_penalty_ladder():
+    assert absence_penalty(1) == 0.0
+    assert absence_penalty(2) == 0.05
+    assert absence_penalty(3) == 0.10
+    # Everything past the third sits on the last rung.
+    assert absence_penalty(9) == 0.10
+
+
+@pytest.mark.parametrize(
+    "taken, expected",
+    [(0, 200.0), (1, 190.0), (2, 180.0), (4, 180.0)],
+)
+def test_projection_prices_the_next_miss(taken, expected):
+    """The figure is what the next absence costs, so it moves a rung ahead of
+    the misses already taken, and stops at the third."""
+    facts = [_fact("Alice", 9, 1, games=(200, 200))] + [
+        _fact("Alice", 9, wk, games=(100, 100), absent=True)
+        for wk in range(2, 2 + taken)
+    ]
+    data = get_range_stats(facts, Scope(start=(9, 1), end=(9, 9)))
+    assert data["players"][0]["absent_average"] == expected
+
+
+def test_absence_penalty_resets_each_season():
+    """One miss in each of two seasons leaves the latest season holding one, so
+    the next miss there is a second at 5 percent rather than a third at 10."""
+    facts = [
+        _fact("Alice", 9, 1, games=(200, 200)),
+        _fact("Alice", 9, 2, games=(100, 100), absent=True),
+        _fact("Alice", 10, 1, games=(200, 200)),
+        _fact("Alice", 10, 2, games=(100, 100), absent=True),
+    ]
+    data = get_range_stats(facts, Scope(start=(9, 1), end=(10, 9)))
+    alice = data["players"][0]
+    assert alice["absences"] == 2
+    assert alice["absent_average"] == 190.0
+
+
+def test_projection_ignores_misses_from_an_earlier_season():
+    """A next miss lands in the latest season, which here is a clean slate."""
+    facts = [
+        _fact("Alice", 9, 1, games=(200, 200)),
+        _fact("Alice", 9, 2, games=(100, 100), absent=True),
+        _fact("Alice", 9, 3, games=(100, 100), absent=True),
+        _fact("Alice", 10, 1, games=(200, 200)),
+    ]
+    data = get_range_stats(facts, Scope(start=(9, 1), end=(10, 9)))
+    assert data["players"][0]["absent_average"] == 200.0
 
 
 def test_absent_weeks_carry_the_credited_average_and_scores():
