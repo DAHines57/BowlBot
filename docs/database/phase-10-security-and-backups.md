@@ -25,7 +25,7 @@ See `app/admin_auth.py`, `app/admin_routes.py`, `app/__init__.py`.
 - [ ] Admin logout route (clear `admin_pin_ok`).
 - [ ] Rate limit `/admin/unlock` (or edge proxy).
 - [ ] Optional: re-prompt PIN for destructive actions (delete season/week).
-- [ ] Remove or gate admin hints on public `home.html` in production.
+- [ ] Remove or gate the admin link in the public page footer (`templates/app.html`) in production.
 - [ ] Optional: restrict `/admin` at edge (IP allowlist, Cloudflare Access, etc.).
 
 ### Production checklist

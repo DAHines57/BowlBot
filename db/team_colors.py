@@ -88,12 +88,9 @@ def load_team_color_map(session: Optional[Session] = None) -> Dict[str, str]:
 
 
 def refresh_team_colors_cache() -> Dict[str, str]:
-    """Reload cache from DB and push to image_generator."""
+    """Reload the in-memory cache from the DB."""
     global _CACHE
     _CACHE = load_team_color_map()
-    from image_generator import register_team_colors
-
-    register_team_colors(_CACHE)
     logger.info("Team colors loaded: %s from DB", len(_CACHE))
     return _CACHE
 

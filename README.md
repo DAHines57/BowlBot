@@ -85,13 +85,13 @@ See [docs/database/phase-1-schema-and-migrations.md](docs/database/phase-1-schem
 
 | Path | Role |
 |------|------|
-| `app/` | Flask app + routes |
-| `league_service.py` | Stats + HTML (uses `league_data`, `image_generator`) |
+| `app/` | Flask app: page shell (`routes.py`), JSON API (`api.py`), admin (`admin_routes.py`) |
+| `league_service.py` | Season/week resolution + playoff snapshots |
 | `league_data.py` | Postgres read API (`DbLeagueData`) |
 | `stats/` | Fact filters + compute (DB facts and sync share the same shape) |
 | `sheets_handler.py` | Excel ingest for `sync_db.py` only (`iter_player_week_rows`) |
-| `image_generator.py` | HTML templates (card look) + `inject_web_chrome` |
-| `templates/` | Home + error + player pick |
+| `static/app.js` | The stats page itself; reads `/api/*` |
+| `templates/` | Stats page shell + error + admin forms |
 
 ## Data flow
 

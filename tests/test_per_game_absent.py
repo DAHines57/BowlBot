@@ -140,19 +140,6 @@ def test_matchup_players_include_per_game_absent_flags():
     assert bob["game_absent"] == [False] * 5
 
 
-def test_matchup_html_marks_missed_game_score_red():
-    from image_generator import _matchup_game_cells_html
-
-    html = _matchup_game_cells_html(
-        [186, 221, 229, 163],
-        4,
-        [True, False, False, False],
-    )
-    assert "pst-score--miss" in html
-    assert html.count("pst-score--miss") == 1
-    assert "186" in html
-
-
 def test_team_game_breakdown_flags_missed_slot():
     from stats.compute import _attach_team_game_players, _team_game_players_index
 
@@ -183,38 +170,6 @@ def test_team_week_breakdown_lists_missed_games():
     alice = index[("Team A", 1)]["Alice"]
     assert alice["missed_games"] == [1, 3]
     assert index[("Team A", 1)]["Bob"].get("missed_games") is None
-
-
-def test_team_week_roster_html_shows_abs_game_tags():
-    from image_generator import _team_roster_detail_html
-
-    html = _team_roster_detail_html(
-        {
-            "Alice": {
-                "absent": False,
-                "value": 205.0,
-                "missed_games": [1, 3],
-            },
-            "Bob": {"absent": True, "value": 200.0},
-        }
-    )
-    assert "ABS G1,3" in html
-    assert html.count("player-tag") == 1
-    assert 'class="absent-badge">ABS</span>' in html
-
-
-def test_team_roster_html_marks_missed_game_red():
-    from image_generator import _team_roster_detail_html
-
-    html = _team_roster_detail_html(
-        {
-            "Alice": {"absent": False, "value": 186.0, "missed_game": True},
-            "Bob": {"absent": False, "value": 200.0, "missed_game": False},
-        }
-    )
-    assert "team-roster-avg--miss" in html
-    assert html.count("team-roster-avg--miss") == 1
-    assert "186" in html
 
 
 def test_whole_week_absent_still_excludes_player_average():

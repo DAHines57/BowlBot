@@ -1,7 +1,7 @@
 """Playoff champion detection and bracket round/placement math.
 
-Pure logic, no HTML. The champion badge on the teams and players pages depends
-on this; the bracket rendering in ``bracket_view.py`` does too.
+Pure logic, no HTML. The champion badges and the bracket on the stats page come
+from here, via ``/api/playoffs``.
 """
 import itertools
 from typing import Dict, FrozenSet, List, Optional, Set, Tuple, Union, cast

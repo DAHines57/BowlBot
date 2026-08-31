@@ -68,8 +68,8 @@ Existing league summary blocks (high/low, league avg) stay as-is.
 |-------|----------------|
 | `stats/compute.py` | `build_par_baselines(facts)`, `compute_player_par(facts, …)` |
 | `league_data.py` | `get_player_par(season)` |
-| `league_service.py` | Merge `par` into `pdata` on `players_page` (and top-players if applicable) |
-| `image_generator.py` | PAR column + footnote in `build_players_html` |
+
+Note: the legacy players page that displayed PAR has been removed; the unified page at `/` does not surface PAR today, so the computation is not currently rendered anywhere.
 
 ## Tests
 

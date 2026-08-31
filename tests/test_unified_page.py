@@ -34,7 +34,7 @@ def _client(service=_StubSvc()):
 
 
 def test_app_page_renders_shell():
-    html = _client().get("/app").get_data(as_text=True)
+    html = _client().get("/").get_data(as_text=True)
     assert "app.css" in html
     assert "app.js" in html
     for anchor in [
@@ -94,7 +94,13 @@ def test_app_page_renders_shell():
 
 
 def test_app_page_needs_a_service():
-    assert _client(service=None).get("/app").status_code == 503
+    assert _client(service=None).get("/").status_code == 503
+
+
+def test_old_app_url_redirects_to_root():
+    resp = _client().get("/app")
+    assert resp.status_code == 301
+    assert resp.headers["Location"].endswith("/")
 
 
 def test_static_assets_exist_and_are_wired():
@@ -147,22 +153,39 @@ def test_bracket_routes_are_gone():
     assert c.get("/playoffs").status_code == 404
 
 
-def test_bracket_view_is_parked_and_unimported():
-    """The bracket module still exists but nothing in the app imports it."""
+def test_legacy_page_routes_are_gone():
+    c = _client()
+    for path in (
+        "/week/summary",
+        "/week/results",
+        "/week/teams",
+        "/players",
+        "/teams",
+        "/team/Team%20A/weekly",
+        "/top/players",
+        "/top/player-scores",
+        "/top/team-scores",
+        "/top/games",
+        "/top/weeks",
+        "/top/team-games",
+        "/top/team-weeks",
+        "/player",
+        "/player/Alice",
+    ):
+        assert c.get(path).status_code == 404, path
+
+
+def test_legacy_renderers_are_deleted():
     import importlib
 
-    assert importlib.util.find_spec("bracket_view") is not None
-
-    for module in ("league_service", "image_generator", "app.routes", "app.api"):
-        src_name = module.replace(".", os.sep) + ".py"
-        text = open(os.path.join(ROOT, src_name), encoding="utf-8").read()
-        assert "bracket_view" not in text, f"{module} imports the parked bracket module"
+    for module in ("image_generator", "bracket_view"):
+        assert importlib.util.find_spec(module) is None, module
 
 
 def test_champion_detection_still_available_for_badges():
     from playoff_champion import champion_from_playoff_snapshots
 
     assert callable(champion_from_playoff_snapshots)
-    # league_service must source it from the new module, not image_generator.
-    text = open(os.path.join(ROOT, "league_service.py"), encoding="utf-8").read()
+    # The API sources it from the standalone module rather than a renderer.
+    text = open(os.path.join(ROOT, "app", "api.py"), encoding="utf-8").read()
     assert "from playoff_champion import champion_from_playoff_snapshots" in text

@@ -143,26 +143,6 @@ def test_week_summary_absent_sorts_by_avg_not_last():
     assert main_names.index("Carol") < main_names.index("Dave")
 
 
-def test_week_summary_html_absent_gets_rank():
-    from image_generator import build_html
-
-    facts = [
-        _fact(player_display_name="Bob", game1=210, game2=210, game3=210, game4=210),
-        _fact(
-            player_display_name="Carol",
-            absent=True,
-            game1=200,
-            game2=200,
-            game3=200,
-            game4=200,
-        ),
-    ]
-    summary = get_week_summary(facts, 1, "Season 10", season_num=10)
-    html = build_html(summary)
-    assert 'data-orig-rank="2"' in html
-    assert "ABSENT" in html
-
-
 def test_week_matchups_counting_sub_shows_subbed_out_book_scores():
     facts = [
         _fact(
@@ -270,111 +250,6 @@ def test_delete_substitute_rows_not_in_save(db_session):
     assert deleted == 1
     remaining = db_session.query(PlayerWeek).filter(PlayerWeek.substitute.is_(True)).all()
     assert remaining == []
-
-
-def test_week_summary_html_shows_substitutes_in_leaderboard():
-    from image_generator import build_html
-
-    facts = [
-        _fact(absent=True, game1=180, game2=180, game3=180, game4=180),
-        _fact(
-            player_display_name="Jane",
-            substitute=True,
-            substituted_for="Alice",
-            substitute_scores_count=True,
-            game1=220,
-            game2=220,
-            game3=220,
-            game4=220,
-        ),
-    ]
-    summary = get_week_summary(facts, 1, "Season 10", season_num=10)
-    html = build_html(summary)
-    assert 'data-panel="subs"' not in html
-    assert "Jane" in html
-    assert "sub-badge" in html
-    assert "for Alice" in html or "sub-for-badge" in html
-    assert ">180.00<" in html
-    assert 'data-orig-rank="2"' in html
-
-
-def test_matchup_non_counting_players_sorted_last():
-    from image_generator import _matchup_player_table_html
-
-    players = [
-        {
-            "name": "Jane",
-            "games": [200, 200, 200, 200],
-            "is_substitute": True,
-            "scores_count": False,
-            "sub_for": "Alice",
-        },
-        {
-            "name": "Bob",
-            "games": [210, 210, 210, 210],
-            "is_substitute": False,
-            "scores_count": True,
-        },
-        {
-            "name": "Alice",
-            "games": [180, 180, 180, 180],
-            "absent": True,
-            "subbed_out": False,
-            "is_substitute": False,
-            "scores_count": True,
-        },
-    ]
-    html = _matchup_player_table_html(players, 4, away=False)
-    bob_pos = html.index("Bob")
-    jane_pos = html.index("Jane")
-    alice_pos = html.index("Alice")
-    assert jane_pos > bob_pos
-    assert jane_pos > alice_pos
-    assert "player-score-separator" in html
-    assert 'class="player-tag player-tag--sub">SUB</span>' in html
-
-
-def test_league_service_builds_subs_data_from_sub_appearances():
-    from league_service import LeagueService
-
-    class FakeData:
-        def get_player_scores(self, player_name, season, *, include_substitutes=True):
-            if include_substitutes:
-                return {
-                    "Jane": {
-                        "team": "Team B",
-                        "sub_appearances": [
-                            {
-                                "week": 1,
-                                "team": "Team B",
-                                "game_scores": [220, 210, 200, 215],
-                            }
-                        ],
-                    }
-                }
-            return {
-                "Alice": {
-                    "team": "Team A",
-                    "average": 200,
-                    "highest_game": 220,
-                    "lowest_game": 180,
-                    "weeks_played": 5,
-                    "weeks_absent": 0,
-                    "std_dev": 10,
-                }
-            }
-
-        def get_player_par(self, season):
-            return {"Alice": 0}
-
-        def get_league_game_stats(self, season=None, *, all_time=False):
-            return {}
-
-    svc = LeagueService(FakeData())
-    html, err = svc.players_page("Season 10")
-    assert err == ""
-    assert "players-subs-toggle" in html
-    assert "Jane" in html
 
 
 def test_best_seasons_excludes_sub_only_players():
