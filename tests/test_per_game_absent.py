@@ -3,7 +3,11 @@
 import pytest
 
 from stats.compute import get_player_scores, get_week_matchups
-from stats.facts import games_list_for_player_stats, games_list_for_team
+from stats.facts import (
+    games_list_for_player_stats,
+    games_list_for_team,
+    player_profile_game_slots,
+)
 
 
 def _fact(
@@ -44,6 +48,48 @@ def test_games_list_splits_team_vs_player():
     f = _fact("Alice", 5, games=(180, 200, 210, 205, None), game_absent=[True, False, False, False, False])
     assert games_list_for_team(f) == [180, 200, 210, 205]
     assert games_list_for_player_stats(f) == [200, 210, 205]
+
+
+def test_profile_game_slots_keep_missed_score_and_slot_number():
+    f = _fact(
+        "Alice",
+        5,
+        games=(180, 200, 210, 205, None),
+        game_absent=[True, False, False, False, False],
+    )
+    slots = player_profile_game_slots(f)
+    assert [(s["slot"], s["score"], s["absent"], s["counts"]) for s in slots] == [
+        (1, 180, True, False),
+        (2, 200, False, True),
+        (3, 210, False, True),
+        (4, 205, False, True),
+    ]
+
+
+def test_profile_game_slots_counting_scores_match_the_stats_list():
+    """The new accessor must not become a second source of truth for averages."""
+    f = _fact(
+        "Alice",
+        5,
+        games=(180, 200, 210, 205, None),
+        game_absent=[True, False, True, False, False],
+    )
+    counting = [s["score"] for s in player_profile_game_slots(f) if s["counts"]]
+    assert counting == games_list_for_player_stats(f)
+
+
+def test_profile_game_slots_empty_for_whole_week_absence():
+    f = _fact("Alice", 5, absent=True, game_absent=[True, False, False, False, False])
+    assert player_profile_game_slots(f) == []
+
+
+def test_profile_game_slots_count_every_game_for_a_substitute():
+    f = _fact("Alice", 5, games=(180, 200, 210, 205, None))
+    f["substitute"] = True
+    f["game1_absent"] = True
+    slots = player_profile_game_slots(f)
+    assert [s["score"] for s in slots] == games_list_for_team(f)
+    assert all(s["counts"] for s in slots)
 
 
 def test_player_season_average_excludes_book_avg_game():
@@ -94,19 +140,6 @@ def test_matchup_players_include_per_game_absent_flags():
     assert bob["game_absent"] == [False] * 5
 
 
-def test_matchup_html_marks_missed_game_score_red():
-    from image_generator import _matchup_game_cells_html
-
-    html = _matchup_game_cells_html(
-        [186, 221, 229, 163],
-        4,
-        [True, False, False, False],
-    )
-    assert "pst-score--miss" in html
-    assert html.count("pst-score--miss") == 1
-    assert "186" in html
-
-
 def test_team_game_breakdown_flags_missed_slot():
     from stats.compute import _attach_team_game_players, _team_game_players_index
 
@@ -137,38 +170,6 @@ def test_team_week_breakdown_lists_missed_games():
     alice = index[("Team A", 1)]["Alice"]
     assert alice["missed_games"] == [1, 3]
     assert index[("Team A", 1)]["Bob"].get("missed_games") is None
-
-
-def test_team_week_roster_html_shows_abs_game_tags():
-    from image_generator import _team_roster_detail_html
-
-    html = _team_roster_detail_html(
-        {
-            "Alice": {
-                "absent": False,
-                "value": 205.0,
-                "missed_games": [1, 3],
-            },
-            "Bob": {"absent": True, "value": 200.0},
-        }
-    )
-    assert "ABS G1,3" in html
-    assert html.count("player-tag") == 1
-    assert 'class="absent-badge">ABS</span>' in html
-
-
-def test_team_roster_html_marks_missed_game_red():
-    from image_generator import _team_roster_detail_html
-
-    html = _team_roster_detail_html(
-        {
-            "Alice": {"absent": False, "value": 186.0, "missed_game": True},
-            "Bob": {"absent": False, "value": 200.0, "missed_game": False},
-        }
-    )
-    assert "team-roster-avg--miss" in html
-    assert html.count("team-roster-avg--miss") == 1
-    assert "186" in html
 
 
 def test_whole_week_absent_still_excludes_player_average():

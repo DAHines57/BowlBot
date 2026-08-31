@@ -729,7 +729,13 @@ def mirror_team_opponents(team_opponents: dict[str, str]) -> dict[str, str]:
     return mirrored
 
 
-def _validate_substitute_rows(parsed: List[dict]) -> Optional[str]:
+def _problem(message: str, *, row_index: Optional[int] = None, field: Optional[str] = None) -> dict:
+    """One validation failure, addressed well enough for the client to point at
+    the offending row and field rather than just printing a sentence."""
+    return {"row_index": row_index, "field": field, "message": message}
+
+
+def _validate_substitute_rows(parsed: List[dict]) -> List[dict]:
     """Validate sub rows: sub-for required, roster match, no duplicate slots."""
     roster_by_team: dict[str, set[str]] = {}
     for row in parsed:
@@ -740,6 +746,7 @@ def _validate_substitute_rows(parsed: List[dict]) -> Optional[str]:
         if team and player:
             roster_by_team.setdefault(team, set()).add(player)
 
+    problems: List[dict] = []
     sub_for_by_team: dict[str, set[str]] = {}
     for i, row in enumerate(parsed):
         if not row.get("substitute"):
@@ -749,23 +756,54 @@ def _validate_substitute_rows(parsed: List[dict]) -> Optional[str]:
         sub_for = str(row.get("substituted_for") or "").strip()
         label = f"rows[{i}] ({player or 'sub'})"
         if not sub_for:
-            return f"{label}: substitute rows require substituted_for."
+            problems.append(
+                _problem(
+                    f"{label}: substitute rows require substituted_for.",
+                    row_index=i,
+                    field="substituted_for",
+                )
+            )
+            continue
         roster = roster_by_team.get(team, set())
         if sub_for not in roster:
-            return f"{label}: substituted_for {sub_for!r} is not on the team roster."
+            problems.append(
+                _problem(
+                    f"{label}: substituted_for {sub_for!r} is not on the team roster.",
+                    row_index=i,
+                    field="substituted_for",
+                )
+            )
+            continue
         taken = sub_for_by_team.setdefault(team, set())
         if sub_for in taken:
-            return f"{label}: duplicate substitute for {sub_for!r} on {team!r}."
+            problems.append(
+                _problem(
+                    f"{label}: duplicate substitute for {sub_for!r} on {team!r}.",
+                    row_index=i,
+                    field="substituted_for",
+                )
+            )
+            continue
         taken.add(sub_for)
-        if row.get("substitute_scores_count") and not sub_for:
-            return f"{label}: substitute_scores_count requires substituted_for."
-    return None
+    return problems
 
 
 def parse_week_rows_payload(body: dict) -> Tuple[Optional[List[dict]], Optional[str]]:
+    """Back-compatible wrapper: joins the structured problems into one string."""
+    rows, problems = parse_week_rows_payload_detailed(body)
+    if problems:
+        return None, " ".join(p["message"] for p in problems)
+    return rows, None
+
+
+def parse_week_rows_payload_detailed(
+    body: dict,
+) -> Tuple[Optional[List[dict]], List[dict]]:
+    """Parse a week payload, reporting every problem rather than only the first,
+    so the entry page can highlight each offending row at once."""
     raw_rows = body.get("rows")
     if not isinstance(raw_rows, list) or not raw_rows:
-        return None, "Payload must include a non-empty 'rows' array."
+        return None, [_problem("Payload must include a non-empty 'rows' array.")]
 
     week_playoffs = _bool_field(body.get("playoffs"))
     raw_opponents = body.get("team_opponents")
@@ -777,13 +815,21 @@ def parse_week_rows_payload(body: dict) -> Tuple[Optional[List[dict]], Optional[
     team_opponents = mirror_team_opponents(team_opponents)
 
     parsed: List[dict] = []
+    problems: List[dict] = []
     for i, raw in enumerate(raw_rows):
         if not isinstance(raw, dict):
-            return None, f"rows[{i}] must be an object."
+            problems.append(_problem(f"rows[{i}] must be an object.", row_index=i))
+            continue
         team = str(raw.get("team") or "").strip()
         player = str(raw.get("player_display_name") or raw.get("player") or "").strip()
         if not team or not player:
-            return None, f"rows[{i}] requires team and player_display_name."
+            problems.append(
+                _problem(
+                    f"rows[{i}] requires team and player_display_name.",
+                    row_index=i,
+                )
+            )
+            continue
         opponent = raw.get("opponent")
         if opponent:
             opponent = str(opponent).strip() or None
@@ -807,7 +853,10 @@ def parse_week_rows_payload(body: dict) -> Tuple[Optional[List[dict]], Optional[
             key = f"game{gn}"
             score, score_err = parse_game_score(raw.get(key))
             if score_err:
-                return None, f"{label} {key}: {score_err}"
+                problems.append(
+                    _problem(f"{label} {key}: {score_err}", row_index=i, field=key)
+                )
+                score = None
             games[key] = score
             miss_key = f"game{gn}_absent"
             game_absent[miss_key] = False if absent else _bool_field(raw.get(miss_key))
@@ -833,10 +882,10 @@ def parse_week_rows_payload(body: dict) -> Tuple[Optional[List[dict]], Optional[
                 "playoffs": week_playoffs,
             }
         )
-    err = _validate_substitute_rows(parsed)
-    if err:
-        return None, err
-    return parsed, None
+    problems.extend(_validate_substitute_rows(parsed))
+    if problems:
+        return None, problems
+    return parsed, []
 
 
 def save_week_entry(

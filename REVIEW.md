@@ -35,3 +35,4 @@ Actionable items for the **current** codebase (Flask + Postgres + Excel sync).
 - `add_score` on `SheetHandler` — removed.
 - `db/matchup_overrides.py` — removed; constant lives in seed script.
 - Debug scripts under `scripts/` — removed (batch C).
+- Legacy server-rendered pages (`home.html`, `/week/*`, `/players`, `/teams`, `/top/*`, `/player*`) plus `image_generator.py` and `bracket_view.py` — removed; the unified page at `/` reads `/api/*`.

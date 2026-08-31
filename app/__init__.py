@@ -33,8 +33,9 @@ def create_app() -> Flask:
     if data:
         refresh_team_colors_cache()
 
-    from app import admin_routes, routes
+    from app import admin_routes, api, routes
 
     app.register_blueprint(routes.bp)
     app.register_blueprint(admin_routes.admin_bp)
+    app.register_blueprint(api.api_bp)
     return app

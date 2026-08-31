@@ -144,13 +144,16 @@ def test_build_scan_response():
 
 
 def test_admin_enter_shows_scan_without_team():
+    """The scan panel lives in the template; its behaviour lives in the script."""
     from pathlib import Path
 
     text = Path("templates/admin_enter.html").read_text(encoding="utf-8")
     assert "{% if scoreboard_scan_enabled %}" in text
     assert "Select a team above to scan" not in text
     assert 'id="scan-teams-review"' in text
-    assert "x: 0, y: 0, w: 1, h: 1" in text
-    assert 'fd.append("team"' not in text
-    assert "scan-opponent-assign" in text
+
+    js = Path("static/admin_enter.js").read_text(encoding="utf-8")
+    assert "x: 0, y: 0, w: 1, h: 1" in js
+    assert 'fd.append("team"' not in js
+    assert "scan-opponent-assign" in js
     assert "suggested_opponent" in Path("scoreboard_scan.py").read_text(encoding="utf-8")

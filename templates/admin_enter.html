@@ -1,1742 +1,244 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Enter scores — Week {{ entry.week }}</title>
-  <style>
-    :root { --bg: #12101a; --card: #1a1730; --border: #2a2050; --text: #e8e6ef; --muted: #9a96a8; --accent: #ffb86c; --mint: #50fa7b; --danger: #ff6b81; }
-    * { box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 1.25rem 1rem 3rem; line-height: 1.45; }
-    .shell { max-width: 960px; margin: 0 auto; }
-    h1 { font-size: 1.35rem; margin: 0 0 0.35rem; color: var(--accent); }
-    .meta { color: var(--muted); font-size: 0.9rem; margin-bottom: 1rem; }
-    .nav { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-bottom: 1.25rem; }
-    .nav a { display: inline-block; padding: 0.55rem 0.9rem; background: var(--card); border: 1px solid var(--border); border-radius: 8px; color: var(--mint); text-decoration: none; font-weight: 600; font-size: 0.9rem; }
-    .toolbar { display: flex; flex-wrap: wrap; gap: 0.65rem; align-items: flex-end; margin-bottom: 1rem; padding: 1rem; background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
-    label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8rem; color: var(--muted); }
-    label.inline-row { flex-direction: row; align-items: center; gap: 0.5rem; color: var(--text); font-size: 0.9rem; }
-    select, input[type="number"] { background: #12101a; border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 0.45rem 0.55rem; font-size: 0.95rem; min-width: 5rem; }
-    .week-flags { margin-bottom: 1rem; padding: 0.65rem 1rem; background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
-    button { background: linear-gradient(135deg, #3d2a6b, #2d1b69); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0.9rem; font-weight: 600; cursor: pointer; font-size: 0.9rem; }
-    button.primary { background: linear-gradient(135deg, #3a5f3a, #2d4a35); border-color: #3d6b4a; }
-    button.danger { background: #4a2028; border-color: var(--danger); }
-    button.debug { background: #3a3548; border-color: #5a5470; color: var(--muted); font-size: 0.85rem; }
-    .notice { padding: 0.65rem 0.85rem; border-radius: 8px; background: rgba(255, 184, 108, 0.12); border: 1px solid rgba(255, 184, 108, 0.35); margin-bottom: 1rem; font-size: 0.88rem; }
-    .notice.complete { background: rgba(80, 250, 123, 0.1); border-color: rgba(80, 250, 123, 0.35); }
-    .notice.incomplete { background: rgba(255, 107, 129, 0.1); border-color: rgba(255, 107, 129, 0.4); }
-    .notice.not-started { background: rgba(154, 150, 168, 0.12); border-color: rgba(154, 150, 168, 0.35); }
-    .status-pill { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 0.15rem 0.45rem; border-radius: 4px; margin-left: 0.35rem; vertical-align: middle; }
-    .status-pill.complete { background: rgba(80, 250, 123, 0.2); color: var(--mint); }
-    .status-pill.incomplete { background: rgba(255, 107, 129, 0.2); color: var(--danger); }
-    .status-pill.not-started { background: rgba(154, 150, 168, 0.2); color: var(--muted); }
-    select.week-select option.complete { color: #50fa7b; }
-    select.week-select option.incomplete { color: #ff9eb0; }
-    select.week-select option.not-started { color: #9a96a8; }
-    tr.row-incomplete td:first-child { border-left: 3px solid var(--danger); }
-    tr.row-incomplete td input.game:placeholder-shown,
-    tr.row-incomplete td input.game[value=""] { border-color: rgba(255, 107, 129, 0.55); }
-    input.game:invalid { border-color: var(--danger); }
-    .notice.save-error { background: rgba(255, 107, 129, 0.12); border-color: rgba(255, 107, 129, 0.45); color: var(--text); }
-    .notice.save-success { background: rgba(80, 250, 123, 0.12); border-color: rgba(80, 250, 123, 0.45); color: var(--mint); font-weight: 600; }
-    tr.has-game-miss td:first-child { border-left: 3px solid var(--accent); }
-    tr.has-game-miss label.game-miss:has(input:checked) { color: var(--accent); font-weight: 600; }
-    .team-block { margin-bottom: 1.25rem; max-width: 100%; }
-    .table-scroll {
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-      max-width: 100%;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-    }
-    .table-scroll > table {
-      width: 100%;
-      margin-bottom: 0;
-      border: none;
-      border-radius: 0;
-    }
-    .team-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1.25rem; margin: 0.75rem 0 0.5rem; }
-    .team-bar .team-title { font-weight: 700; color: var(--accent); font-size: 1rem; margin: 0; }
-    .team-bar label { min-width: 12rem; }
-    .team-bar select { min-width: 10rem; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-    th, td { padding: 0.45rem 0.35rem; border-bottom: 1px solid var(--border); text-align: center; }
-    th { color: var(--muted); font-weight: 600; font-size: 0.75rem; background: #2d1b69; }
-    th:first-child, td:first-child { text-align: left; padding-left: 0.65rem; }
-    td input[type="number"] { width: 3.2rem; text-align: center; padding: 0.35rem; border-radius: 4px; border: 1px solid var(--border); background: #12101a; color: var(--text); }
-    .flags label { flex-direction: row; align-items: center; gap: 0.35rem; font-size: 0.75rem; color: var(--text); justify-content: center; }
-    .game-miss { display: flex; flex-direction: column; align-items: center; gap: 0.2rem; margin-top: 0.2rem; font-size: 0.65rem; color: var(--muted); cursor: pointer; }
-    .game-miss input { margin: 0; }
-    tr.week-absent .game-miss { opacity: 0.35; pointer-events: none; }
-    .player-name-cell { line-height: 1.35; }
-    .absent-fill-hint {
-      display: block;
-      margin-top: 0.15rem;
-      font-size: 0.68rem;
-      font-weight: 600;
-      color: var(--mint);
-      letter-spacing: 0.02em;
-      white-space: nowrap;
-    }
-    .absent-fill-hint[hidden] { display: none !important; }
-    .team-block.hide-game5 .game5-col { display: none; }
-    .scan-table.hide-game5 .game5-col { display: none; }
-    .actions { margin-top: 1.25rem; display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
-    .scan-panel { margin-bottom: 1rem; padding: 1rem; background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; max-width: 100%; }
-    .scan-panel h2 { font-size: 0.95rem; margin: 0 0 0.65rem; color: var(--mint); font-weight: 600; }
-    .scan-toolbar { display: flex; flex-wrap: wrap; gap: 0.65rem; align-items: center; margin-bottom: 0.75rem; }
-    .scan-toolbar input[type="file"] { font-size: 0.85rem; color: var(--muted); max-width: 100%; }
-    .scan-review { display: none; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
-    .scan-review.visible { display: block; }
-    .scan-preview { max-width: 100%; max-height: 160px; border-radius: 6px; margin-bottom: 0.75rem; border: 1px solid var(--border); }
-    .scan-crop-stage { position: relative; display: none; max-width: 100%; margin-bottom: 0.75rem; user-select: none; touch-action: none; cursor: crosshair; overflow: hidden; border-radius: 6px; isolation: isolate; }
-    .scan-crop-stage.visible { display: block; }
-    .scan-crop-stage img { display: block; max-width: 100%; height: auto; vertical-align: top; }
-    .scan-crop-dim {
-      position: absolute;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.45);
-      pointer-events: none;
-      z-index: 1;
-      display: none;
-    }
-    .scan-crop-dim.ready { display: block; }
-    .scan-crop-box { position: absolute; z-index: 2; border: 2px solid var(--mint); pointer-events: none; box-shadow: none; }
-    .scan-review .table-scroll { margin-bottom: 0.75rem; }
-    .scan-privacy { font-size: 0.78rem; color: var(--muted); margin: 0 0 0.65rem; }
-    .scan-errors { font-size: 0.85rem; color: #ffb4c0; margin: 0 0 0.65rem; padding-left: 1.1rem; }
-    .scan-errors li { margin: 0.2rem 0; }
-    .scan-table { width: 100%; font-size: 0.8rem; margin-bottom: 0.75rem; }
-    .scan-table input[type="number"] { width: 3rem; }
-    .scan-table select { background: #12101a; border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 0.25rem; font-size: 0.8rem; max-width: 11rem; }
-    .scan-table tr.duplicate-assign td { background: rgba(255, 107, 129, 0.12); }
-    .scan-team-block { margin: 0.85rem 0 1rem; padding: 0.65rem 0.7rem; border: 1px solid var(--border); border-radius: 8px; background: rgba(0,0,0,0.18); }
-    .scan-team-block h3 { margin: 0 0 0.5rem; font-size: 0.88rem; color: var(--mint); font-weight: 650; }
-    .scan-team-match { display: flex; flex-wrap: wrap; gap: 0.5rem 0.85rem; align-items: center; margin-bottom: 0.55rem; font-size: 0.8rem; color: var(--muted); }
-    .scan-team-match label { display: inline-flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
-    .scan-team-match select { background: #12101a; border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 0.25rem 0.4rem; font-size: 0.8rem; max-width: 16rem; }
-    .scan-ocr-name { font-size: 0.72rem; color: var(--muted); display: block; max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .sub-section { margin-top: 0.65rem; display: none; }
-    .sub-section.visible { display: block; }
-    .sub-section-title { font-size: 0.78rem; font-weight: 600; color: var(--muted); margin: 0 0 0.35rem 0.15rem; }
-    .sub-table { font-size: 0.82rem; }
-    .sub-table td input[type="text"],
-    .sub-table td select { background: #12101a; border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 0.35rem 0.45rem; font-size: 0.85rem; min-width: 6rem; }
-    .sub-pick-select { min-width: 8rem; max-width: 11rem; }
-    tr.sub-row td:first-child { border-left: 3px solid var(--muted); }
-    tr.sub-row .sub-label { font-size: 0.7rem; color: var(--muted); display: block; }
-    .remove-sub-btn { background: transparent; border: none; color: var(--danger); font-size: 0.75rem; padding: 0.2rem 0.35rem; cursor: pointer; }
-    .scan-status { font-size: 0.85rem; color: var(--muted); min-height: 1.2em; }
-    .scan-status.error { color: var(--danger); }
-    .scan-loading { display: none; align-items: center; gap: 0.65rem; margin: 0.35rem 0 0.5rem; }
-    .scan-loading.visible { display: flex; }
-    .scan-spinner {
-      width: 1.35rem;
-      height: 1.35rem;
-      border: 2px solid var(--border);
-      border-top-color: var(--mint);
-      border-radius: 50%;
-      animation: scan-spin 0.7s linear infinite;
-      flex-shrink: 0;
-    }
-    @keyframes scan-spin { to { transform: rotate(360deg); } }
-    .scan-loading-text { font-size: 0.85rem; color: var(--muted); }
-    button.scan { background: linear-gradient(135deg, #2a4a6b, #1b3d69); border-color: #3a5f8a; }
-    button.scan:disabled { opacity: 0.5; cursor: not-allowed; }
-    @media (max-width: 640px) {
-      .scan-crop-stage { max-height: min(42vh, 260px); }
-      .scan-crop-stage img { max-height: min(42vh, 260px); width: 100%; object-fit: contain; }
-      .scan-preview { max-height: 120px; }
-      .table-scroll > table { font-size: 0.8rem; }
-      .table-scroll th, .table-scroll td { padding: 0.35rem 0.25rem; }
-      .table-scroll td input[type="number"] { width: 2.75rem; padding: 0.28rem; font-size: 0.85rem; }
-      .scan-table { font-size: 0.72rem; }
-      .scan-table th, .scan-table td { padding: 0.3rem 0.2rem; }
-      .scan-table input[type="number"] { width: 2.35rem; padding: 0.25rem; font-size: 0.8rem; }
-      .scan-table select { max-width: 7.5rem; font-size: 0.72rem; }
-    }
-  </style>
-</head>
-<body>
-  <div class="shell">
-    <nav class="nav">
-      <a href="{{ url_for('admin.admin_home') }}">Admin</a>
-      <a href="{{ url_for('admin.admin_season_form') }}">Season setup</a>
-      <a href="/">Home</a>
-    </nav>
-    <h1>Enter week scores</h1>
-    <p class="meta">
-      {{ entry.season }} · Week {{ entry.week }}{% if selected_team %} · {{ selected_team }}{% endif %}
-      {% if entry.completion %}
-      <span class="status-pill {{ entry.completion.status | replace('_', '-') }}">{{ entry.completion.status | replace('_', ' ') }}</span>
-      {% endif %}
-    </p>
+{% extends "admin_base.html" %}
+{% block title %}Enter scores &mdash; Week {{ entry.week }}{% endblock %}
 
-    <form class="toolbar" method="get" action="{{ url_for('admin.admin_enter_form') }}">
-      <label>Season
-        <select name="season" required>
-          {% for s in season_choices %}
-          <option value="{{ s }}" {% if s == entry.season %}selected{% endif %}>{{ s }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>Week
-        <select name="week" class="week-select" required>
-          {% for ws in week_statuses %}
-          <option value="{{ ws.week }}" class="{{ ws.status | replace('_', '-') }}"
-            {% if ws.week == entry.week %}selected{% endif %}>
-            Week {{ ws.week }} — {% if ws.status == 'complete' %}complete{% elif ws.status == 'incomplete' %}incomplete{% else %}not entered{% endif %}
-          </option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>Team
-        <select name="team">
-          <option value="">All teams</option>
-          {% for t in all_teams %}
-          <option value="{{ t }}" {% if t == selected_team %}selected{% endif %}>{{ t }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <button type="submit">Load</button>
-    </form>
-
-    {% if save_success %}
-    <p class="notice save-success" id="save-success" role="status">{{ save_success }}</p>
-    {% endif %}
-    {% if save_error %}
-    <p class="notice save-error">{{ save_error }}</p>
-    {% endif %}
-
+{% block content %}
+  <h1>Enter week scores</h1>
+  <p class="meta">
+    {{ entry.season }} &middot; Week {{ entry.week }}{% if selected_team %} &middot; {{ selected_team }}{% endif %}
     {% if entry.completion %}
-    <p class="notice {{ entry.completion.status | replace('_', '-') }}">{{ entry.completion.summary }}{% if entry.templated and entry.rows %} Roster copied from a prior week.{% endif %}</p>
-    {% elif not entry.rows %}
-    <p class="notice">No players for this team/week. <a href="{{ url_for('admin.admin_season_form', season=entry.season) }}">Set up season roster</a> first.</p>
+    <span class="status-pill {{ entry.completion.status | replace('_', '-') }}">{{ entry.completion.status | replace('_', ' ') }}</span>
+    {% endif %}
+  </p>
+
+  <form class="toolbar" method="get" action="{{ url_for('admin.admin_enter_form') }}">
+    <label>Season
+      <select name="season" required>
+        {% for s in season_choices %}
+        <option value="{{ s }}" {% if s == entry.season %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Week
+      <select name="week" class="week-select" required>
+        {% for ws in week_statuses %}
+        <option value="{{ ws.week }}" class="{{ ws.status | replace('_', '-') }}"
+          {% if ws.week == entry.week %}selected{% endif %}>
+          Week {{ ws.week }} &mdash; {% if ws.status == 'complete' %}complete{% elif ws.status == 'incomplete' %}incomplete{% else %}not entered{% endif %}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Team
+      <select name="team">
+        <option value="">All teams</option>
+        {% for t in all_teams %}
+        <option value="{{ t }}" {% if t == selected_team %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Load</button>
+  </form>
+
+  <p class="notice save-success" id="save-success" role="status" {% if not save_success %}hidden{% endif %}>
+    <button type="button" class="flash-dismiss" data-dismiss aria-label="Dismiss">&times;</button>
+    <span data-flash-text>{{ save_success or '' }}</span>
+  </p>
+  <div class="notice save-error error-summary" id="save-error" role="alert" {% if not save_error %}hidden{% endif %}>
+    <button type="button" class="flash-dismiss" data-dismiss aria-label="Dismiss">&times;</button>
+    <span data-flash-text>{{ save_error or '' }}</span>
+    <ul id="save-error-list" hidden></ul>
+  </div>
+  <p class="notice" id="draft-notice" hidden>
+    <button type="button" class="flash-dismiss" data-dismiss aria-label="Dismiss">&times;</button>
+    <span data-flash-text></span>
+  </p>
+
+  {% if entry.completion %}
+  <p class="notice {{ entry.completion.status | replace('_', '-') }}">{{ entry.completion.summary }}{% if entry.templated and entry.rows %} Roster copied from a prior week.{% endif %}</p>
+  {% elif not entry.rows %}
+  <p class="notice">No players for this team/week. <a href="{{ url_for('admin.admin_season_form', season=entry.season) }}">Set up season roster</a> first.</p>
+  {% endif %}
+
+  {% if entry.rows %}
+  <form id="save-form" method="post" action="{{ url_for('admin.admin_week_post') }}" autocomplete="off">
+    <input type="hidden" name="payload" id="payload-field">
+    <input type="hidden" name="team" value="{{ selected_team }}">
+
+    <div class="week-flags">
+      <label class="inline-row">
+        <input type="checkbox" id="week-playoffs" {% if entry.week_playoffs %}checked{% endif %}>
+        Playoffs week (applies to everyone this week)
+      </label>
+    </div>
+
+    {% if scoreboard_scan_enabled %}
+    <div class="scan-panel" id="scan-panel">
+      <h2>Scan scoreboard</h2>
+      <p class="meta" style="margin:0 0 0.35rem">Upload a full dual-monitor photo (or crop one side). Team and player names are read from the board and matched to this week&rsquo;s rosters.</p>
+      <p class="scan-privacy">The selected area is sent to Anthropic for processing. BowlBot does not store photos.</p>
+      <div class="scan-toolbar">
+        <input type="file" id="scan-image" accept="image/jpeg,image/png,image/webp">
+        <button type="button" class="scan" id="scan-run" disabled>Scan photo</button>
+        <button type="button" id="scan-recrop" style="display:none">Adjust crop</button>
+      </div>
+      <div class="scan-crop-stage" id="scan-crop-stage">
+        <div class="scan-crop-dim" id="scan-crop-dim" aria-hidden="true"></div>
+        <img id="scan-crop-img" alt="">
+        <div class="scan-crop-box" id="scan-crop-box"></div>
+      </div>
+      <p class="meta" id="scan-crop-hint" style="display:none;margin:0 0 0.5rem;font-size:0.8rem">Full photo is selected by default. Drag to crop one monitor if you prefer.</p>
+      <p class="scan-status" id="scan-status" aria-live="polite"></p>
+      <div class="scan-loading" id="scan-loading" aria-hidden="true">
+        <div class="scan-spinner" role="status" aria-label="Scanning scoreboard"></div>
+        <span class="scan-loading-text">Reading scoreboard&hellip;</span>
+      </div>
+      <div class="scan-review" id="scan-review">
+        <img class="scan-preview" id="scan-preview" alt="Area sent for scan">
+        <ul class="scan-errors" id="scan-errors"></ul>
+        <div id="scan-teams-review"></div>
+        <button type="button" class="primary" id="scan-apply">Apply to grid</button>
+      </div>
+    </div>
     {% endif %}
 
-    {% if entry.rows %}
-    <form id="save-form" method="post" action="{{ url_for('admin.admin_week_post') }}" autocomplete="off">
-      <input type="hidden" name="payload" id="payload-field">
-      <input type="hidden" name="team" value="{{ selected_team }}">
-
-      <div class="week-flags">
-        <label class="inline-row">
-          <input type="checkbox" id="week-playoffs" {% if entry.week_playoffs %}checked{% endif %}>
-          Playoffs week (applies to everyone this week)
+    {% for team_name, team_rows in entry.teams_grouped %}
+    {% set team_opp = entry.team_opponents.get(team_name, '') %}
+    {% set show_g5 = entry.team_game5_visible.get(team_name, false) %}
+    {% set roster_rows = team_rows | rejectattr('substitute') | list %}
+    {% set sub_rows = team_rows | selectattr('substitute') | list %}
+    {% set roster_names = roster_rows | map(attribute='player_display_name') | list %}
+    <div class="team-block{% if not show_g5 %} hide-game5{% endif %}" data-team="{{ team_name }}" data-roster-names='{{ roster_names | tojson }}'>
+      <div class="team-bar">
+        <span class="team-title">{{ team_name }}</span>
+        <label>Opponent
+          <select class="team-opponent">
+            <option value="">&mdash;</option>
+            {% for t in all_teams if t != team_name %}
+            <option value="{{ t }}" {% if team_opp == t %}selected{% endif %}>{{ t }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="inline-row team-game5-label">
+          <input type="checkbox" class="team-game5-toggle" {% if show_g5 %}checked{% endif %}>
+          Game 5
         </label>
       </div>
 
-      {% if scoreboard_scan_enabled %}
-      <div class="scan-panel" id="scan-panel">
-        <h2>Scan scoreboard</h2>
-        <p class="meta" style="margin:0 0 0.35rem">Upload a full dual-monitor photo (or crop one side). Team and player names are read from the board and matched to this week’s rosters.</p>
-        <p class="scan-privacy">The selected area is sent to Anthropic for processing. BowlBot does not store photos.</p>
-        <div class="scan-toolbar">
-          <input type="file" id="scan-image" accept="image/jpeg,image/png,image/webp">
-          <button type="button" class="scan" id="scan-run" disabled>Scan photo</button>
-          <button type="button" id="scan-recrop" style="display:none">Adjust crop</button>
-        </div>
-        <div class="scan-crop-stage" id="scan-crop-stage">
-          <div class="scan-crop-dim" id="scan-crop-dim" aria-hidden="true"></div>
-          <img id="scan-crop-img" alt="">
-          <div class="scan-crop-box" id="scan-crop-box"></div>
-        </div>
-        <p class="meta" id="scan-crop-hint" style="display:none;margin:0 0 0.5rem;font-size:0.8rem">Full photo is selected by default. Drag to crop one monitor if you prefer.</p>
-        <p class="scan-status" id="scan-status" aria-live="polite"></p>
-        <div class="scan-loading" id="scan-loading" aria-hidden="true">
-          <div class="scan-spinner" role="status" aria-label="Scanning scoreboard"></div>
-          <span class="scan-loading-text">Reading scoreboard…</span>
-        </div>
-        <div class="scan-review" id="scan-review">
-          <img class="scan-preview" id="scan-preview" alt="Area sent for scan">
-          <ul class="scan-errors" id="scan-errors"></ul>
-          <div id="scan-teams-review"></div>
-          <button type="button" class="primary" id="scan-apply">Apply to grid</button>
+      <div class="grid-scroll">
+        <div class="egrid" role="table" aria-label="{{ team_name }} scores">
+          <div class="egrid-row" role="row">
+            <div class="egrid-cell egrid-cell--head egrid-cell--name" role="columnheader">Player</div>
+            <div class="egrid-cell egrid-cell--head" role="columnheader" title="Whole week out">Week out</div>
+            <div class="egrid-cell egrid-cell--head" role="columnheader" title="Substitute entered for this player">Sub</div>
+            <div class="egrid-cell egrid-cell--head" role="columnheader">G1</div>
+            <div class="egrid-cell egrid-cell--head" role="columnheader">G2</div>
+            <div class="egrid-cell egrid-cell--head" role="columnheader">G3</div>
+            <div class="egrid-cell egrid-cell--head" role="columnheader">G4</div>
+            <div class="egrid-cell egrid-cell--head game5-col" role="columnheader">G5</div>
+          </div>
+          {% for row in roster_rows %}
+          {% set subs_for_player = sub_rows | selectattr('substituted_for', 'equalto', row.player_display_name) | list %}
+          <div class="egrid-row roster-row{% if row.missing_games %} row-incomplete{% endif %}{% if row.absent %} week-absent{% endif %}"
+               role="row" data-row data-team="{{ team_name }}" data-player="{{ row.player_display_name }}"
+               data-substitute="false"{% if row.absent %} data-week-out="true"{% endif %}
+               {% if row.missing_games %}title="{{ row.missing_games }} game(s) missing"{% endif %}>
+            <div class="egrid-cell egrid-cell--name player-name-cell" role="cell">
+              <span>{{ row.player_display_name }}</span>
+              <span class="absent-fill-hint" hidden></span>
+              <span class="field-error" hidden></span>
+            </div>
+            <div class="egrid-cell" role="cell">
+              <input type="checkbox" class="absent" aria-label="Week out" {% if row.absent %}checked{% endif %}>
+            </div>
+            <div class="egrid-cell" role="cell">
+              <input type="checkbox" class="subbed" aria-label="Substitute entered" {% if subs_for_player %}checked{% endif %}>
+            </div>
+            {% for gn, g, miss in [
+              (1, row.game1, row.game1_absent),
+              (2, row.game2, row.game2_absent),
+              (3, row.game3, row.game3_absent),
+              (4, row.game4, row.game4_absent),
+            ] %}
+            <div class="egrid-cell game-cell" role="cell">
+              <input type="number" inputmode="numeric" min="{{ game_score_min }}" max="{{ game_score_max }}" step="1"
+                     class="game game-main" aria-label="{{ row.player_display_name }} game {{ gn }}"
+                     value="{{ g if g is not none else '' }}">
+              <label class="game-miss" title="Missed this game &mdash; book average (still counts for team; excluded from player season average)">
+                <input type="checkbox" class="game-absent" tabindex="-1" {% if miss %}checked{% endif %}> miss
+              </label>
+            </div>
+            {% endfor %}
+            <div class="egrid-cell game-cell game5-col" role="cell">
+              <input type="number" inputmode="numeric" min="{{ game_score_min }}" max="{{ game_score_max }}" step="1"
+                     class="game game5" aria-label="{{ row.player_display_name }} game 5"
+                     value="{{ row.game5 if row.game5 is not none else '' }}">
+              <label class="game-miss" title="Missed this game &mdash; book average">
+                <input type="checkbox" class="game-absent" tabindex="-1" {% if row.game5_absent %}checked{% endif %}> miss
+              </label>
+            </div>
+          </div>
+          {% endfor %}
         </div>
       </div>
-      {% endif %}
 
-      {% for team_name, team_rows in entry.teams_grouped %}
-      {% set team_opp = entry.team_opponents.get(team_name, '') %}
-      {% set show_g5 = entry.team_game5_visible.get(team_name, false) %}
-      {% set roster_rows = team_rows | rejectattr('substitute') | list %}
-      {% set sub_rows = team_rows | selectattr('substitute') | list %}
-      {% set roster_names = roster_rows | map(attribute='player_display_name') | list %}
-      <div class="team-block{% if not show_g5 %} hide-game5{% endif %}" data-team="{{ team_name }}" data-roster-names='{{ roster_names | tojson }}'>
-        <div class="team-bar">
-          <span class="team-title">{{ team_name }}</span>
-          <label>Opponent
-            <select class="team-opponent">
-              <option value="">—</option>
-              {% for t in all_teams if t != team_name %}
-              <option value="{{ t }}" {% if team_opp == t %}selected{% endif %}>{{ t }}</option>
-              {% endfor %}
-            </select>
-          </label>
-          <label class="inline-row team-game5-label">
-            <input type="checkbox" class="team-game5-toggle" {% if show_g5 %}checked{% endif %}>
-            Game 5
-          </label>
-        </div>
-        <div class="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>Player</th>
-              <th title="Whole week out">Week<br>out</th>
-              <th title="Substitute entered for this player">Sub</th>
-              <th>G1</th><th>G2</th><th>G3</th><th>G4</th>
-              <th class="game5-col">G5</th>
-            </tr>
-          </thead>
-          <tbody class="roster-rows">
-            {% for row in roster_rows %}
-            {% set subs_for_player = sub_rows | selectattr('substituted_for', 'equalto', row.player_display_name) | list %}
-            <tr data-row data-team="{{ team_name }}" data-player="{{ row.player_display_name }}" data-substitute="false"{% if row.absent %} data-week-out="true"{% endif %} class="roster-row{% if row.missing_games %} row-incomplete {% endif %}{% if row.absent %}week-absent{% endif %}"{% if row.missing_games %} title="{{ row.missing_games }} game(s) missing"{% endif %}>
-              <td class="player-name-cell">{{ row.player_display_name }}<span class="absent-fill-hint" hidden></span></td>
-              <td class="flags"><label><input type="checkbox" class="absent" {% if row.absent %}checked{% endif %}></label></td>
-              <td class="flags"><label><input type="checkbox" class="subbed" {% if subs_for_player %}checked{% endif %}></label></td>
-              {% for gn, g, miss in [
-                (1, row.game1, row.game1_absent),
-                (2, row.game2, row.game2_absent),
-                (3, row.game3, row.game3_absent),
-                (4, row.game4, row.game4_absent),
-              ] %}
-              <td class="game-cell">
-                <input type="number" min="{{ game_score_min }}" max="{{ game_score_max }}" step="1" class="game game-main" value="{{ g if g is not none else '' }}">
-                <label class="game-miss" title="Missed this game — book average (still counts for team; excluded from player season average)"><input type="checkbox" class="game-absent" {% if miss %}checked{% endif %}> miss</label>
-              </td>
-              {% endfor %}
-              <td class="game-cell game5-col">
-                <input type="number" min="{{ game_score_min }}" max="{{ game_score_max }}" step="1" class="game game5" value="{{ row.game5 if row.game5 is not none else '' }}">
-                <label class="game-miss" title="Missed this game — book average"><input type="checkbox" class="game-absent" {% if row.game5_absent %}checked{% endif %}> miss</label>
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-        </div>
-        <div class="sub-section{% if sub_rows %} visible{% endif %}">
-          <p class="sub-section-title">Substitutes</p>
-          <div class="table-scroll">
-          <table class="sub-table">
-            <thead>
-              <tr>
-                <th>Sub</th>
-                <th>Sub for</th>
-                <th title="Sub pins count for team total (instead of regular's book average)">Use<br>sub score</th>
-                <th>G1</th><th>G2</th><th>G3</th><th>G4</th>
-                <th class="game5-col">G5</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody class="sub-rows">
-              {% for row in sub_rows %}
-              <tr data-row data-team="{{ team_name }}" data-player="{{ row.player_display_name }}" data-substitute="true" data-sub-for="{{ row.substituted_for or '' }}" class="sub-row">
-                <td>
-                  <span class="sub-label">Sub</span>
-                  <select class="sub-pick-select" aria-label="Sub player">
-                    <option value="">— select —</option>
-                    {% if row.player_display_name and row.player_display_name not in all_players %}
-                    <option value="{{ row.player_display_name }}" selected>{{ row.player_display_name }}</option>
-                    {% endif %}
-                    {% for pname in all_players %}
-                    <option value="{{ pname }}" {% if pname == row.player_display_name %}selected{% endif %}>{{ pname }}</option>
-                    {% endfor %}
-                    <option value="__NEW__">New player…</option>
-                  </select>
-                  <input type="text" class="sub-pick-new" placeholder="New name" autocomplete="off" {% if row.player_display_name not in all_players %}value="{{ row.player_display_name }}"{% else %}style="display:none"{% endif %}>
-                </td>
-                <td>
-                  <select class="sub-for" aria-label="Sub for">
-                    <option value="">— pick —</option>
-                    {% for name in roster_names %}
-                    <option value="{{ name }}" {% if row.substituted_for == name %}selected{% endif %}>{{ name }}</option>
-                    {% endfor %}
-                  </select>
-                </td>
-                <td class="flags"><label><input type="checkbox" class="sub-count" {% if row.substitute_scores_count %}checked{% endif %}></label></td>
-                {% for gn, g in [
-                  (1, row.game1),
-                  (2, row.game2),
-                  (3, row.game3),
-                  (4, row.game4),
-                ] %}
-                <td class="game-cell">
-                  <input type="number" min="{{ game_score_min }}" max="{{ game_score_max }}" step="1" class="game game-main" value="{{ g if g is not none else '' }}">
-                </td>
-                {% endfor %}
-                <td class="game-cell game5-col">
-                  <input type="number" min="{{ game_score_min }}" max="{{ game_score_max }}" step="1" class="game game5" value="{{ row.game5 if row.game5 is not none else '' }}">
-                </td>
-                <td><button type="button" class="remove-sub-btn" title="Remove sub">✕</button></td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+      <div class="sub-section{% if sub_rows %} visible{% endif %}">
+        <p class="sub-section-title">Substitutes</p>
+        <div class="grid-scroll">
+          <div class="sgrid" role="table" aria-label="{{ team_name }} substitutes">
+            <div class="egrid-row" role="row">
+              <div class="egrid-cell egrid-cell--head egrid-cell--name" role="columnheader">Sub</div>
+              <div class="egrid-cell egrid-cell--head" role="columnheader">Sub for</div>
+              <div class="egrid-cell egrid-cell--head" role="columnheader" title="Sub pins count for team total (instead of regular's book average)">Use sub score</div>
+              <div class="egrid-cell egrid-cell--head" role="columnheader">G1</div>
+              <div class="egrid-cell egrid-cell--head" role="columnheader">G2</div>
+              <div class="egrid-cell egrid-cell--head" role="columnheader">G3</div>
+              <div class="egrid-cell egrid-cell--head" role="columnheader">G4</div>
+              <div class="egrid-cell egrid-cell--head game5-col" role="columnheader">G5</div>
+              <div class="egrid-cell egrid-cell--head" role="columnheader"></div>
+            </div>
+            <!-- Existing sub rows are built by the same code path as new ones. -->
+            <div class="sub-rows" data-subs='{{ sub_rows | tojson }}'></div>
           </div>
         </div>
       </div>
-      {% endfor %}
-
-      <div class="actions">
-        {% if show_debug_tools %}
-        <button type="button" class="debug" id="debug-fill-scores" title="Testing only — does not save">Debug: random scores (150–220)</button>
-        {% endif %}
-        <button type="submit" class="primary" id="save-btn">Save{% if selected_team %} {{ selected_team }}{% endif %}</button>
-        <span id="save-pending" class="scan-status" style="display:none" aria-live="polite">Saving…</span>
-      </div>
-    </form>
-
-    <form method="post" action="{{ url_for('admin.admin_week_delete_post') }}" style="margin-top:1rem" onsubmit="return confirm('Delete all scores for {{ entry.season }} week {{ entry.week }}?');">
-      <input type="hidden" name="season" value="{{ entry.season }}">
-      <input type="hidden" name="week" value="{{ entry.week }}">
-      <button type="submit" class="danger">Delete this week</button>
-    </form>
-    {% endif %}
-  </div>
-
-  <script>
-    (function () {
-      var form = document.getElementById("save-form");
-      if (!form) return;
-      var season = {{ entry.season | tojson }};
-      var week = {{ entry.week }};
-      var teamFilter = {{ selected_team | tojson }};
-      var ALL_TEAMS = {{ all_teams | tojson }};
-      var GAME_MIN = {{ game_score_min }};
-      var GAME_MAX = {{ game_score_max }};
-      var SCORE_HINT = "Enter a whole number from " + GAME_MIN + " to " + GAME_MAX + ", or leave blank.";
-      var syncingOpponents = false;
-      var SCAN_URL = {{ url_for('admin.admin_week_scan') | tojson }};
-      var TEAM_ROSTER = {{ team_roster_names | tojson }};
-      var ABSENT_FILL = {{ entry.absent_fill_averages | tojson }};
-      var ABSENT_FILL_META = {{ entry.absent_fill_details | tojson }};
-      var TEAM_GAME5 = {{ (entry.team_game5_visible or {}) | tojson }};
-      var ALL_PLAYERS = {{ all_players | tojson }};
-      if (!Array.isArray(ALL_PLAYERS)) ALL_PLAYERS = [];
-      var scanRows = [];
-
-      function validateGameInput(inp, tr) {
-        var v = inp.value.trim();
-        if (v === "") {
-          inp.setCustomValidity("");
-          return true;
-        }
-        var n = Number(v);
-        if (!Number.isInteger(n) || n < GAME_MIN || n > GAME_MAX) {
-          inp.setCustomValidity(SCORE_HINT);
-          return false;
-        }
-        inp.setCustomValidity("");
-        return true;
-      }
-
-      function setTeamGame5Visible(block, show) {
-        if (!block) return;
-        block.classList.toggle("hide-game5", !show);
-        var toggle = block.querySelector(".team-game5-toggle");
-        if (toggle) toggle.checked = show;
-        var team = block.getAttribute("data-team");
-        if (team) TEAM_GAME5[team] = show;
-        if (teamFilter && team === teamFilter) {
-          var scanTable = document.getElementById("scan-table");
-          if (scanTable) scanTable.classList.toggle("hide-game5", !show);
-        }
-      }
-
-      function initTeamGame5Toggles() {
-        document.querySelectorAll(".team-block").forEach(function (block) {
-          var team = block.getAttribute("data-team");
-          var show = TEAM_GAME5[team] === true;
-          var toggle = block.querySelector(".team-game5-toggle");
-          if (toggle) {
-            toggle.addEventListener("change", function () {
-              setTeamGame5Visible(block, toggle.checked);
-            });
-          }
-          setTeamGame5Visible(block, show);
-        });
-      }
-
-      function teamShowsGame5(tr) {
-        var block = tr.closest(".team-block");
-        return block && !block.classList.contains("hide-game5");
-      }
-
-      function absentFillInputs(tr) {
-        var sel = "input.game-main";
-        if (teamShowsGame5(tr)) sel += ", input.game5";
-        return tr.querySelectorAll(sel);
-      }
-
-      function fillAbsentScores(tr, force) {
-        var player = tr.getAttribute("data-player");
-        var fill = ABSENT_FILL && typeof ABSENT_FILL === "object" ? ABSENT_FILL : {};
-        var avg = player ? fill[player] : null;
-        if (avg == null) return;
-        if (!force) {
-          var hasScore = false;
-          absentFillInputs(tr).forEach(function (inp) {
-            if (inp.value.trim() !== "") hasScore = true;
-          });
-          if (hasScore) return;
-        }
-        absentFillInputs(tr).forEach(function (inp) {
-          inp.value = String(avg);
-          validateGameInput(inp, tr);
-        });
-        tr.classList.remove("row-incomplete");
-        tr.removeAttribute("title");
-      }
-
-      function updateAbsentFillHint(tr, on) {
-        var hint = tr.querySelector(".absent-fill-hint");
-        if (!hint) return;
-        if (!on) {
-          hint.hidden = true;
-          hint.textContent = "";
-          return;
-        }
-        var player = tr.getAttribute("data-player");
-        var meta = ABSENT_FILL_META && player ? ABSENT_FILL_META[player] : null;
-        if (!meta || meta.base == null) {
-          hint.hidden = true;
-          return;
-        }
-        hint.textContent = meta.base + " \u00d7 " + meta.penalty_percent + "%";
-        hint.hidden = false;
-      }
-
-      function setWeekAbsentRow(tr, on) {
-        tr.classList.toggle("week-absent", on);
-        tr.setAttribute("data-week-out", on ? "true" : "false");
-        tr.querySelectorAll("input.game-absent").forEach(function (cb) {
-          if (on) cb.checked = false;
-          cb.disabled = on;
-        });
-        updateAbsentFillHint(tr, on);
-      }
-
-      function isWeekOut(tr) {
-        if (tr.getAttribute("data-week-out") === "true") return true;
-        var absentCb = tr.querySelector("input.absent");
-        return !!(absentCb && absentCb.checked);
-      }
-
-      function syncWeekOutRowFromDom(tr) {
-        var absentInp = tr.querySelector("input.absent");
-        if (!absentInp) return false;
-        if (tr.getAttribute("data-week-out") === "true" && !absentInp.checked) {
-          absentInp.checked = true;
-        }
-        var on = isWeekOut(tr);
-        setWeekAbsentRow(tr, on);
-        return on;
-      }
-
-      function applyWeekOutUi(tr) {
-        if (!syncWeekOutRowFromDom(tr)) return;
-        fillAbsentScores(tr, false);
-        refreshGameMissRow(tr);
-      }
-
-      function fillGameAbsentScore(inp, tr) {
-        var player = tr.getAttribute("data-player");
-        var fill = ABSENT_FILL && typeof ABSENT_FILL === "object" ? ABSENT_FILL : {};
-        var avg = player ? fill[player] : null;
-        if (avg == null) return;
-        if (inp.value.trim() === "") inp.value = String(avg);
-        validateGameInput(inp, tr);
-      }
-
-      function findSubRowForPlayer(block, playerName) {
-        if (!block || !playerName) return null;
-        var found = null;
-        block.querySelectorAll("tr.sub-row").forEach(function (tr) {
-          var sel = tr.querySelector(".sub-for");
-          var slot = (sel && sel.value.trim()) || (tr.getAttribute("data-sub-for") || "").trim();
-          if (slot === playerName) found = tr;
-        });
-        return found;
-      }
-
-      function ensureWeekOut(tr) {
-        var absentInp = tr.querySelector("input.absent");
-        if (!absentInp) return;
-        if (!absentInp.checked) absentInp.checked = true;
-        setWeekAbsentRow(tr, true);
-        fillAbsentScores(tr, true);
-        refreshGameMissRow(tr);
-      }
-
-      function updateSubSectionVisibility(block) {
-        var section = block.querySelector(".sub-section");
-        if (!section) return;
-        var hasSubs = block.querySelectorAll("tr.sub-row").length > 0;
-        var hasSubbed = false;
-        block.querySelectorAll("tr.roster-row input.subbed").forEach(function (cb) {
-          if (cb.checked) hasSubbed = true;
-        });
-        section.classList.toggle("visible", hasSubs || hasSubbed);
-      }
-
-      function refreshSubbedUi(block) {
-        if (!block) return;
-        updateSubSectionVisibility(block);
-      }
-
-      function setSubbedForPlayer(block, playerName, on) {
-        if (!block || !playerName) return;
-        block.querySelectorAll("tr.roster-row").forEach(function (tr) {
-          if (tr.getAttribute("data-player") === playerName) {
-            var cb = tr.querySelector("input.subbed");
-            if (cb) cb.checked = on;
-          }
-        });
-        refreshSubbedUi(block);
-      }
-
-      function bindSubbedRow(tr) {
-        var subbedCb = tr.querySelector("input.subbed");
-        if (!subbedCb) return;
-        subbedCb.addEventListener("change", function () {
-          var block = tr.closest(".team-block");
-          if (!block) return;
-          var player = tr.getAttribute("data-player");
-          if (subbedCb.checked) {
-            ensureWeekOut(tr);
-            if (!findSubRowForPlayer(block, player)) {
-              addSubRow(block, { subFor: player });
-            }
-            var section = block.querySelector(".sub-section");
-            if (section) section.scrollIntoView({ behavior: "smooth", block: "nearest" });
-            var subTr = findSubRowForPlayer(block, player);
-            if (subTr) {
-              var sel = subTr.querySelector(".sub-pick-select");
-              if (sel) sel.focus();
-            }
-          } else {
-            removeSubForPlayer(block, player);
-          }
-          refreshSubbedUi(block);
-        });
-        if (subbedCb.checked) {
-          var block = tr.closest(".team-block");
-          var player = tr.getAttribute("data-player");
-          ensureWeekOut(tr);
-          if (block && !findSubRowForPlayer(block, player)) {
-            addSubRow(block, { subFor: player });
-          }
-          refreshSubbedUi(block);
-        }
-      }
-
-      function bindAbsentRow(tr) {
-        var absentInp = tr.querySelector("input.absent");
-        if (!absentInp) return;
-        absentInp.addEventListener("change", function () {
-          setWeekAbsentRow(tr, absentInp.checked);
-          if (absentInp.checked) fillAbsentScores(tr, true);
-          else {
-            var block = tr.closest(".team-block");
-            var player = tr.getAttribute("data-player");
-            if (block) {
-              removeSubForPlayer(block, player);
-              var subbedCb = tr.querySelector("input.subbed");
-              if (subbedCb) subbedCb.checked = false;
-              refreshSubbedUi(block);
-            }
-          }
-          refreshGameMissRow(tr);
-        });
-        applyWeekOutUi(tr);
-      }
-
-      function refreshGameMissRow(tr) {
-        var any = false;
-        tr.querySelectorAll("input.game-absent").forEach(function (cb) {
-          if (cb.checked && !cb.disabled) any = true;
-        });
-        tr.classList.toggle("has-game-miss", any);
-      }
-
-      function bindGameAbsentBoxes(tr) {
-        tr.querySelectorAll("input.game-absent").forEach(function (cb) {
-          cb.addEventListener("change", function () {
-            if (cb.checked) {
-              var cell = cb.closest(".game-cell");
-              var inp = cell && cell.querySelector("input.game");
-              if (inp) fillGameAbsentScore(inp, tr);
-            }
-            refreshGameMissRow(tr);
-          });
-        });
-        refreshGameMissRow(tr);
-      }
-
-      function bindGameInputs(tr) {
-        tr.querySelectorAll("input.game").forEach(function (inp) {
-          inp.addEventListener("input", function () { validateGameInput(inp, tr); });
-          inp.addEventListener("blur", function () { validateGameInput(inp, tr); });
-        });
-      }
-
-      function rosterNamesForBlock(block) {
-        var raw = block.getAttribute("data-roster-names") || "[]";
-        try {
-          var parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length) return parsed;
-        } catch (e) { /* fall through */ }
-        var names = [];
-        block.querySelectorAll('tr[data-row][data-substitute="false"]').forEach(function (tr) {
-          var n = tr.getAttribute("data-player");
-          if (n) names.push(n);
-        });
-        return names;
-      }
-
-      function buildSubPickSelect(selected) {
-        var sel = document.createElement("select");
-        sel.className = "sub-pick-select";
-        sel.setAttribute("aria-label", "Sub player");
-        var opt0 = document.createElement("option");
-        opt0.value = "";
-        opt0.textContent = "— select —";
-        sel.appendChild(opt0);
-        if (selected && ALL_PLAYERS.indexOf(selected) < 0) {
-          var cur = document.createElement("option");
-          cur.value = selected;
-          cur.textContent = selected;
-          cur.selected = true;
-          sel.appendChild(cur);
-        }
-        ALL_PLAYERS.forEach(function (n) {
-          var o = document.createElement("option");
-          o.value = n;
-          o.textContent = n;
-          if (n === selected) o.selected = true;
-          sel.appendChild(o);
-        });
-        var neu = document.createElement("option");
-        neu.value = "__NEW__";
-        neu.textContent = "New player…";
-        sel.appendChild(neu);
-        return sel;
-      }
-
-      function bindSubPickCell(tr) {
-        var sel = tr.querySelector(".sub-pick-select");
-        var newInp = tr.querySelector(".sub-pick-new");
-        if (!sel) return;
-        sel.addEventListener("change", function () {
-          if (!newInp) return;
-          if (sel.value === "__NEW__") {
-            newInp.style.display = "block";
-            newInp.focus();
-          } else {
-            newInp.style.display = "none";
-            newInp.value = "";
-          }
-          tr.setAttribute("data-player", subPlayerNameFromRow(tr));
-        });
-        if (newInp) {
-          newInp.addEventListener("input", function () {
-            tr.setAttribute("data-player", newInp.value.trim());
-          });
-        }
-      }
-
-      function subPlayerNameFromRow(tr) {
-        var sel = tr.querySelector(".sub-pick-select");
-        var newInp = tr.querySelector(".sub-pick-new");
-        if (sel && sel.value === "__NEW__" && newInp) return newInp.value.trim();
-        if (sel && sel.value && sel.value !== "__NEW__") return sel.value.trim();
-        return tr.getAttribute("data-player") || "";
-      }
-
-      function removeSubForPlayer(block, playerName) {
-        if (!playerName) return;
-        block.querySelectorAll("tr.sub-row").forEach(function (tr) {
-          var sel = tr.querySelector(".sub-for");
-          if (sel && sel.value === playerName) tr.remove();
-        });
-      }
-
-      function takenSubForSlots(block, exceptTr) {
-        var taken = [];
-        block.querySelectorAll("tr.sub-row").forEach(function (tr) {
-          if (tr === exceptTr) return;
-          var sel = tr.querySelector(".sub-for");
-          var slot = (sel && sel.value.trim()) || (tr.getAttribute("data-sub-for") || "").trim();
-          if (slot) taken.push(slot);
-        });
-        return taken;
-      }
-
-      function buildSubForSelect(names, selected, taken) {
-        var sel = document.createElement("select");
-        sel.className = "sub-for";
-        sel.setAttribute("aria-label", "Sub for");
-        var opt0 = document.createElement("option");
-        opt0.value = "";
-        opt0.textContent = "— pick —";
-        sel.appendChild(opt0);
-        names.forEach(function (n) {
-          var o = document.createElement("option");
-          o.value = n;
-          o.textContent = n;
-          if (n === selected) o.selected = true;
-          if (taken.indexOf(n) >= 0 && n !== selected) o.disabled = true;
-          sel.appendChild(o);
-        });
-        return sel;
-      }
-
-      function refreshSubForOptions(block) {
-        var names = rosterNamesForBlock(block);
-        block.querySelectorAll("tr.sub-row").forEach(function (tr) {
-          var sel = tr.querySelector(".sub-for");
-          if (!sel) return;
-          var cur = sel.value;
-          var taken = takenSubForSlots(block, tr);
-          var parent = sel.parentNode;
-          var nu = buildSubForSelect(names, cur, taken);
-          parent.replaceChild(nu, sel);
-          nu.addEventListener("change", function () {
-            tr.setAttribute("data-sub-for", nu.value);
-            refreshSubForOptions(block);
-            refreshSubbedUi(block);
-          });
-        });
-      }
-
-      function appendGameCell(tr, value, extraClass) {
-        var td = document.createElement("td");
-        td.className = "game-cell" + (extraClass ? " " + extraClass : "");
-        var inp = document.createElement("input");
-        inp.type = "number";
-        inp.min = String(GAME_MIN);
-        inp.max = String(GAME_MAX);
-        inp.step = "1";
-        inp.className = "game " + (extraClass === "game5-col" ? "game5" : "game-main");
-        if (value != null && value !== "") inp.value = String(value);
-        td.appendChild(inp);
-        tr.appendChild(td);
-      }
-
-      function createSubRow(block, data) {
-        data = data || {};
-        var team = block.getAttribute("data-team");
-        var tr = document.createElement("tr");
-        tr.className = "sub-row";
-        tr.setAttribute("data-row", "");
-        tr.setAttribute("data-team", team);
-        tr.setAttribute("data-substitute", "true");
-        tr.setAttribute("data-player", data.player || "");
-        tr.setAttribute("data-sub-for", data.subFor || "");
-
-        var nameTd = document.createElement("td");
-        var label = document.createElement("span");
-        label.className = "sub-label";
-        label.textContent = "Sub";
-        nameTd.appendChild(label);
-        var pickSel = buildSubPickSelect(data.player || "");
-        nameTd.appendChild(pickSel);
-        var newInp = document.createElement("input");
-        newInp.type = "text";
-        newInp.className = "sub-pick-new";
-        newInp.placeholder = "New name";
-        newInp.autocomplete = "off";
-        if (data.player && ALL_PLAYERS.indexOf(data.player) < 0) {
-          newInp.value = data.player;
-          newInp.style.display = "block";
-        } else {
-          newInp.style.display = "none";
-        }
-        nameTd.appendChild(newInp);
-        tr.appendChild(nameTd);
-
-        var forTd = document.createElement("td");
-        forTd.appendChild(
-          buildSubForSelect(
-            rosterNamesForBlock(block),
-            data.subFor || "",
-            takenSubForSlots(block, null)
-          )
-        );
-        tr.appendChild(forTd);
-
-        var countTd = document.createElement("td");
-        countTd.className = "flags";
-        var countLbl = document.createElement("label");
-        var countCb = document.createElement("input");
-        countCb.type = "checkbox";
-        countCb.className = "sub-count";
-        if (data.count) countCb.checked = true;
-        countLbl.appendChild(countCb);
-        countTd.appendChild(countLbl);
-        tr.appendChild(countTd);
-
-        appendGameCell(tr, data.game1, "");
-        appendGameCell(tr, data.game2, "");
-        appendGameCell(tr, data.game3, "");
-        appendGameCell(tr, data.game4, "");
-        appendGameCell(tr, data.game5, "game5-col");
-
-        var rmTd = document.createElement("td");
-        var rmBtn = document.createElement("button");
-        rmBtn.type = "button";
-        rmBtn.className = "remove-sub-btn";
-        rmBtn.title = "Remove sub";
-        rmBtn.textContent = "✕";
-        rmTd.appendChild(rmBtn);
-        tr.appendChild(rmTd);
-        return tr;
-      }
-
-      function bindSubRow(tr, block) {
-        var removeBtn = tr.querySelector(".remove-sub-btn");
-        if (removeBtn) {
-          removeBtn.addEventListener("click", function () {
-            var subForSel = tr.querySelector(".sub-for");
-            var subFor = (subForSel && subForSel.value.trim()) || (tr.getAttribute("data-sub-for") || "").trim();
-            tr.remove();
-            if (subFor) setSubbedForPlayer(block, subFor, false);
-            refreshSubForOptions(block);
-            refreshSubbedUi(block);
-          });
-        }
-        bindSubPickCell(tr);
-        bindGameInputs(tr);
-      }
-
-      function addSubRow(block, data) {
-        var tbody = block.querySelector(".sub-rows");
-        if (!tbody) return null;
-        var tr = createSubRow(block, data || {});
-        tbody.appendChild(tr);
-        bindSubRow(tr, block);
-        refreshSubForOptions(block);
-        refreshSubbedUi(block);
-        return tr;
-      }
-
-      function initSubRows() {
-        document.querySelectorAll(".team-block").forEach(function (block) {
-          block.querySelectorAll("tr.sub-row").forEach(function (tr) {
-            bindSubRow(tr, block);
-          });
-          refreshSubForOptions(block);
-          refreshSubbedUi(block);
-        });
-      }
-
-      function refreshAllWeekOutUi() {
-        document.querySelectorAll(".team-block").forEach(function (block) {
-          block.querySelectorAll("tr.roster-row").forEach(function (tr) {
-            applyWeekOutUi(tr);
-          });
-          refreshSubbedUi(block);
-        });
-      }
-
-      var saveSuccess = document.getElementById("save-success");
-      if (saveSuccess) {
-        saveSuccess.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        if (window.history && window.history.replaceState) {
-          var u = new URL(window.location.href);
-          u.searchParams.delete("saved");
-          u.searchParams.delete("msg");
-          window.history.replaceState({}, "", u.pathname + u.search);
-        }
-      }
-
-      document.querySelectorAll("tr[data-row][data-substitute=\"false\"]").forEach(function (tr) {
-        bindAbsentRow(tr);
-        bindSubbedRow(tr);
-        bindGameAbsentBoxes(tr);
-        bindGameInputs(tr);
-      });
-      initSubRows();
-      refreshAllWeekOutUi();
-      initTeamGame5Toggles();
-
-      function randomDebugScore() {
-        return Math.floor(Math.random() * 71) + 150;
-      }
-
-      function findTeamBlock(teamName) {
-        var blocks = document.querySelectorAll(".team-block");
-        for (var i = 0; i < blocks.length; i++) {
-          if (blocks[i].getAttribute("data-team") === teamName) return blocks[i];
-        }
-        return null;
-      }
-
-      function collectPairedTeams() {
-        var paired = new Set();
-        document.querySelectorAll(".team-block").forEach(function (block) {
-          var team = block.getAttribute("data-team");
-          var sel = block.querySelector(".team-opponent");
-          var opp = sel && sel.value.trim();
-          if (team && opp) {
-            paired.add(team);
-            paired.add(opp);
-          }
-        });
-        return paired;
-      }
-
-      function refreshOpponentOptions() {
-        var paired = collectPairedTeams();
-        document.querySelectorAll(".team-block").forEach(function (block) {
-          var team = block.getAttribute("data-team");
-          var sel = block.querySelector(".team-opponent");
-          if (!sel || !team) return;
-          var current = sel.value.trim();
-          sel.innerHTML = "";
-          var empty = document.createElement("option");
-          empty.value = "";
-          empty.textContent = "—";
-          sel.appendChild(empty);
-          ALL_TEAMS.forEach(function (t) {
-            if (t === team) return;
-            if (paired.has(t) && t !== current) return;
-            var opt = document.createElement("option");
-            opt.value = t;
-            opt.textContent = t;
-            if (t === current) opt.selected = true;
-            sel.appendChild(opt);
-          });
-          if (current) sel.value = current;
-        });
-      }
-
-      function setOpponentSelect(teamName, opponentName, skipTeam) {
-        var block = findTeamBlock(teamName);
-        if (!block || teamName === skipTeam) return;
-        var sel = block.querySelector(".team-opponent");
-        if (!sel) return;
-        syncingOpponents = true;
-        sel.value = opponentName || "";
-        sel.setAttribute("data-prev-opponent", opponentName || "");
-        syncingOpponents = false;
-      }
-
-      document.querySelectorAll(".team-opponent").forEach(function (sel) {
-        sel.setAttribute("data-prev-opponent", sel.value.trim());
-        sel.addEventListener("change", function () {
-          if (syncingOpponents) return;
-          var block = sel.closest(".team-block");
-          if (!block) return;
-          var team = block.getAttribute("data-team");
-          var opponent = sel.value.trim();
-          var prev = sel.getAttribute("data-prev-opponent") || "";
-
-          if (prev && prev !== opponent) {
-            var prevBlock = findTeamBlock(prev);
-            if (prevBlock) {
-              var prevSel = prevBlock.querySelector(".team-opponent");
-              if (prevSel && prevSel.value.trim() === team) {
-                syncingOpponents = true;
-                prevSel.value = "";
-                prevSel.setAttribute("data-prev-opponent", "");
-                syncingOpponents = false;
-              }
-            }
-          }
-
-          if (opponent) {
-            setOpponentSelect(opponent, team, team);
-          }
-
-          sel.setAttribute("data-prev-opponent", opponent);
-          refreshOpponentOptions();
-        });
-      });
-      refreshOpponentOptions();
-
-      (function initScoreboardScan() {
-        var fileInput = document.getElementById("scan-image");
-        var runBtn = document.getElementById("scan-run");
-        if (!fileInput || !runBtn) return;
-
-        var statusEl = document.getElementById("scan-status");
-        var loadingEl = document.getElementById("scan-loading");
-        var reviewEl = document.getElementById("scan-review");
-        var previewEl = document.getElementById("scan-preview");
-        var errorsEl = document.getElementById("scan-errors");
-        var teamsReview = document.getElementById("scan-teams-review");
-        var applyBtn = document.getElementById("scan-apply");
-        var cropStage = document.getElementById("scan-crop-stage");
-        var cropImg = document.getElementById("scan-crop-img");
-        var cropBox = document.getElementById("scan-crop-box");
-        var cropDim = document.getElementById("scan-crop-dim");
-        var cropHint = document.getElementById("scan-crop-hint");
-        var recropBtn = document.getElementById("scan-recrop");
-        var previewUrl = null;
-        var fileObjectUrl = null;
-        var cropRect = null;
-        var dragStart = null;
-        var scanTeams = [];
-        var allTeamNames = ALL_TEAMS || [];
-
-        function setStatus(msg, isError) {
-          statusEl.textContent = msg || "";
-          statusEl.className = "scan-status" + (isError ? " error" : "");
-        }
-
-        function setScanLoading(on) {
-          if (loadingEl) {
-            loadingEl.classList.toggle("visible", on);
-            loadingEl.setAttribute("aria-hidden", on ? "false" : "true");
-          }
-          fileInput.disabled = on;
-        }
-
-        function clearPreviewUrl() {
-          if (previewUrl) {
-            URL.revokeObjectURL(previewUrl);
-            previewUrl = null;
-          }
-        }
-
-        function clearFileUrl() {
-          if (fileObjectUrl) {
-            URL.revokeObjectURL(fileObjectUrl);
-            fileObjectUrl = null;
-          }
-        }
-
-        function defaultCropRect() {
-          return { x: 0, y: 0, w: 1, h: 1 };
-        }
-
-        function clampCrop(rect) {
-          var minSize = 0.05;
-          rect.w = Math.max(minSize, Math.min(1 - rect.x, rect.w));
-          rect.h = Math.max(minSize, Math.min(1 - rect.y, rect.h));
-          rect.x = Math.max(0, Math.min(1 - rect.w, rect.x));
-          rect.y = Math.max(0, Math.min(1 - rect.h, rect.y));
-          return rect;
-        }
-
-        function updateCropBox() {
-          if (!cropRect || !cropImg.clientWidth) return;
-          var left = cropRect.x * 100;
-          var top = cropRect.y * 100;
-          var width = cropRect.w * 100;
-          var height = cropRect.h * 100;
-          cropBox.style.left = left + "%";
-          cropBox.style.top = top + "%";
-          cropBox.style.width = width + "%";
-          cropBox.style.height = height + "%";
-          var ready = cropRect.w >= 0.05 && cropRect.h >= 0.05;
-          cropBox.classList.toggle("ready", ready);
-          if (cropDim) {
-            cropDim.classList.toggle("ready", ready);
-            if (ready) {
-              var right = left + width;
-              var bottom = top + height;
-              cropDim.style.clipPath =
-                "polygon(evenodd, 0% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 0%, "
-                + left + "% " + top + "%, " + right + "% " + top + "%, "
-                + right + "% " + bottom + "%, " + left + "% " + bottom + "%, "
-                + left + "% " + top + "%)";
-            } else {
-              cropDim.style.clipPath = "";
-            }
-          }
-        }
-
-        function hideCropUI(showRecropBtn) {
-          cropStage.classList.remove("visible");
-          cropHint.style.display = "none";
-          cropBox.classList.remove("ready");
-          if (cropDim) {
-            cropDim.classList.remove("ready");
-            cropDim.style.clipPath = "";
-          }
-          if (recropBtn) {
-            recropBtn.style.display = showRecropBtn && cropImg.src ? "" : "none";
-          }
-        }
-
-        function showCropUI() {
-          if (!cropImg.src) return;
-          cropStage.classList.add("visible");
-          cropHint.style.display = "block";
-          if (recropBtn) recropBtn.style.display = "none";
-          updateCropBox();
-        }
-
-        if (recropBtn) {
-          recropBtn.addEventListener("click", function () {
-            reviewEl.classList.remove("visible");
-            showCropUI();
-            setStatus("Adjust the crop box, then scan again.");
-            refreshScanButton();
-          });
-        }
-
-        function cropReady() {
-          return cropRect && cropRect.w >= 0.05 && cropRect.h >= 0.05 && cropImg.naturalWidth > 0;
-        }
-
-        function refreshScanButton() {
-          runBtn.disabled = !cropReady();
-        }
-
-        function pointerToNorm(clientX, clientY) {
-          var r = cropStage.getBoundingClientRect();
-          return {
-            x: Math.max(0, Math.min(1, (clientX - r.left) / r.width)),
-            y: Math.max(0, Math.min(1, (clientY - r.top) / r.height))
-          };
-        }
-
-        function onCropPointerDown(e) {
-          if (!cropImg.src) return;
-          e.preventDefault();
-          dragStart = pointerToNorm(e.clientX, e.clientY);
-          cropRect = { x: dragStart.x, y: dragStart.y, w: 0, h: 0 };
-          updateCropBox();
-          cropStage.setPointerCapture(e.pointerId);
-        }
-
-        function onCropPointerMove(e) {
-          if (!dragStart) return;
-          var p = pointerToNorm(e.clientX, e.clientY);
-          cropRect = clampCrop({
-            x: Math.min(dragStart.x, p.x),
-            y: Math.min(dragStart.y, p.y),
-            w: Math.abs(p.x - dragStart.x),
-            h: Math.abs(p.y - dragStart.y)
-          });
-          updateCropBox();
-          refreshScanButton();
-        }
-
-        function onCropPointerUp(e) {
-          if (!dragStart) return;
-          dragStart = null;
-          try { cropStage.releasePointerCapture(e.pointerId); } catch (err) {}
-          if (cropRect) cropRect = clampCrop(cropRect);
-          updateCropBox();
-          refreshScanButton();
-        }
-
-        cropStage.addEventListener("pointerdown", onCropPointerDown);
-        cropStage.addEventListener("pointermove", onCropPointerMove);
-        cropStage.addEventListener("pointerup", onCropPointerUp);
-        cropStage.addEventListener("pointercancel", onCropPointerUp);
-        cropImg.addEventListener("load", function () {
-          updateCropBox();
-          refreshScanButton();
-        });
-
-        function exportCroppedBlob(callback) {
-          var nw = cropImg.naturalWidth;
-          var nh = cropImg.naturalHeight;
-          var sx = Math.round(cropRect.x * nw);
-          var sy = Math.round(cropRect.y * nh);
-          var sw = Math.max(1, Math.round(cropRect.w * nw));
-          var sh = Math.max(1, Math.round(cropRect.h * nh));
-          var canvas = document.createElement("canvas");
-          canvas.width = sw;
-          canvas.height = sh;
-          var ctx = canvas.getContext("2d");
-          ctx.drawImage(cropImg, sx, sy, sw, sh, 0, 0, sw, sh);
-          canvas.toBlob(function (blob) {
-            callback(blob);
-          }, "image/jpeg", 0.92);
-        }
-
-        fileInput.addEventListener("change", function () {
-          clearPreviewUrl();
-          clearFileUrl();
-          scanTeams = [];
-          reviewEl.classList.remove("visible");
-          hideCropUI(false);
-          errorsEl.innerHTML = "";
-          if (teamsReview) teamsReview.innerHTML = "";
-          cropImg.removeAttribute("src");
-          cropRect = null;
-          var file = fileInput.files && fileInput.files[0];
-          if (!file) {
-            refreshScanButton();
-            setStatus("");
-            return;
-          }
-          fileObjectUrl = URL.createObjectURL(file);
-          cropImg.src = fileObjectUrl;
-          cropRect = defaultCropRect();
-          showCropUI();
-          if (recropBtn) recropBtn.style.display = "none";
-          setStatus("Full photo selected. Drag to crop if needed, then scan.");
-          refreshScanButton();
-        });
-
-        function rosterForTeam(teamName) {
-          var block = teamName ? findTeamBlock(teamName) : null;
-          if (!block) return [];
-          try {
-            var raw = block.getAttribute("data-roster-names");
-            return raw ? JSON.parse(raw) : [];
-          } catch (err) {
-            return [];
-          }
-        }
-
-        function buildTeamSelect(selected, ocrName) {
-          var sel = document.createElement("select");
-          sel.className = "scan-team-assign";
-          var empty = document.createElement("option");
-          empty.value = "";
-          empty.textContent = "— choose team —";
-          sel.appendChild(empty);
-          (allTeamNames || []).forEach(function (name) {
-            var opt = document.createElement("option");
-            opt.value = name;
-            opt.textContent = name;
-            if (name === selected) opt.selected = true;
-            sel.appendChild(opt);
-          });
-          if (ocrName) sel.setAttribute("data-ocr-team", ocrName);
-          return sel;
-        }
-
-        function buildOpponentSelect(selected, selfTeam) {
-          var sel = document.createElement("select");
-          sel.className = "scan-opponent-assign";
-          var empty = document.createElement("option");
-          empty.value = "";
-          empty.textContent = "— none —";
-          sel.appendChild(empty);
-          (allTeamNames || []).forEach(function (name) {
-            if (selfTeam && name === selfTeam) return;
-            var opt = document.createElement("option");
-            opt.value = name;
-            opt.textContent = name;
-            if (name === selected) opt.selected = true;
-            sel.appendChild(opt);
-          });
-          return sel;
-        }
-
-        function syncScanOpponentDefaults() {
-          if (!teamsReview) return;
-          var blocks = teamsReview.querySelectorAll(".scan-team-block");
-          if (blocks.length !== 2) return;
-          var teamA = blocks[0].querySelector("select.scan-team-assign");
-          var teamB = blocks[1].querySelector("select.scan-team-assign");
-          var oppA = blocks[0].querySelector("select.scan-opponent-assign");
-          var oppB = blocks[1].querySelector("select.scan-opponent-assign");
-          var a = teamA && teamA.value.trim();
-          var b = teamB && teamB.value.trim();
-          if (!a || !b || a === b) return;
-          // Rebuild options excluding self, then default to the other board team.
-          function refill(oppSel, selfName, otherName) {
-            if (!oppSel) return;
-            var keep = oppSel.value.trim() || otherName;
-            var next = buildOpponentSelect(keep === selfName ? otherName : keep, selfName);
-            next.className = oppSel.className;
-            oppSel.replaceWith(next);
-          }
-          refill(oppA, a, b);
-          refill(oppB, b, a);
-        }
-
-        function buildAssignSelect(roster, selected) {
-          var sel = document.createElement("select");
-          sel.className = "scan-assign";
-          var empty = document.createElement("option");
-          empty.value = "";
-          empty.textContent = "— skip —";
-          sel.appendChild(empty);
-          (roster || []).forEach(function (name) {
-            var opt = document.createElement("option");
-            opt.value = name;
-            opt.textContent = name;
-            if (name === selected) opt.selected = true;
-            sel.appendChild(opt);
-          });
-          sel.addEventListener("change", highlightDuplicateAssigns);
-          return sel;
-        }
-
-        function highlightDuplicateAssigns() {
-          if (!teamsReview) return;
-          teamsReview.querySelectorAll(".scan-team-block").forEach(function (block) {
-            var seen = {};
-            block.querySelectorAll("tr[data-scan-idx]").forEach(function (tr) {
-              tr.classList.remove("duplicate-assign");
-              var sel = tr.querySelector("select.scan-assign");
-              var v = sel && sel.value.trim();
-              if (!v) return;
-              if (seen[v]) {
-                tr.classList.add("duplicate-assign");
-                seen[v].classList.add("duplicate-assign");
-              } else {
-                seen[v] = tr;
-              }
-            });
-          });
-        }
-
-        function gameCell(row, key) {
-          var td = document.createElement("td");
-          if (key === "game5") td.className = "game5-col";
-          var inp = document.createElement("input");
-          inp.type = "number";
-          inp.min = String(GAME_MIN);
-          inp.max = String(GAME_MAX);
-          inp.step = "1";
-          inp.className = "scan-game";
-          if (row[key] != null) inp.value = String(row[key]);
-          td.appendChild(inp);
-          return td;
-        }
-
-        function refillPlayerSelects(block) {
-          var teamSel = block.querySelector("select.scan-team-assign");
-          var teamName = teamSel && teamSel.value.trim();
-          var roster = rosterForTeam(teamName);
-          block.querySelectorAll("tr[data-scan-idx]").forEach(function (tr) {
-            var assignTd = tr.querySelector("td.scan-assign-cell");
-            if (!assignTd) return;
-            var prev = assignTd.querySelector("select.scan-assign");
-            var prevVal = prev ? prev.value : "";
-            var suggested = tr.getAttribute("data-suggested") || "";
-            var pick = prevVal || suggested;
-            if (pick && roster.indexOf(pick) < 0) pick = "";
-            assignTd.innerHTML = "";
-            assignTd.appendChild(buildAssignSelect(roster, pick));
-          });
-          highlightDuplicateAssigns();
-        }
-
-        function renderTeamBlock(teamData, teamIdx) {
-          var wrap = document.createElement("div");
-          wrap.className = "scan-team-block";
-          wrap.setAttribute("data-team-idx", String(teamIdx));
-
-          var title = document.createElement("h3");
-          var ocr = teamData.ocr_name || ("Team " + (teamIdx + 1));
-          title.textContent = ocr;
-          wrap.appendChild(title);
-
-          var matchRow = document.createElement("div");
-          matchRow.className = "scan-team-match";
-          var teamLabel = document.createElement("label");
-          teamLabel.textContent = "Match to ";
-          var matched = teamData.matched_team || "";
-          var teamSel = buildTeamSelect(matched, ocr);
-          teamSel.addEventListener("change", function () {
-            refillPlayerSelects(wrap);
-            syncScanOpponentDefaults();
-          });
-          teamLabel.appendChild(teamSel);
-          matchRow.appendChild(teamLabel);
-
-          var oppLabel = document.createElement("label");
-          oppLabel.textContent = "Opponent ";
-          var suggestedOpp = teamData.suggested_opponent || "";
-          var oppSel = buildOpponentSelect(suggestedOpp, matched);
-          oppLabel.appendChild(oppSel);
-          matchRow.appendChild(oppLabel);
-          wrap.appendChild(matchRow);
-
-          var scroll = document.createElement("div");
-          scroll.className = "table-scroll";
-          var table = document.createElement("table");
-          table.className = "scan-table";
-          var thead = document.createElement("thead");
-          thead.innerHTML = "<tr><th>Board</th><th>Assign to</th><th>G1</th><th>G2</th><th>G3</th><th>G4</th><th class=\"game5-col\">G5</th></tr>";
-          table.appendChild(thead);
-          var tbody = document.createElement("tbody");
-          var roster = rosterForTeam(matched);
-          if (!roster.length) roster = teamData.roster_players || [];
-          (teamData.players || []).forEach(function (row, idx) {
-            var tr = document.createElement("tr");
-            tr.dataset.scanIdx = String(idx);
-            if (row.suggested_player) tr.setAttribute("data-suggested", row.suggested_player);
-            var nameTd = document.createElement("td");
-            var ocrSpan = document.createElement("span");
-            ocrSpan.className = "scan-ocr-name";
-            ocrSpan.textContent = row.ocr_name || ("Row " + (idx + 1));
-            ocrSpan.title = row.ocr_name || "";
-            nameTd.appendChild(ocrSpan);
-            tr.appendChild(nameTd);
-            var assignTd = document.createElement("td");
-            assignTd.className = "scan-assign-cell";
-            assignTd.appendChild(buildAssignSelect(roster, row.suggested_player || ""));
-            tr.appendChild(assignTd);
-            ["game1", "game2", "game3", "game4", "game5"].forEach(function (k) {
-              tr.appendChild(gameCell(row, k));
-            });
-            tbody.appendChild(tr);
-          });
-          table.appendChild(tbody);
-          scroll.appendChild(table);
-          wrap.appendChild(scroll);
-
-          var teamBlock = matched ? findTeamBlock(matched) : null;
-          if (table && teamBlock) {
-            table.classList.toggle("hide-game5", teamBlock.classList.contains("hide-game5"));
-          }
-          return wrap;
-        }
-
-        function renderReview(data, previewBlob) {
-          scanTeams = data.teams || [];
-          if (data.all_teams && data.all_teams.length) {
-            allTeamNames = data.all_teams;
-          }
-          errorsEl.innerHTML = "";
-          (data.validation_errors || []).forEach(function (err) {
-            var li = document.createElement("li");
-            li.textContent = err;
-            errorsEl.appendChild(li);
-          });
-          if (teamsReview) {
-            teamsReview.innerHTML = "";
-            scanTeams.forEach(function (teamData, idx) {
-              teamsReview.appendChild(renderTeamBlock(teamData, idx));
-            });
-            syncScanOpponentDefaults();
-          }
-          highlightDuplicateAssigns();
-          hideCropUI(true);
-          clearPreviewUrl();
-          if (previewBlob) {
-            previewUrl = URL.createObjectURL(previewBlob);
-            previewEl.src = previewUrl;
-          }
-          reviewEl.classList.add("visible");
-          var errCount = (data.validation_errors || []).length;
-          var nTeams = scanTeams.length;
-          setStatus(
-            errCount
-              ? ("Review " + nTeams + " team(s) (" + errCount + " warning(s)).")
-              : ("Review matches for " + nTeams + " team(s), then apply to the grid.")
-          );
-        }
-
-        runBtn.addEventListener("click", function () {
-          if (!cropReady()) return;
-          runBtn.disabled = true;
-          setScanLoading(true);
-          setStatus("");
-          exportCroppedBlob(function (blob) {
-            if (!blob) {
-              setScanLoading(false);
-              setStatus("Could not prepare image.", true);
-              runBtn.disabled = false;
-              return;
-            }
-            var fd = new FormData();
-            fd.append("image", blob, "scoreboard-crop.jpg");
-            fd.append("season", season);
-            fd.append("week", String(week));
-            fetch(SCAN_URL, { method: "POST", body: fd, credentials: "same-origin" })
-              .then(function (res) {
-                return res.json().then(function (body) {
-                  return { ok: res.ok, body: body };
-                });
-              })
-              .then(function (result) {
-                if (!result.ok) {
-                  setStatus(result.body.error || "Scan failed.", true);
-                  return;
-                }
-                renderReview(result.body, blob);
-              })
-              .catch(function () {
-                setStatus("Network error during scan.", true);
-              })
-              .finally(function () {
-                setScanLoading(false);
-                refreshScanButton();
-              });
-          });
-        });
-
-        applyBtn.addEventListener("click", function () {
-          highlightDuplicateAssigns();
-          if (teamsReview && teamsReview.querySelector("tr.duplicate-assign")) {
-            setStatus("Each player can only be assigned once per team.", true);
-            return;
-          }
-          var applied = 0;
-          var missingTeam = 0;
-          var opponentPairs = [];
-          if (!teamsReview) return;
-          teamsReview.querySelectorAll(".scan-team-block").forEach(function (block) {
-            var teamSel = block.querySelector("select.scan-team-assign");
-            var teamName = teamSel && teamSel.value.trim();
-            if (!teamName) {
-              missingTeam += 1;
-              return;
-            }
-            var oppSel = block.querySelector("select.scan-opponent-assign");
-            var oppName = oppSel && oppSel.value.trim();
-            if (oppName && oppName !== teamName) {
-              opponentPairs.push({ team: teamName, opponent: oppName });
-            }
-            block.querySelectorAll("tr[data-scan-idx]").forEach(function (tr) {
-              var sel = tr.querySelector("select.scan-assign");
-              var player = sel && sel.value.trim();
-              if (!player) return;
-              var gridRow = document.querySelector(
-                'tr[data-row][data-team="' + CSS.escape(teamName) + '"][data-player="' + CSS.escape(player) + '"]'
-              );
-              if (!gridRow) return;
-              var teamBlock = findTeamBlock(teamName);
-              var showG5 = teamBlock && !teamBlock.classList.contains("hide-game5");
-              var inputs = gridRow.querySelectorAll("input.game");
-              tr.querySelectorAll("input.scan-game").forEach(function (inp, gi) {
-                if (gi === 4 && !showG5) return;
-                var v = inp.value.trim();
-                if (inputs[gi]) {
-                  inputs[gi].value = v;
-                  validateGameInput(inputs[gi], gridRow);
-                }
-              });
-              gridRow.classList.remove("row-incomplete");
-              gridRow.removeAttribute("title");
-              applied += 1;
-            });
-          });
-          opponentPairs.forEach(function (pair) {
-            setOpponentSelect(pair.team, pair.opponent, null);
-            setOpponentSelect(pair.opponent, pair.team, null);
-          });
-          if (opponentPairs.length) refreshOpponentOptions();
-          if (!applied && missingTeam) {
-            setStatus("Match each scanned team to a roster team first.", true);
-            return;
-          }
-          setStatus(
-            applied
-              ? ("Applied " + applied + " player row(s)"
-                + (opponentPairs.length ? " and opponents" : "")
-                + ". Save when ready.")
-              : "Choose a player for each row you want to apply."
-          );
-        });
-      })();
-
-
-      var debugFill = document.getElementById("debug-fill-scores");
-      if (debugFill) {
-        debugFill.addEventListener("click", function () {
-          document.querySelectorAll("tr[data-row]").forEach(function (tr) {
-            var block = tr.closest(".team-block");
-            var showG5 = block && !block.classList.contains("hide-game5");
-            tr.querySelectorAll("input.game-main").forEach(function (inp) {
-              inp.value = String(randomDebugScore());
-            });
-            if (showG5) {
-              tr.querySelectorAll("input.game5").forEach(function (inp) {
-                inp.value = String(randomDebugScore());
-              });
-            }
-            tr.classList.remove("row-incomplete");
-            tr.removeAttribute("title");
-          });
-        });
-      }
-
-      form.addEventListener("submit", function (e) {
-        e.preventDefault();
-        var firstBad = null;
-        document.querySelectorAll("tr[data-row]").forEach(function (tr) {
-          tr.querySelectorAll("input.game").forEach(function (inp) {
-            if (!validateGameInput(inp, tr) && !firstBad) firstBad = inp;
-          });
-        });
-        if (firstBad) {
-          firstBad.reportValidity();
-          firstBad.focus();
-          return;
-        }
-        var subErr = null;
-        document.querySelectorAll("tr.sub-row").forEach(function (tr) {
-          if (subErr) return;
-          var name = subPlayerNameFromRow(tr);
-          var subForSel = tr.querySelector(".sub-for");
-          var subFor = subForSel ? subForSel.value.trim() : "";
-          if (!name) subErr = "Each sub must select a player.";
-          else if (!subFor) subErr = "Each sub must pick who they subbed for.";
-        });
-        if (subErr) {
-          alert(subErr);
-          return;
-        }
-        var weekPlayoffs = document.getElementById("week-playoffs").checked;
-        var teamOpponents = {};
-        document.querySelectorAll(".team-block").forEach(function (block) {
-          var team = block.getAttribute("data-team");
-          var sel = block.querySelector(".team-opponent");
-          if (team && sel) {
-            var v = sel.value.trim();
-            if (v) teamOpponents[team] = v;
-          }
-        });
-        Object.keys(teamOpponents).forEach(function (team) {
-          var opp = teamOpponents[team];
-          if (opp) teamOpponents[opp] = team;
-        });
-        var rows = [];
-        document.querySelectorAll("tr[data-row]").forEach(function (tr) {
-          var games = [];
-          tr.querySelectorAll("input.game").forEach(function (inp) {
-            var v = inp.value.trim();
-            games.push(v === "" ? null : parseInt(v, 10));
-          });
-          var isSub = tr.getAttribute("data-substitute") === "true";
-          var absentInp = tr.querySelector("input.absent");
-          var weekOut = absentInp ? absentInp.checked : false;
-          var misses = tr.querySelectorAll("input.game-absent");
-          var team = tr.getAttribute("data-team");
-          var subForSel = tr.querySelector(".sub-for");
-          var subCountCb = tr.querySelector(".sub-count");
-          var playerName = isSub
-            ? subPlayerNameFromRow(tr)
-            : tr.getAttribute("data-player");
-          rows.push({
-            team: team,
-            player_display_name: playerName,
-            opponent: teamOpponents[team] || null,
-            game1: games[0], game2: games[1], game3: games[2], game4: games[3], game5: games[4],
-            absent: weekOut,
-            game1_absent: !weekOut && misses[0] && misses[0].checked,
-            game2_absent: !weekOut && misses[1] && misses[1].checked,
-            game3_absent: !weekOut && misses[2] && misses[2].checked,
-            game4_absent: !weekOut && misses[3] && misses[3].checked,
-            game5_absent: !weekOut && misses[4] && misses[4].checked,
-            substitute: isSub,
-            substituted_for: isSub && subForSel ? (subForSel.value.trim() || null) : null,
-            substitute_scores_count: isSub && subCountCb ? subCountCb.checked : false
-          });
-        });
-        document.getElementById("payload-field").value = JSON.stringify({
-          season: season,
-          week: week,
-          playoffs: weekPlayoffs,
-          team_opponents: teamOpponents,
-          team: teamFilter || null,
-          rows: rows
-        });
-        var pending = document.getElementById("save-pending");
-        var saveBtn = document.getElementById("save-btn");
-        if (pending) pending.style.display = "inline";
-        if (saveBtn) saveBtn.disabled = true;
-        form.submit();
-      });
-    })();
-  </script>
-</body>
-</html>
+    </div>
+    {% endfor %}
+
+    <div class="actions">
+      {% if show_debug_tools %}
+      <button type="button" class="debug" id="debug-fill-scores" title="Testing only &mdash; does not save">Debug: random scores (150&ndash;220)</button>
+      {% endif %}
+      <button type="submit" class="primary" id="save-btn">Save{% if selected_team %} {{ selected_team }}{% endif %}</button>
+      <span id="save-pending" class="scan-status" style="display:none" aria-live="polite">Saving&hellip;</span>
+    </div>
+  </form>
+
+  <form method="post" action="{{ url_for('admin.admin_week_delete_post') }}" style="margin-top:1rem"
+        onsubmit="return confirm('Delete all scores for {{ entry.season }} week {{ entry.week }}?');">
+    <input type="hidden" name="season" value="{{ entry.season }}">
+    <input type="hidden" name="week" value="{{ entry.week }}">
+    <button type="submit" class="danger">Delete this week</button>
+  </form>
+  {% endif %}
+
+  <script type="application/json" id="entry-config">{{ {
+    "season": entry.season,
+    "week": entry.week,
+    "team_filter": selected_team or None,
+    "all_teams": all_teams,
+    "all_players": all_players,
+    "team_roster_names": team_roster_names,
+    "game_min": game_score_min,
+    "game_max": game_score_max,
+    "absent_fill": entry.absent_fill_averages,
+    "absent_fill_meta": entry.absent_fill_details,
+    "team_game5": entry.team_game5_visible or {},
+    "scan_url": url_for('admin.admin_week_scan'),
+    "save_url": url_for('admin.admin_week_post')
+  } | tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='admin_forms.js') }}"></script>
+  <script src="{{ url_for('static', filename='admin_enter.js') }}"></script>
+{% endblock %}

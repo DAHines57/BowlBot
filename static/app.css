@@ -1,0 +1,2035 @@
+@import url("tokens.css");
+
+/* Unified stats page. Mobile-first; desktop two-column at 900px.
+   Colours come from the shared token layer in tokens.css. */
+
+/* Compact density shrinks rows without changing the layout. */
+.density-compact {
+  --row-pad: 0.5rem 0.7rem;
+  --gap: 0.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.45;
+  overflow-x: hidden;
+}
+
+h1, h2, h3 { margin: 0; font-weight: 700; }
+
+button, select, input { font: inherit; color: inherit; }
+
+button { cursor: pointer; }
+
+a { color: var(--accent); }
+
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  padding: 0.6rem 1rem;
+  background: var(--card);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+}
+.skip-link:focus { left: 0.5rem; top: 0.5rem; }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.app {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0.85rem 0.85rem 2.5rem;
+}
+
+/* ---------- Header ---------- */
+
+.app-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--gap);
+  margin-bottom: 0.9rem;
+}
+
+.app-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.5rem;
+  letter-spacing: -0.01em;
+  min-width: 0;
+}
+
+.app-title-ico { font-size: 1.35rem; flex: none; }
+
+.app-title-text {
+  background: linear-gradient(100deg, var(--accent) 0%, var(--accent) 45%, var(--mint) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* Anchors the settings dropdown to the gear in the header. */
+.settings-field {
+  position: relative;
+  flex: none;
+  align-self: center;
+}
+
+/* ---------- Controls ---------- */
+
+.controls { margin-bottom: 1rem; }
+
+.range-field { position: relative; }
+
+.range-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.6rem 0.9rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-weight: 600;
+  text-align: left;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.range-pill:hover { border-color: var(--accent); }
+
+.range-pill-ico { color: var(--accent); flex: none; }
+
+.range-pill-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Echoes the active weeks-counted setting beside the range, in the violet of
+   the control that sets it rather than the accent of the range itself. */
+.range-tag {
+  flex: none;
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--radius-pill);
+  background: var(--violet-bg);
+  box-shadow: inset 0 0 0 1px var(--violet-border);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--violet);
+  white-space: nowrap;
+}
+
+.filter-range-summary .range-tag { margin-left: 0.35rem; }
+
+.range-pill-caret {
+  flex: none;
+  width: 0; height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid var(--accent);
+  transition: transform var(--dur) var(--ease);
+}
+.range-pill[aria-expanded="true"] .range-pill-caret { transform: rotate(180deg); }
+
+/* ---------- Popovers ---------- */
+
+.filter-panel,
+.settings-panel {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  right: 0;
+  padding: 1rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 18px 40px var(--shadow);
+  animation: popIn 0.18s var(--ease) both;
+}
+
+/* Anchored to the narrow gear button, so it hangs off the right edge at a
+   readable width rather than matching the button's own. */
+.settings-panel {
+  left: auto;
+  width: min(92vw, 380px);
+}
+
+@keyframes popIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.filter-title {
+  font-size: 1rem;
+  text-align: center;
+  margin-bottom: 0.85rem;
+}
+
+.filter-range-summary {
+  margin: -0.5rem 0 0.85rem;
+  text-align: center;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.filter-group {
+  padding-block: 0.85rem;
+  border-top: 1px solid var(--border-soft);
+}
+.filter-group:first-of-type { border-top: 0; padding-top: 0; }
+
+.filter-group-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 0.6rem;
+  text-align: center;
+}
+
+.filter-hint {
+  margin: 0.55rem 0 0;
+  font-size: 0.74rem;
+  color: var(--muted-dim);
+  text-align: center;
+}
+
+.range-picker {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.range-picker-col { flex: 1; min-width: 0; }
+
+/* One column left, so keep it from stretching the full panel width. */
+.range-picker.is-single .range-picker-col { max-width: 12rem; margin: 0 auto; }
+
+.range-picker-head {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-align: center;
+  margin-bottom: 0.3rem;
+}
+
+.range-picker-selects { display: flex; gap: 0.3rem; }
+
+.range-picker-dash { color: var(--muted); padding-bottom: 0.45rem; }
+
+.mini-select {
+  flex: 1;
+  min-width: 0;
+  padding: 0.4rem 0.45rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+.mini-select:hover { border-color: var(--accent); }
+
+.radio-list { display: grid; gap: 0.35rem; }
+
+.radio-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.45rem 0.55rem;
+  background: var(--card);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  width: 100%;
+  text-align: left;
+  font-size: 0.85rem;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.radio-row:hover { border-color: var(--border); }
+.radio-row[aria-checked="true"] {
+  border-color: var(--violet-border);
+  background: var(--violet-bg);
+}
+
+.radio-dot {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid var(--muted);
+  position: relative;
+}
+.radio-row[aria-checked="true"] .radio-dot { border-color: var(--violet); }
+.radio-row[aria-checked="true"] .radio-dot::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--violet);
+}
+
+.filter-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.btn {
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--card);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.btn--primary { border-color: var(--accent); color: var(--accent); }
+.btn--ghost { color: var(--muted); }
+.btn:hover { border-color: var(--accent); }
+
+.btn--chip {
+  padding: 0.3rem 0.7rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.btn--chip[aria-pressed="true"] {
+  background: var(--violet-bg);
+  border-color: var(--violet-border);
+  color: var(--violet);
+}
+
+/* Shortcuts for the two ranges worth one click. */
+.range-presets {
+  display: flex;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+
+/* ---------- Tabs ---------- */
+
+.tabbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem var(--gap);
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.6rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* Segmented controls: the view tabs, the week/range flip, and the playoffs
+ * filter all share one shape. Only size and active tint differ. */
+.tabs,
+.spanflip,
+.playoff-flip {
+  display: flex;
+  flex: none;
+  padding: 2px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+}
+
+.tab,
+.spanflip-btn,
+.playoff-btn {
+  padding: 0.25rem 0.65rem;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-pill);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.tab:hover,
+.spanflip-btn:hover,
+.playoff-btn:hover { color: var(--text); }
+
+/* Inert on tabs that ignore the range, so it reads as unavailable rather
+   than broken. */
+.spanflip.is-locked { opacity: 0.45; }
+.spanflip-btn:disabled { cursor: not-allowed; }
+.spanflip-btn:disabled:hover { color: var(--muted); }
+
+/* Switching view leads over narrowing the range, so the tabs run a step
+   larger, and take the accent tint to stay distinct from the flips. */
+.tab {
+  padding: 0.28rem 0.8rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+.tab[aria-selected="true"] {
+  background: var(--accent-bg);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+}
+
+.spanflip-btn[aria-pressed="true"],
+.playoff-btn[aria-pressed="true"] {
+  background: var(--violet-bg);
+  color: var(--violet);
+  box-shadow: inset 0 0 0 1px var(--violet-border);
+}
+
+/* Inside the filter panel there is room to span the full width. */
+.playoff-btn { flex: 1; }
+
+/* Three view tabs plus the week/range flip no longer fit one line here, so
+   each group takes a row of its own and stretches to fill it. Left to wrap on
+   its own the flip lands adrift under the tabs, reading as a mistake. */
+@media (max-width: 430px) {
+  .tabs,
+  .spanflip { flex: 1 1 100%; }
+
+  .tab,
+  .spanflip-btn { flex: 1; }
+}
+
+.settings-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.7rem;
+  background: var(--card-hi);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.settings-btn:hover { border-color: var(--accent); color: var(--text); }
+
+.settings-ico { color: var(--accent); }
+
+/* The gear shares the header with the title, so on narrow phones it drops its
+   label and goes icon-only. */
+@media (max-width: 479px) {
+  .settings-btn-text { display: none; }
+  .settings-btn { padding: 0.4rem 0.55rem; }
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.45rem;
+}
+
+.settings-row-label {
+  flex: none;
+  width: 4.5rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* ---------- Layout ---------- */
+
+.layout { display: block; }
+
+/* Highlights and league stats sit above the filters/leaderboard columns. */
+.summary-band { display: block; }
+
+.rail:empty { display: none; }
+
+.panel { margin-bottom: 1.35rem; }
+
+.panel[hidden] { display: none; }
+
+.panel-title {
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.55rem;
+}
+
+.panel-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--gap);
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+.panel-head .panel-title { margin-bottom: 0; }
+
+/* On narrow screens the sort controls change width as options change, which
+ * would otherwise flip the title between the same row and a wrapped row. */
+@media (max-width: 599px) {
+  .panel-head {
+    flex-wrap: nowrap;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+}
+
+/* ---------- Highlights ---------- */
+
+/* All cards share the width at every breakpoint; nothing scrolls sideways. */
+.carousel {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: var(--gap);
+}
+
+.hl-card {
+  padding: 0.75rem 0.85rem 0.85rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-align: center;
+  min-width: 0;
+}
+
+.hl-card--good { background: var(--good-bg); border-color: var(--good-border); }
+.hl-card--bad { background: var(--bad-bg); border-color: var(--bad-border); }
+.hl-card--violet { background: var(--violet-bg); border-color: var(--violet-border); }
+
+.hl-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  margin-bottom: 0.3rem;
+}
+/* Escapes the uppercasing above, so "200s" keeps its lowercase plural. */
+.hl-head-plain { text-transform: none; }
+
+.hl-card--good .hl-head { color: var(--mint); }
+.hl-card--bad .hl-head { color: var(--rose); }
+.hl-card--violet .hl-head { color: var(--violet); }
+
+.hl-score {
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+.hl-card--good .hl-score { color: var(--mint); }
+.hl-card--bad .hl-score { color: var(--rose); }
+.hl-card--violet .hl-score { color: var(--violet); }
+
+/* Own line-height: .hl-score sets a tight unitless 1.05 that would otherwise
+   inherit and jam the unit against the digits. */
+.hl-score-unit {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.hl-name {
+  margin-top: 0.25rem;
+  font-weight: 700;
+  font-size: 0.92rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hl-sub {
+  font-size: 0.78rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hl-when { font-size: 0.7rem; color: var(--muted-dim); }
+
+/* A phone fits two cards at a time, so the strip scrolls a pair per swipe. The
+ * pair is sized a little narrow so a sliver of the next card shows and
+ * advertises that there is more to see. */
+@media (max-width: 599px) {
+  .carousel {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0 0.35rem 0.2rem;
+    scroll-padding-left: 0.35rem;
+    /* Two cards leave the sliver of a third unused, which reads as a stray gap
+     * on the right. `safe` keeps the first card reachable once the strip does
+     * overflow; browsers without it fall back to the flex-start above. */
+    justify-content: safe center;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .carousel::-webkit-scrollbar { display: none; }
+
+  .hl-card {
+    flex: 0 0 calc((100% - 0.5rem) / 2.12);
+    padding: 0.6rem 0.45rem 0.65rem;
+    /* Only every second card is a snap target, so a swipe advances a whole
+     * pair rather than shuffling along one card at a time. */
+    scroll-snap-align: none;
+  }
+  .hl-card:nth-child(odd) { scroll-snap-align: start; }
+
+  /* Half-width cards need the type to come down a step. */
+  .hl-head {
+    gap: 0;
+    font-size: 0.58rem;
+    letter-spacing: 0.02em;
+    line-height: 1.2;
+    flex-wrap: wrap;
+  }
+  /* The emoji costs more width than it earns at this size. */
+  .hl-head span[aria-hidden] { display: none; }
+
+  .hl-score { font-size: 1.5rem; }
+  .hl-score-unit { font-size: 0.55rem; letter-spacing: 0.03em; }
+
+  /* A long team name needs a second line rather than an ellipsis. */
+  .hl-name, .hl-sub {
+    white-space: normal;
+    overflow-wrap: break-word;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    line-height: 1.25;
+  }
+  .hl-name { font-size: 0.78rem; }
+  .hl-sub { font-size: 0.68rem; }
+  .hl-when { font-size: 0.6rem; }
+}
+
+/* ---------- League tiles ---------- */
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--gap);
+}
+
+@media (min-width: 520px) {
+  .tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+.tile {
+  padding: 0.6rem 0.5rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-align: center;
+}
+
+.tile-value {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.tile-label {
+  font-size: 0.63rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ---------- Sort control ---------- */
+
+.sortbar {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.sortbar-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-dim);
+}
+
+.sortbar-controls { display: flex; gap: 0.35rem; min-width: 0; }
+
+.sortbar .mini-select { max-width: 10rem; }
+
+.dir-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.4rem 0.6rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.dir-toggle:hover { border-color: var(--accent); color: var(--text); }
+
+.dir-arrow { color: var(--accent); font-weight: 700; }
+
+/* ---------- Leaderboard ---------- */
+
+.status {
+  margin: 0.4rem 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.status--error { color: var(--rose); }
+.status[hidden] { display: none; }
+
+.board {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--gap);
+}
+
+.board-more {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--gap);
+}
+.board-more[hidden] { display: none; }
+
+/* ---------- Bests ---------- */
+
+.bests {
+  display: grid;
+  gap: var(--gap);
+}
+
+.best-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition: border-color var(--dur) var(--ease);
+}
+.best-card.is-open { border-color: var(--accent); }
+
+.best-head-wrap { margin: 0; }
+
+.best-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.7rem 0.85rem;
+  background: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.best-title {
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.best-card.is-open .best-title { color: var(--accent); }
+
+.best-count {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.best-body {
+  padding: 0.15rem 0.85rem 0.85rem;
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+}
+.best-body[hidden] { display: none; }
+
+.best-card.is-open .chev {
+  transform: rotate(180deg);
+  border-top-color: var(--accent);
+}
+
+.best-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.1rem;
+}
+
+/* Place, who, value, when. The when column collapses when a record spans the
+   whole range and has no single week to name. */
+.best-row {
+  display: grid;
+  grid-template-columns: 1.4rem minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+  border-top: 1px solid var(--border-soft);
+  font-size: 0.85rem;
+}
+.best-row:first-child { border-top: 0; }
+
+.best-place {
+  font-size: 0.75rem;
+  color: var(--muted-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.best-id { min-width: 0; }
+
+.best-name {
+  display: block;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.best-sub {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.best-value {
+  font-weight: 700;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.best-unit {
+  display: block;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-dim);
+}
+
+/* Its own row under the value so a long label never squeezes the name. */
+.best-when {
+  grid-column: 2 / -1;
+  font-size: 0.7rem;
+  color: var(--muted-dim);
+}
+
+.best-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 0.6rem;
+}
+
+/* ---------- Week matchups ---------- */
+
+.matchups { display: grid; gap: 0.8rem; margin-bottom: 1rem; }
+
+.wm-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.wm-head-title {
+  margin: 0;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.wm-card {
+  min-width: 0;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.7rem 0.85rem;
+  transition: border-color var(--dur) var(--ease);
+}
+.wm-card.is-open { border-color: var(--accent); }
+
+.wm-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.wm-side { display: grid; gap: 0.15rem; min-width: 0; }
+.wm-side--away { text-align: right; }
+.wm-side.is-bye { color: var(--muted-dim); font-style: italic; }
+
+.wm-team {
+  font-weight: 700;
+  font-size: 0.92rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wm-stats {
+  font-size: 0.7rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.wm-vs { display: grid; gap: 0.2rem; justify-items: center; }
+
+.wm-vs-label {
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-dim);
+}
+
+.wm-badges { display: flex; gap: 0.25rem; }
+
+.wm-badge {
+  min-width: 1.3rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: var(--radius-pill);
+  text-align: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--muted-dim);
+  border: 1px solid var(--border-soft);
+}
+
+.wm-badge--w { color: var(--mint); border-color: var(--good-border); background: var(--good-bg); }
+.wm-badge--l { color: var(--rose); border-color: var(--bad-border); background: var(--bad-bg); }
+.wm-badge--t { color: var(--violet); border-color: var(--violet-border); background: var(--violet-bg); }
+
+/* Per-game comparison. Scrolls sideways rather than squeezing the cells when
+   a five-game week meets a narrow screen. */
+.wm-games-row {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.6rem;
+  padding-bottom: 0.15rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.wm-games-row::-webkit-scrollbar { display: none; }
+
+.wm-cell {
+  display: grid;
+  grid-template-columns: auto auto auto auto auto;
+  align-items: center;
+  gap: 0.2rem;
+  flex: 1 0 auto;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.wm-cell-head {
+  grid-column: 1 / -1;
+  text-align: center;
+  font-size: 0.6rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-dim);
+}
+
+.wm-cell-score { color: var(--muted); }
+.wm-cell-score.is-winner { color: var(--text); font-weight: 700; }
+.wm-cell-sep { color: var(--muted-dim); }
+.wm-cell-mark { font-size: 0.62rem; font-weight: 700; color: var(--muted-dim); }
+.wm-cell-mark--w { color: var(--mint); }
+.wm-cell-mark--l { color: var(--rose); }
+.wm-cell-mark--t { color: var(--violet); }
+
+.wm-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  margin-top: 0.6rem;
+  padding: 0.4rem 0;
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--border-soft);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.wm-card.is-open .wm-toggle { color: var(--accent); }
+.wm-card.is-open .wm-toggle > .chev {
+  transform: rotate(180deg);
+  border-top-color: var(--accent);
+}
+
+.wm-detail { display: grid; gap: 0.7rem; padding-top: 0.35rem; }
+.wm-detail[hidden] { display: none; }
+
+/* The bowler grid keeps fixed game columns, so on a narrow card it scrolls
+   inside the card rather than widening the page. max-content keeps every row
+   the same width, which is what holds the columns in line across rows. */
+.wm-bowlers {
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.wm-bowlers::-webkit-scrollbar { display: none; }
+.wm-bowlers .bwl-grid { min-width: max-content; }
+
+.bwl-note { font-size: 0.62rem; color: var(--muted-dim); }
+.bwl--head .bwl-name { color: var(--muted-dim); }
+
+@media (max-width: 599px) {
+  .wm-card { padding: 0.6rem 0.65rem; }
+  .wm-team { font-size: 0.86rem; }
+  .wm-stats { font-size: 0.66rem; }
+  /* Two games a row beats a sideways scroll on a phone: the cells wrap inside
+     the card instead of setting a width the card cannot meet. */
+  .wm-games-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow-x: visible;
+  }
+  .wm-cell { flex: initial; min-width: 0; }
+  .wm-detail .bwl {
+    grid-template-columns: minmax(0, 1fr) repeat(var(--bwl-games, 4), 2.3rem);
+    font-size: 0.72rem;
+  }
+}
+
+@media (min-width: 640px) {
+  .wm-detail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ---------- Playoffs ---------- */
+
+.playoffs { display: grid; gap: 0.8rem; }
+
+/* The bracket sits under the week's matchups as one collapsible group. */
+.po-group { display: grid; gap: 0.5rem; }
+
+.po-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0;
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--border-soft);
+  cursor: pointer;
+}
+
+/* The head is a space-between row, so the title and its flag travel together
+   as one child rather than drifting apart. */
+.po-group-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.po-group-title {
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.po-group.is-open .po-group-title { color: var(--accent); }
+.po-group.is-open > .po-group-head > .chev {
+  transform: rotate(180deg);
+  border-top-color: var(--accent);
+}
+#playoffs-body[hidden],
+#matchups-body[hidden],
+#standings-body[hidden] { display: none; }
+
+/* The last seed row would otherwise sit on the next group's border. */
+#standings-body { padding-bottom: 0.5rem; }
+
+.po-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition: border-color var(--dur) var(--ease);
+}
+.po-card.is-open { border-color: var(--accent); }
+.po-head-wrap { margin: 0; }
+
+.po-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.7rem 0.85rem;
+  background: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.po-title {
+  min-width: 0;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.po-card.is-open .po-title { color: var(--accent); }
+
+.po-body {
+  padding: 0.15rem 0.85rem 0.85rem;
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+}
+.po-body[hidden] { display: none; }
+
+.po-card.is-open .chev {
+  transform: rotate(180deg);
+  border-top-color: var(--accent);
+}
+
+.po-flag {
+  padding: 0.15rem 0.45rem;
+  border: 1px solid var(--violet-border);
+  border-radius: var(--radius-pill);
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  color: var(--violet);
+}
+
+.mu-list { display: grid; gap: 0.55rem; padding-top: 0.5rem; }
+
+/* Sits on the elevated card body, so it takes the card background to lift. */
+.matchup {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.45rem 0.55rem;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+}
+
+/* Projected pairings are guesses from seeding, so they read as provisional. */
+.matchup.is-projected { border-style: dashed; }
+
+.mu-label {
+  font-size: 0.66rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-dim);
+}
+
+/* Seed, name, record, score, mark. Only the name flexes, so a long name
+ * truncates without pushing the record out of view. */
+.mu-side {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.88rem;
+}
+
+/* A bye renders the name alone, which would otherwise sit in the seed column. */
+.mu-side.is-bye {
+  grid-template-columns: 1fr;
+  color: var(--muted-dim);
+  font-style: italic;
+}
+.mu-side.is-winner .mu-team { font-weight: 700; }
+
+.mu-seed {
+  min-width: 1rem;
+  text-align: right;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--muted-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.mu-team {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Where the team stood going into the week, tucked after the name. */
+.mu-record {
+  white-space: nowrap;
+  font-size: 0.72rem;
+  color: var(--muted-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Games won in this matchup, in the slot the pin total used to hold. Only the
+ * top row carries the score, so the width is reserved to keep the empty cell
+ * below it the same size and the W/L marks in one column. */
+.mu-games {
+  min-width: 2.2rem;
+  text-align: right;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.mu-mark {
+  width: 1.2rem;
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--muted-dim);
+}
+.mu-mark--w { color: var(--mint); }
+.mu-mark--l { color: var(--rose); }
+
+.mu-note { font-size: 0.68rem; color: var(--muted-dim); }
+
+.seed-list,
+.champ-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.1rem;
+}
+
+.seed-row {
+  display: grid;
+  grid-template-columns: 1.7rem minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+  border-top: 1px solid var(--border-soft);
+  font-size: 0.85rem;
+}
+.seed-row:first-child { border-top: 0; }
+
+.seed-team {
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.seed-record { font-variant-numeric: tabular-nums; }
+
+.seed-pins {
+  font-size: 0.78rem;
+  color: var(--muted-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.champ-row {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+  border-top: 1px solid var(--border-soft);
+  font-size: 0.85rem;
+}
+.champ-row:first-child { border-top: 0; }
+
+.champ-season { font-size: 0.78rem; color: var(--muted); }
+
+.champ-team {
+  min-width: 0;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition: border-color var(--dur) var(--ease);
+}
+.row.is-open { border-color: var(--accent); }
+
+.row-main {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: var(--row-pad);
+  background: none;
+  border: 0;
+  text-align: left;
+}
+
+.rank {
+  flex: none;
+  min-width: 2.1rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.row.is-open .rank { color: var(--accent); }
+
+.row-id { min-width: 0; }
+
+.row-name,
+.row-team {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-name {
+  font-weight: 700;
+  font-size: 0.98rem;
+}
+
+/* Teams with a colour on record get it as an inline style from app.js; this is
+   the fallback for teams that have none. */
+.row-team {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.row-figs {
+  display: grid;
+  gap: 0.05rem;
+  text-align: right;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.fig-line { white-space: nowrap; }
+
+/* Fourth figure is desktop-only; on mobile it would make rows too tall. */
+.fig-line--extra { display: none; }
+.fig-label { color: var(--muted); }
+.fig-good { color: var(--mint); font-weight: 700; }
+.fig-bad { color: var(--rose); font-weight: 700; }
+.fig-key { color: var(--muted); }
+.fig-val { font-weight: 700; }
+
+/* The figure the board is ranked by. Only the label is tinted, because the
+   values already use colour to mean good and bad. */
+.fig-line--sorted .fig-label,
+.fig-line--sorted .fig-key { color: var(--accent); }
+/* Credited from a book average rather than bowled. */
+.fig-val--credited { color: var(--rose); }
+
+.chev {
+  flex: none;
+  width: 0; height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid var(--muted);
+  transition: transform var(--dur) var(--ease);
+}
+/* Scoped to the row's own chevron so the profile card inside keeps control of
+ * its own. */
+.row.is-open > .row-main > .chev {
+  transform: rotate(180deg);
+  border-top-color: var(--accent);
+}
+
+.row-detail {
+  border-top: 1px solid var(--border-soft);
+  padding: 0.8rem 0.85rem 0.9rem;
+  background: var(--bg-elevated);
+}
+.row-detail[hidden] { display: none; }
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 0.8rem;
+}
+
+.detail-stat { min-width: 0; }
+
+.detail-stat-label {
+  font-size: 0.63rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.detail-stat-value {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.detail-sub {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.4rem;
+}
+
+/* ---------- Profile chart inside an expanded row ---------- */
+
+.prof {
+  margin-bottom: 0.85rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  transition: border-color var(--dur) var(--ease);
+}
+.prof.is-open { border-color: var(--accent); }
+
+.prof-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  background: var(--card);
+  border: 0;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+}
+.prof.is-open .prof-toggle { color: var(--accent); }
+/* The section's own chevron only: its body holds collapsible weeks with
+ * chevrons of their own, and they answer to their own open state. */
+.prof.is-open > .prof-toggle > .chev {
+  transform: rotate(180deg);
+  border-top-color: var(--accent);
+}
+
+.prof-body {
+  padding: 0.55rem 0.5rem 0.35rem;
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+}
+.prof-body[hidden] { display: none; }
+
+.prof-plot { position: relative; }
+
+/* A long range spreads out and pans rather than compressing to card width.
+ * Dragging stands in for the scrollbar, which would crowd the card. */
+.prof-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  cursor: grab;
+  scrollbar-width: none;
+}
+.prof-scroll::-webkit-scrollbar { display: none; }
+.prof-scroll.is-dragging { cursor: grabbing; }
+
+.prof-chart {
+  display: block;
+  height: 200px;
+  /* The width attribute governs; this only stretches a short series to fill. */
+  min-width: 100%;
+}
+
+/* Sits over the chart's own left gutter and does not scroll with it. */
+.prof-axis-panel {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 2;
+  height: 200px;
+  background: var(--bg-elevated);
+  pointer-events: none;
+}
+
+.prof-tip {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 10px));
+  padding: 0.25rem 0.5rem;
+  background: var(--card-hi);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 20px var(--shadow);
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.prof-tip[hidden] { display: none; }
+
+.prof-point { cursor: pointer; }
+.prof-point:focus { outline: none; }
+.prof-point--active .prof-dot,
+.prof-point:focus-visible .prof-dot {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.prof-grid { stroke: var(--border); stroke-width: 1; }
+.prof-axis { fill: var(--muted-dim); font-size: 9px; }
+.prof-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.prof-avg { stroke: var(--violet); stroke-width: 1.25; stroke-dasharray: 5 4; }
+.prof-league { stroke: var(--muted-dim); stroke-width: 1.25; stroke-dasharray: 3 4; }
+
+/* The outline is the card behind it, so dots read as lifted off the line. */
+.prof-dot {
+  fill: var(--mint);
+  stroke: var(--bg-elevated);
+  stroke-width: 1;
+  pointer-events: none;
+}
+.prof-hit { fill: transparent; stroke: none; pointer-events: all; }
+.prof-dot--sub { stroke: var(--good-border); stroke-width: 2; }
+.prof-dot--miss { fill: var(--rose); stroke: var(--bad-border); stroke-width: 2; }
+
+.prof-legend {
+  margin: 0.2rem 0 0;
+  font-size: 0.66rem;
+  color: var(--muted-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.prof-key {
+  display: inline-block;
+  width: 0.85rem;
+  margin: 0 0.25rem 0 0.7rem;
+  vertical-align: middle;
+  border-top: 2px dashed currentColor;
+}
+.prof-key:first-child { margin-left: 0; }
+.prof-key--avg { color: var(--violet); }
+.prof-key--league { color: var(--muted-dim); }
+
+/* Roster / team membership lists, one block per season. */
+.mem-season {
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.3rem;
+}
+.mem-season:not(:first-child) { margin-top: 0.6rem; }
+
+.mem-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.mem {
+  padding: 0.2rem 0.45rem;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+}
+
+/* The member's average over this season's slice of the range. */
+.mem-avg {
+  margin-left: 0.35rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.games {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-bottom: 0.85rem;
+}
+
+.game-chip {
+  padding: 0.2rem 0.45rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--mono);
+}
+.game-chip--hi { border-color: var(--good-border); color: var(--mint); }
+.game-chip--lo { border-color: var(--bad-border); color: var(--rose); }
+.game-chip--sub { border-style: dashed; }
+
+/* A missed game still shows the book average that was taken for it, struck
+   through so it reads as "not really bowled". */
+.game-chip--miss {
+  border-color: var(--bad-border);
+  color: var(--rose);
+  text-decoration: line-through;
+  opacity: 0.8;
+}
+
+.games-absent {
+  font-size: 0.78rem;
+  color: var(--rose);
+  margin-bottom: 0.3rem;
+}
+
+.games-legend {
+  margin-bottom: 0.6rem;
+  font-size: 0.68rem;
+  color: var(--muted-dim);
+}
+
+/* Carries a player name for subs, so it is not uppercased or width-capped. */
+.wk-tag {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.62rem;
+  letter-spacing: 0.02em;
+}
+
+.wk-tag--sub { border-style: dashed; color: var(--muted); }
+.wk-tag--miss { border-color: var(--bad-border); color: var(--rose); }
+
+.row-tag {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.row-tag--sub { border-style: dashed; color: var(--muted); }
+.row-tag--abs { border-color: var(--bad-border); color: var(--rose); }
+
+.game-week {
+  width: 100%;
+  font-size: 0.66rem;
+  color: var(--muted-dim);
+  margin-top: 0.25rem;
+}
+
+.detail-sub-note {
+  font-size: 0.68rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted-dim);
+}
+
+/* Multi-week breakdown: one row per week instead of a chip per game. */
+.week-lines {
+  display: grid;
+  gap: 1px;
+  margin-bottom: 0.85rem;
+  background: var(--border-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+/* Summary line plus that week's scores, reading as one unit. */
+.week-block { background: var(--card); }
+.week-block .games {
+  padding: 0 0.6rem 0.45rem;
+  margin-bottom: 0;
+}
+
+.week-line {
+  display: grid;
+  grid-template-columns: 4.5rem 3.5rem 5.5rem auto;
+  justify-content: start;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.35rem 0.6rem;
+  background: var(--card);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.week-line-label { color: var(--muted); }
+.week-line-avg { font-weight: 700; }
+.week-line-range { white-space: nowrap; }
+.week-line-sep { color: var(--muted-dim); margin: 0 0.15rem; }
+.week-line-games { color: var(--muted-dim); font-size: 0.72rem; }
+
+.week-line--absent { grid-template-columns: 4.5rem auto; }
+.week-line-note { color: var(--rose); font-size: 0.75rem; }
+
+/* Team expansion: one block per week, opponent and W-L only when the range
+ * sits inside a single season. A grid rather than a table, so a week and its
+ * expansion are siblings and no colspan has to track the visible columns. */
+.wk-list {
+  margin-bottom: 0.85rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.wk-head {
+  display: grid;
+  grid-template-columns: 4.6rem minmax(0, 1fr) 3.4rem 4.2rem 4.6rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  background: var(--card);
+  border-top: 1px solid var(--border-soft);
+}
+/* Without a matchup there is no opponent or record to place. */
+.wk-list:not(.wk-list--records) .wk-head {
+  grid-template-columns: 4.6rem minmax(0, 1fr) 4.2rem 4.6rem;
+}
+
+.wk-block:first-of-type .wk-head { border-top: none; }
+
+.wk-head--labels {
+  border-top: none;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-dim);
+}
+
+.wk-c { text-align: right; white-space: nowrap; }
+.wk-h-wk,
+.wk-h-opponent,
+.wk-h-wl,
+.wk-wk,
+.wk-opp,
+.wk-rec { text-align: left; }
+
+/* Flex so the chevron can sit against the column's right edge rather than
+ * trailing the label, whose width varies between W1 and W10. */
+.wk-wk {
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+}
+.wk-avg { font-weight: 700; }
+
+/* Long team names ellipsis rather than wrap. */
+.wk-opp {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wk-head--open-able { cursor: pointer; }
+.wk-head--open-able:hover { background: var(--card-hi); }
+.wk-head .chev { margin-left: auto; }
+.wk-block.is-open .wk-head .chev {
+  transform: rotate(180deg);
+  border-top-color: var(--accent);
+}
+
+/* Both rosters, game by game. */
+.wk-games-wrap[hidden] { display: none; }
+
+.wk-games {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.1rem 0.5rem 0.6rem;
+  background: var(--card);
+}
+
+.bwl-team {
+  margin-bottom: 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.bwl-grid { display: grid; gap: 1px; }
+
+.bwl {
+  display: grid;
+  /* Name takes what is left; every game slot gets the same width. */
+  grid-template-columns: minmax(0, 1fr) repeat(var(--bwl-games, 4), 2.9rem);
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.76rem;
+}
+
+.bwl-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bwl-g { text-align: right; font-variant-numeric: tabular-nums; }
+.bwl-g--head {
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-dim);
+}
+/* The book average was taken for the game, so the score does count: red says
+   "not bowled" without the strikethrough that would read as discarded. */
+.bwl-g--miss { color: var(--rose); }
+
+.bwl--head .bwl-name { color: var(--muted-dim); }
+/* Their scores did not feed the team's pins, so they read as an aside. */
+.bwl--nocount { color: var(--muted-dim); }
+
+.bwl-div {
+  height: 1px;
+  margin: 0.2rem 0;
+  background: var(--border-soft);
+}
+
+.bwl--total {
+  margin-top: 0.2rem;
+  padding-top: 0.25rem;
+  border-top: 1px solid var(--border-soft);
+  font-weight: 700;
+}
+.bwl--total .bwl-name {
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-dim);
+}
+
+@media (max-width: 479px) {
+  .wk-list { font-size: 0.74rem; }
+  .wk-head {
+    gap: 0.35rem;
+    padding: 0.3rem 0.35rem;
+    grid-template-columns: 4.3rem minmax(0, 1fr) 3rem 3.2rem 3.9rem;
+  }
+  .wk-list:not(.wk-list--records) .wk-head {
+    grid-template-columns: 4.3rem minmax(0, 1fr) 3.2rem 3.9rem;
+  }
+  .bwl { grid-template-columns: minmax(0, 1fr) repeat(var(--bwl-games, 4), 2.5rem); }
+}
+
+.games-group { margin-bottom: 0.6rem; }
+
+.games-group-label {
+  font-size: 0.66rem;
+  color: var(--muted-dim);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 0.2rem;
+}
+
+.detail-link {
+  display: block;
+  width: 100%;
+  padding: 0.55rem;
+  text-align: center;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+.detail-link:hover { border-color: var(--accent); color: var(--accent); }
+
+.detail-empty { font-size: 0.82rem; color: var(--muted); }
+
+.app-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.35rem 1.1rem;
+  margin-top: 1.5rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border-soft);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(0, 0, 0, 0.4);
+}
+.scrim[hidden] { display: none; }
+
+/* ---------- Desktop ---------- */
+
+@media (min-width: 900px) {
+  .app {
+    max-width: 1200px;
+    padding: 1.25rem 1.25rem 3rem;
+  }
+
+  .app-title { font-size: 1.9rem; }
+  .app-title-ico { font-size: 1.7rem; }
+
+  /* The rail shows filters inline, so the pill popover is mobile-only. */
+  .range-field { display: none; }
+
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+    gap: 1.5rem;
+    align-items: start;
+  }
+
+  .rail {
+    position: sticky;
+    top: 1.25rem;
+    display: grid;
+    gap: 1.1rem;
+  }
+
+  .rail .panel { margin-bottom: 0; }
+
+  /* Full-width band: highlights across the left, league tiles on the right. */
+  .summary-band {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    gap: 1.5rem;
+    align-items: start;
+    margin-bottom: 1.35rem;
+  }
+
+  .summary-band .panel { margin-bottom: 0; }
+
+  /* Up to five cards share this row, so they trade size for the extra slots. */
+  .hl-card { padding: 0.6rem 0.5rem 0.7rem; }
+
+  .hl-head { font-size: 0.62rem; letter-spacing: 0.04em; }
+
+  .hl-score { font-size: 1.55rem; }
+
+  .rail-filters {
+    padding: 0.9rem;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .rail-filters .filter-panel {
+    position: static;
+    padding: 0;
+    background: none;
+    border: 0;
+    box-shadow: none;
+    animation: none;
+  }
+
+  /* The rail panel is always open, so there is nothing to dismiss. */
+  .rail-filters #filter-close { display: none; }
+  .rail-filters .filter-actions { justify-content: center; }
+
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  .row-main {
+    grid-template-columns: auto minmax(0, 1.4fr) repeat(4, minmax(0, 0.6fr)) auto;
+    gap: 0.85rem;
+  }
+
+  /* Eleven record lists stack too tall on one column at this width. */
+  .bests { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+
+  /* Desktop reveals each figure in its own column instead of stacked lines. */
+  .row-figs { display: contents; }
+
+  .row-figs .fig-line {
+    display: block;
+    text-align: right;
+    font-size: 0.85rem;
+  }
+
+  .detail-grid { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); }
+
+  .scrim { display: none; }
+}

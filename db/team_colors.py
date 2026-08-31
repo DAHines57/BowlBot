@@ -37,6 +37,26 @@ def normalize_color_hex(value: Optional[str]) -> Optional[str]:
     return f"#{digits.upper()}"
 
 
+def readable_hex(color: Optional[str]) -> Optional[str]:
+    """Lighten a colour that would be unreadable on the dark background.
+
+    Colours below ~40% relative luminance get blended toward white; anything
+    brighter passes through untouched.
+    """
+    normalized = normalize_color_hex(color)
+    if normalized is None:
+        return None
+    digits = normalized.lstrip("#")
+    r, g, b = int(digits[0:2], 16), int(digits[2:4], 16), int(digits[4:6], 16)
+    luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    if luminance < 0.4:
+        factor = 0.6
+        r = int(r + (255 - r) * factor)
+        g = int(g + (255 - g) * factor)
+        b = int(b + (255 - b) * factor)
+    return f"#{r:02X}{g:02X}{b:02X}"
+
+
 def load_team_color_map(session: Optional[Session] = None) -> Dict[str, str]:
     """Build team name -> #hex; newer seasons override older for the same name."""
     own = session is None
@@ -68,12 +88,9 @@ def load_team_color_map(session: Optional[Session] = None) -> Dict[str, str]:
 
 
 def refresh_team_colors_cache() -> Dict[str, str]:
-    """Reload cache from DB and push to image_generator."""
+    """Reload the in-memory cache from the DB."""
     global _CACHE
     _CACHE = load_team_color_map()
-    from image_generator import register_team_colors
-
-    register_team_colors(_CACHE)
     logger.info("Team colors loaded: %s from DB", len(_CACHE))
     return _CACHE
 

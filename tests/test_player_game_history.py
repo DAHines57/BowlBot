@@ -1,6 +1,5 @@
-"""Player game history for lookup charts."""
+"""Player game history behind the profile chart."""
 
-from image_generator import build_player_detail_html
 from stats.compute import get_player_game_history
 
 
@@ -73,72 +72,17 @@ def test_get_player_game_history_marks_substitute_games():
     assert sub[0]["score"] == 230
 
 
-def test_build_player_detail_html_chart_shows_sub_indicator():
-    html = build_player_detail_html(
-        page_title="Alice",
-        subtitle="Alice · Season 9",
-        team="Team A",
-        stats_title="Season stats",
-        stat_rows=[("Average", "210.0", "gold")],
-        game_history=[
-            {
-                "score": 210,
-                "week": 1,
-                "game": 1,
-                "season_label": "Season 9",
-                "season_number": 9,
-                "is_substitute": False,
-            },
-            {
-                "score": 225,
-                "week": 2,
-                "game": 1,
-                "season_label": "Season 9",
-                "season_number": 9,
-                "is_substitute": True,
-            },
-        ],
-        chart_scope="Season 9",
-    )
-    assert 'data-sub="1"' in html
-    assert "player-chart-point--sub" in html
-    assert "player-chart-tip-sub" in html
+def test_get_player_game_history_keeps_missed_games_with_real_slots():
+    """A missed game still has a score taken for it, so it stays in the history."""
+    facts = [{**_fact("Alice", 1, games=(150, 200, 210, 220)), "game1_absent": True}]
+    hist = get_player_game_history(facts, "Alice", "Season 9", season_num=9, limit=30)
+
+    assert [g["score"] for g in hist] == [150, 200, 210, 220]
+    assert [g["game"] for g in hist] == [1, 2, 3, 4]
+    assert hist[0]["game_absent"] is True
+    assert not any(g["game_absent"] for g in hist[1:])
 
 
-def test_build_player_detail_html_includes_chart():
-    html = build_player_detail_html(
-        page_title="Alice",
-        subtitle="Alice · Season 9",
-        team="Team A",
-        stats_title="Season stats",
-        stat_rows=[("Average", "200.0", "gold")],
-        game_history=[
-            {"score": 210, "week": 1, "game": 1, "season_label": "Season 9", "season_number": 9},
-            {"score": 220, "week": 1, "game": 2, "season_label": "Season 9", "season_number": 9},
-        ],
-        chart_scope="Season 9",
-    )
-    assert "Recent games" in html
-    assert "player-chart" in html
-    assert "player-chart-tip" in html
-    assert "player-chart-point" in html
-    assert "polyline" in html
-    assert "wr.width - pad - tipW" in html
-
-
-def test_build_player_detail_html_chart_includes_league_avg_line():
-    html = build_player_detail_html(
-        page_title="Alice",
-        subtitle="Alice · Season 9",
-        team="Team A",
-        stats_title="Season stats",
-        stat_rows=[("Average", "200.0", "gold")],
-        game_history=[
-            {"score": 210, "week": 1, "game": 1, "season_label": "Season 9", "season_number": 9},
-            {"score": 220, "week": 1, "game": 2, "season_label": "Season 9", "season_number": 9},
-        ],
-        chart_scope="Season 9",
-        league_avg=175.5,
-    )
-    assert "player-chart-league-avg" in html
-    assert "league avg <strong>175.50</strong>" in html
+def test_whole_week_absence_overrides_per_game_flags():
+    facts = [{**_fact("Alice", 1, absent=True), "game1_absent": True}]
+    assert get_player_game_history(facts, "Alice", "Season 9", season_num=9) == []

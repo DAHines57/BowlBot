@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Admin{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
+  {% block head_extra %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+{% block body %}
+  <div class="shell {% block shell_class %}{% endblock %}">
+    {% block nav %}
+    <nav class="nav">
+      <a href="{{ url_for('admin.admin_home') }}"
+         {% if active_nav == 'hub' %}aria-current="page"{% endif %}>Admin</a>
+      <a href="{{ url_for('admin.admin_enter_form') }}"
+         {% if active_nav == 'enter' %}aria-current="page"{% endif %}>Enter scores</a>
+      <a href="{{ url_for('admin.admin_season_form') }}"
+         {% if active_nav == 'season' %}aria-current="page"{% endif %}>Season setup</a>
+      <a href="{{ url_for('admin.admin_players') }}"
+         {% if active_nav == 'players' %}aria-current="page"{% endif %}>Manage players</a>
+      <a href="/">Home</a>
+    </nav>
+    {% endblock %}
+
+    {% block content %}{% endblock %}
+  </div>
+{% endblock %}
+{% block scripts %}{% endblock %}
+</body>
+</html>
