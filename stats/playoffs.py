@@ -116,44 +116,44 @@ def season_seeding(
     return out
 
 
-def standings_through_latest(
+def standings_through_week(
     facts: List[dict],
     season_num: int,
-    seeds: Sequence[dict],
     *,
+    through_week: Optional[int] = None,
     matchup_overrides: Optional[List[dict]] = None,
 ) -> List[dict]:
-    """``seeds`` rows with records recounted over every week, playoffs included.
+    """The table as it stood after ``through_week``, playoff weeks included.
 
-    Seeding itself has to stay frozen at the last regular week because the
-    bracket is built from it, so this is a display-only view: the seed order and
-    numbers are kept and only the record columns move forward.
+    This is a display-only view, ordered and numbered from the record as of that
+    week. The bracket's own seeding stays frozen at the last regular week, so it
+    is computed separately by ``season_seeding``.
     """
-    if not seeds:
-        return []
-
     scores = compute.get_team_scores(
         facts,
         None,
         compute.season_label(season_num),
+        through_week=through_week,
         season_num=season_num,
         matchup_overrides=matchup_overrides,
+        # A cutoff would otherwise drop playoff rows, since get_team_scores
+        # leaves them out by default.
+        include_playoffs=True,
     )
     if not isinstance(scores, dict) or "error" in scores or not scores:
-        return [dict(row) for row in seeds]
+        return []
 
     out = []
-    for row in seeds:
-        stats = scores.get(row["team"])
-        if not isinstance(stats, dict):
-            out.append(dict(row))
-            continue
+    for place, (team, stats) in enumerate(
+        compute.sort_teams_for_playoff_seeding(scores), start=1
+    ):
         wins = stats.get("wins", 0)
         losses = stats.get("losses", 0)
         ties = stats.get("ties", 0)
-        merged = dict(row)
-        merged.update(
+        out.append(
             {
+                "seed": place,
+                "team": team,
                 "wins": wins,
                 "losses": losses,
                 "ties": ties,
@@ -162,7 +162,6 @@ def standings_through_latest(
                 "avg_per_game": stats.get("avg_per_game", 0),
             }
         )
-        out.append(merged)
     return out
 
 

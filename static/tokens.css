@@ -1,0 +1,43 @@
+/* Shared design tokens. The single source of colour truth for both the public
+   stats page (app.css) and the admin pages (admin.css) - no bare hex outside
+   this file. */
+
+:root {
+  --bg: #12101a;
+  --bg-elevated: #16121f;
+  --card: #1a1730;
+  --card-hi: #201c3a;
+  --border: #2a2050;
+  --border-soft: #241d45;
+  --text: #e8e6ef;
+  --muted: #9a96a8;
+  --muted-dim: #6f6b80;
+
+  --accent: #ffb86c;
+  --mint: #50fa7b;
+  --rose: #ff6b81;
+  --violet: #bd93f9;
+  --header-accent: #2d1b69;
+
+  --good-bg: rgba(80, 250, 123, 0.07);
+  --good-border: rgba(80, 250, 123, 0.45);
+  --bad-bg: rgba(255, 107, 129, 0.07);
+  --bad-border: rgba(255, 107, 129, 0.45);
+  --violet-bg: rgba(189, 147, 249, 0.08);
+  --violet-border: rgba(189, 147, 249, 0.45);
+  --accent-bg: rgba(255, 184, 108, 0.08);
+  --accent-border: rgba(255, 184, 108, 0.45);
+
+  --shadow: rgba(0, 0, 0, 0.35);
+  --ease: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --dur: 0.2s;
+
+  --radius: 14px;
+  --radius-sm: 10px;
+  --radius-pill: 999px;
+
+  --row-pad: 0.7rem 0.85rem;
+  --gap: 0.75rem;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}

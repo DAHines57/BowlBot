@@ -160,22 +160,52 @@ def test_projected_matchups_carry_records_but_no_game_wins(client):
     assert "home_game_wins" not in first
 
 
-def test_standings_count_playoff_weeks_while_keeping_seed_order(client):
+def test_standings_default_to_the_latest_week_and_count_playoffs(client):
     data = client.get("/api/playoffs?season=Season 13").get_json()
-    seeds = data["seeds"]
     standings = data["standings"]
 
     assert data["last_regular_week"] == 2
     assert data["last_week"] == 3
-    assert [row["seed"] for row in standings] == [row["seed"] for row in seeds]
-    assert [row["team"] for row in standings] == [row["team"] for row in seeds]
+    assert data["standings_week"] == 3
+    assert [row["seed"] for row in standings] == [1, 2, 3, 4, 5, 6, 7, 8]
     assert all("color" in row for row in standings)
     # Team 1 swept its playoff week 3 matchup, so both games add to its record.
-    seed_row = next(row for row in seeds if row["team"] == "Team 1")
+    seed_row = next(row for row in data["seeds"] if row["team"] == "Team 1")
     late_row = next(row for row in standings if row["team"] == "Team 1")
     assert seed_row["record"] == "4-0"
     assert late_row["wins"] == seed_row["wins"] + 2
     assert late_row["record"] == "6-0"
+    # Team 5 lost its playoff matchup, so it drops behind the teams that won.
+    assert next(row for row in standings if row["team"] == "Team 5")["record"] == "4-2"
+    assert [row["team"] for row in standings[:2]] == ["Team 1", "Team 3"]
+
+
+def test_standings_stop_at_the_asked_week(client):
+    data = client.get("/api/playoffs?season=Season 13&week=1").get_json()
+
+    assert data["standings_week"] == 1
+    assert all(row["record"] in ("2-0", "0-2") for row in data["standings"])
+    # The bracket below the table is still built from the frozen seeding.
+    assert data["seeds"][0]["record"] == "4-0"
+    assert data["last_week"] == 3
+
+
+def test_standings_reorder_as_the_week_moves(client):
+    week2 = client.get("/api/playoffs?season=Season 13&week=2").get_json()
+    week3 = client.get("/api/playoffs?season=Season 13&week=3").get_json()
+
+    names2 = [row["team"] for row in week2["standings"]]
+    names3 = [row["team"] for row in week3["standings"]]
+    assert names2[:4] == ["Team 1", "Team 3", "Team 5", "Team 7"]
+    assert names2 != names3
+
+
+def test_a_week_the_season_never_bowled_falls_back(client):
+    late = client.get("/api/playoffs?season=Season 13&week=99").get_json()
+    assert late["standings_week"] == 3
+
+    bad = client.get("/api/playoffs?season=Season 13&week=nope")
+    assert bad.status_code == 400
 
 
 def test_history_lists_a_champion_per_season(client):

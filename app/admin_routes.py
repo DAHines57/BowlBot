@@ -36,7 +36,7 @@ from league_admin import (
     get_week_entry,
     list_season_teams_from_db,
     list_season_week_completion,
-    parse_week_rows_payload,
+    parse_week_rows_payload_detailed,
     save_week_entry,
 )
 from scoreboard_scan import (
@@ -72,6 +72,15 @@ def _no_svc():
         ),
         503,
     )
+
+
+def _wants_json() -> bool:
+    """The admin pages post over fetch, so a JSON answer keeps the typed grid on
+    screen instead of navigating away from it."""
+    if request.is_json:
+        return True
+    accept = request.headers.get("Accept") or ""
+    return "application/json" in accept
 
 
 def _require_admin():
@@ -144,9 +153,34 @@ def _render_admin_home():
         db_seasons = list_db_seasons(session)
     finally:
         session.close()
+
+    # The week that still needs scores is the reason most visits happen, so the
+    # hub links straight to it instead of making the user re-pick it.
+    next_entry = None
+    week_chips: list[dict] = []
+    try:
+        season, week = default_entry_target(svc.data)
+    except Exception:
+        season, week = None, None
+    if season and week:
+        next_entry = {"season": season, "week": week}
+        season_num = parse_season_number(season)
+        db_teams = (
+            list_season_teams_from_db(season_num) if season_num is not None else []
+        )
+        try:
+            week_chips = list_season_week_completion(
+                svc.data, season, season_teams=db_teams or None
+            )
+        except Exception:
+            week_chips = []
+
     return render_template(
         "admin_hub.html",
         db_seasons=db_seasons,
+        next_entry=next_entry,
+        week_chips=week_chips,
+        active_nav="hub",
     )
 
 
@@ -256,6 +290,7 @@ def admin_enter_form():
         if (request.args.get("saved") or "").strip() in ("1", "true", "yes")
         else None,
         scoreboard_scan_enabled=scan_configured(),
+        active_nav="enter",
     )
 
 
@@ -373,10 +408,11 @@ def admin_week_post():
     if week < 1:
         return jsonify({"error": "Week must be at least 1."}), 400
 
-    rows, err = parse_week_rows_payload(body)
-    if err:
-        if request.is_json or request.headers.get("Accept") == "application/json":
-            return jsonify({"error": err}), 400
+    rows, problems = parse_week_rows_payload_detailed(body)
+    if problems:
+        err = " ".join(p["message"] for p in problems)
+        if _wants_json():
+            return jsonify({"error": err, "problems": problems}), 400
         team = (body.get("team") or request.form.get("team") or "").strip()
         q = f"?season={quote(season)}&week={week}&error={quote(err)}"
         if team:
@@ -390,7 +426,7 @@ def admin_week_post():
         rows,
         refresh=svc.refresh_data,
     )
-    if request.is_json or request.headers.get("Accept") == "application/json":
+    if _wants_json():
         return jsonify({"ok": ok, "message": msg}), 200 if ok else 500
 
     if ok:
@@ -413,6 +449,7 @@ def admin_week_delete_post():
     week, err = _parse_week_arg(required=True)
     if err:
         return render_template("error.html", message=err), 400
+    season_label = _season_label(svc)
     session = get_session()
     try:
         count = delete_week(session, season_num, week)
@@ -423,7 +460,17 @@ def admin_week_delete_post():
         return render_template("error.html", message=str(exc)), 400
     finally:
         session.close()
-    return redirect(url_for("admin.admin_home"))
+    # Land back on the week that was cleared, reporting what went away.
+    msg = f"Deleted {count} row(s) for {season_label} week {week}."
+    return redirect(
+        url_for(
+            "admin.admin_enter_form",
+            season=season_label,
+            week=week,
+            saved=1,
+            msg=msg,
+        )
+    )
 
 
 @admin_bp.route("/admin/week", methods=["DELETE"])
@@ -489,6 +536,7 @@ def admin_players():
         impact=impact,
         success=request.args.get("success"),
         error=request.args.get("error"),
+        active_nav="players",
     )
 
 
@@ -549,6 +597,10 @@ def _players_redirect(
     success: str | None = None,
     error: str | None = None,
 ):
+    if _wants_json():
+        if error:
+            return jsonify({"error": error}), 400
+        return jsonify({"ok": True, "message": success or "Saved."})
     params: list[str] = []
     if player_id is not None:
         params.append(f"player_id={player_id}")
@@ -634,6 +686,7 @@ def admin_season_form():
         new_season_options=suggest_new_season_numbers(db_seasons),
         existing_season_numbers=existing_numbers,
         all_players=all_players,
+        active_nav="season",
     )
 
 
@@ -676,6 +729,14 @@ def admin_season_post():
             save_season_roster(session, season_num, teams, roster_week=effective_week)
             session.commit()
             svc.refresh_data()
+            if _wants_json():
+                return jsonify({
+                    "ok": True,
+                    "message": (
+                        f"Saved {len(teams)} team(s) for Season {season_num} "
+                        f"from week {effective_week} onward."
+                    ),
+                })
             return redirect(
                 url_for(
                     "admin.admin_season_form",
@@ -696,6 +757,8 @@ def admin_season_post():
         raise ValueError(f"Unknown action: {action}")
     except Exception as exc:
         session.rollback()
+        if _wants_json():
+            return jsonify({"error": str(exc)}), 400
         return render_template("error.html", message=str(exc)), 400
     finally:
         session.close()

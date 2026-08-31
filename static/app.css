@@ -1,45 +1,7 @@
+@import url("tokens.css");
+
 /* Unified stats page. Mobile-first; desktop two-column at 900px.
-   Tokens are the single source of colour truth - no bare hex below :root. */
-
-:root {
-  --bg: #12101a;
-  --bg-elevated: #16121f;
-  --card: #1a1730;
-  --card-hi: #201c3a;
-  --border: #2a2050;
-  --border-soft: #241d45;
-  --text: #e8e6ef;
-  --muted: #9a96a8;
-  --muted-dim: #6f6b80;
-
-  --accent: #ffb86c;
-  --mint: #50fa7b;
-  --rose: #ff6b81;
-  --violet: #bd93f9;
-  --header-accent: #2d1b69;
-
-  --good-bg: rgba(80, 250, 123, 0.07);
-  --good-border: rgba(80, 250, 123, 0.45);
-  --bad-bg: rgba(255, 107, 129, 0.07);
-  --bad-border: rgba(255, 107, 129, 0.45);
-  --violet-bg: rgba(189, 147, 249, 0.08);
-  --violet-border: rgba(189, 147, 249, 0.45);
-  --accent-bg: rgba(255, 184, 108, 0.08);
-  --accent-border: rgba(255, 184, 108, 0.45);
-
-  --shadow: rgba(0, 0, 0, 0.35);
-  --ease: cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  --dur: 0.2s;
-
-  --radius: 14px;
-  --radius-sm: 10px;
-  --radius-pill: 999px;
-
-  --row-pad: 0.7rem 0.85rem;
-  --gap: 0.75rem;
-  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
+   Colours come from the shared token layer in tokens.css. */
 
 /* Compact density shrinks rows without changing the layout. */
 .density-compact {
@@ -919,9 +881,240 @@ a { color: var(--accent); }
   margin-top: 0.6rem;
 }
 
+/* ---------- Week matchups ---------- */
+
+.matchups { display: grid; gap: 0.8rem; margin-bottom: 1rem; }
+
+.wm-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.wm-head-title {
+  margin: 0;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.wm-card {
+  min-width: 0;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.7rem 0.85rem;
+  transition: border-color var(--dur) var(--ease);
+}
+.wm-card.is-open { border-color: var(--accent); }
+
+.wm-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.wm-side { display: grid; gap: 0.15rem; min-width: 0; }
+.wm-side--away { text-align: right; }
+.wm-side.is-bye { color: var(--muted-dim); font-style: italic; }
+
+.wm-team {
+  font-weight: 700;
+  font-size: 0.92rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wm-stats {
+  font-size: 0.7rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.wm-vs { display: grid; gap: 0.2rem; justify-items: center; }
+
+.wm-vs-label {
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-dim);
+}
+
+.wm-badges { display: flex; gap: 0.25rem; }
+
+.wm-badge {
+  min-width: 1.3rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: var(--radius-pill);
+  text-align: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--muted-dim);
+  border: 1px solid var(--border-soft);
+}
+
+.wm-badge--w { color: var(--mint); border-color: var(--good-border); background: var(--good-bg); }
+.wm-badge--l { color: var(--rose); border-color: var(--bad-border); background: var(--bad-bg); }
+.wm-badge--t { color: var(--violet); border-color: var(--violet-border); background: var(--violet-bg); }
+
+/* Per-game comparison. Scrolls sideways rather than squeezing the cells when
+   a five-game week meets a narrow screen. */
+.wm-games-row {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.6rem;
+  padding-bottom: 0.15rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.wm-games-row::-webkit-scrollbar { display: none; }
+
+.wm-cell {
+  display: grid;
+  grid-template-columns: auto auto auto auto auto;
+  align-items: center;
+  gap: 0.2rem;
+  flex: 1 0 auto;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.wm-cell-head {
+  grid-column: 1 / -1;
+  text-align: center;
+  font-size: 0.6rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-dim);
+}
+
+.wm-cell-score { color: var(--muted); }
+.wm-cell-score.is-winner { color: var(--text); font-weight: 700; }
+.wm-cell-sep { color: var(--muted-dim); }
+.wm-cell-mark { font-size: 0.62rem; font-weight: 700; color: var(--muted-dim); }
+.wm-cell-mark--w { color: var(--mint); }
+.wm-cell-mark--l { color: var(--rose); }
+.wm-cell-mark--t { color: var(--violet); }
+
+.wm-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  margin-top: 0.6rem;
+  padding: 0.4rem 0;
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--border-soft);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.wm-card.is-open .wm-toggle { color: var(--accent); }
+.wm-card.is-open .wm-toggle > .chev {
+  transform: rotate(180deg);
+  border-top-color: var(--accent);
+}
+
+.wm-detail { display: grid; gap: 0.7rem; padding-top: 0.35rem; }
+.wm-detail[hidden] { display: none; }
+
+/* The bowler grid keeps fixed game columns, so on a narrow card it scrolls
+   inside the card rather than widening the page. max-content keeps every row
+   the same width, which is what holds the columns in line across rows. */
+.wm-bowlers {
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.wm-bowlers::-webkit-scrollbar { display: none; }
+.wm-bowlers .bwl-grid { min-width: max-content; }
+
+.bwl-note { font-size: 0.62rem; color: var(--muted-dim); }
+.bwl--head .bwl-name { color: var(--muted-dim); }
+
+@media (max-width: 599px) {
+  .wm-card { padding: 0.6rem 0.65rem; }
+  .wm-team { font-size: 0.86rem; }
+  .wm-stats { font-size: 0.66rem; }
+  /* Two games a row beats a sideways scroll on a phone: the cells wrap inside
+     the card instead of setting a width the card cannot meet. */
+  .wm-games-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow-x: visible;
+  }
+  .wm-cell { flex: initial; min-width: 0; }
+  .wm-detail .bwl {
+    grid-template-columns: minmax(0, 1fr) repeat(var(--bwl-games, 4), 2.3rem);
+    font-size: 0.72rem;
+  }
+}
+
+@media (min-width: 640px) {
+  .wm-detail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 /* ---------- Playoffs ---------- */
 
 .playoffs { display: grid; gap: 0.8rem; }
+
+/* The bracket sits under the week's matchups as one collapsible group. */
+.po-group { display: grid; gap: 0.5rem; }
+
+.po-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0;
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--border-soft);
+  cursor: pointer;
+}
+
+/* The head is a space-between row, so the title and its flag travel together
+   as one child rather than drifting apart. */
+.po-group-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.po-group-title {
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.po-group.is-open .po-group-title { color: var(--accent); }
+.po-group.is-open > .po-group-head > .chev {
+  transform: rotate(180deg);
+  border-top-color: var(--accent);
+}
+#playoffs-body[hidden],
+#matchups-body[hidden],
+#standings-body[hidden] { display: none; }
+
+/* The last seed row would otherwise sit on the next group's border. */
+#standings-body { padding-bottom: 0.5rem; }
 
 .po-card {
   background: var(--card);
@@ -1664,7 +1857,9 @@ a { color: var(--accent); }
   text-transform: uppercase;
   color: var(--muted-dim);
 }
-.bwl-g--miss { color: var(--muted-dim); text-decoration: line-through; }
+/* The book average was taken for the game, so the score does count: red says
+   "not bowled" without the strikethrough that would read as discarded. */
+.bwl-g--miss { color: var(--rose); }
 
 .bwl--head .bwl-name { color: var(--muted-dim); }
 /* Their scores did not feed the team's pins, so they read as an aside. */
@@ -1729,6 +1924,10 @@ a { color: var(--accent); }
 .detail-empty { font-size: 0.82rem; color: var(--muted); }
 
 .app-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.35rem 1.1rem;
   margin-top: 1.5rem;
   padding-top: 0.9rem;
   border-top: 1px solid var(--border-soft);

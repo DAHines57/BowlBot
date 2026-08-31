@@ -59,13 +59,33 @@ def test_app_page_renders_shell():
         'id="panel-bests"',
         'data-view="playoffs"',
         'id="panel-playoffs"',
-        'id="playoff-season"',
         'id="playoff-upcoming"',
         'id="playoff-rounds"',
         'id="playoff-seeds"',
         'id="playoff-history"',
+        # Standings lead the tab, then the week's matchups, then the bracket,
+        # each folding away as its own group.
+        'id="week-matchups"',
+        'id="standings-toggle"',
+        'id="standings-body"',
+        'id="matchups-toggle"',
+        'id="matchups-body"',
+        'id="playoffs-toggle"',
+        'id="playoffs-body"',
+        ">Matchups<",
     ]:
         assert anchor in html, anchor
+
+    # The bracket follows the week selector, so the tab has no season of its own.
+    assert 'id="playoff-season"' not in html
+
+    # Standings read as of the week on screen, so they lead the tab rather than
+    # sitting inside the bracket.
+    assert html.index('id="playoff-seeds"') < html.index('id="week-matchups"')
+
+    # Admin is reachable from this page, by literal path: the shell renders
+    # without the admin blueprint here, so url_for into it would not build.
+    assert 'href="/admin"' in html
 
     # Card order on the Playoffs tab comes from the container order, so standings
     # leading the tab is a property of the shell rather than of the renderer.
@@ -84,16 +104,28 @@ def test_static_assets_exist_and_are_wired():
     assert os.path.exists(js)
 
     css_text = open(css, encoding="utf-8").read()
-    # Colours come from the token layer, not scattered literals.
-    assert "--accent: #ffb86c" in css_text
     assert "@media (min-width: 900px)" in css_text
+
+    # Colours come from the shared token layer, which admin.css imports too.
+    tokens = os.path.join(ROOT, "static", "tokens.css")
+    assert '@import url("tokens.css")' in css_text
+    assert "--accent: #ffb86c" in open(tokens, encoding="utf-8").read()
+
+    # The substitute rows sit inside a wrapper that only exists as a script
+    # insertion point. Without this it becomes a grid item and every sub row
+    # collapses into the first column.
+    admin_css = open(os.path.join(ROOT, "static", "admin.css"), encoding="utf-8").read()
+    assert ".sub-rows { display: contents; }" in admin_css
 
     js_text = open(js, encoding="utf-8").read()
     assert "/api/leaderboard" in js_text
     assert "/api/meta" in js_text
     assert "/api/playoffs" in js_text
+    assert "/api/week-matchups" in js_text
     # The playoff sections collapse, so the toggle wiring has to be present.
     assert "data-po-toggle" in js_text
+    # A week's matchup opens into its per-bowler tables.
+    assert "data-wm-toggle" in js_text
     # Profiles are drawn inline from the range-scoped detail rather than linked
     # out to the season-only page.
     assert "data-prof-toggle" in js_text

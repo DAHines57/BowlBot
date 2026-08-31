@@ -153,15 +153,21 @@
   var bestsToken = 0;
   // Which record lists the reader has expanded; each expands on its own.
   var bestsExpanded = {};
-  // The bracket is season-scoped rather than range-scoped, so it keeps its own
-  // selected season and caches by that instead of by the range query.
+  // The bracket is season-scoped rather than range-scoped, so it caches by
+  // season label instead of by the range query.
   var playoffsCache = {};
   var playoffsToken = 0;
-  var playoffSeason = null;
-  /* Which playoff sections are open. Only the standings card starts open; round
-   * keys carry a week number and so differ per season, which is why this is
-   * session state rather than a stored preference. */
-  var playoffsOpen = { standings: true };
+  /* Which playoff sections are open. All start closed; round keys carry a week
+   * number and so differ per season, which is why this is session state rather
+   * than a stored preference. */
+  var playoffsOpen = {};
+
+  /* The week's matchups are their own fetch, cached per season+week. Which
+   * cards have their bowler tables open is session state, keyed by position in
+   * the week's list. */
+  var matchupsCache = {};
+  var matchupsToken = 0;
+  var matchupsOpen = {};
 
   /* Which expanded rows have their profile chart open, keyed the same way as
    * `detailCache`. Session state: a chart is a look, not a setting. */
@@ -293,6 +299,21 @@
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
+  }
+
+  var narrowQuery = window.matchMedia("(max-width: 599px)");
+
+  function isNarrow() { return narrowQuery.matches; }
+
+  /* A phone row cannot hold a full name, and a clipped one loses more than a
+   * last initial does. Teams keep their names, since an initial says nothing
+   * about them, and so does a bowler who goes by one word. */
+  function displayName(name) {
+    if (!isNarrow()) return name;
+    var parts = String(name === null || name === undefined ? "" : name)
+      .trim().split(/\s+/);
+    if (parts.length < 2) return name;
+    return parts[0] + " " + parts[parts.length - 1].charAt(0).toUpperCase() + ".";
   }
 
   /* Over one week the high and low week are the same number as the average,
@@ -453,6 +474,7 @@
     // previous answer for an unchanged range.
     bestsCache = {};
     playoffsCache = {};
+    matchupsCache = {};
     openRow = null;
     showAllRows = false;
     setStatus("Loading\u2026");
@@ -541,19 +563,24 @@
     el.panelPlayoffs.hidden = !playoffs;
     el.panelHighlights.hidden = bests || playoffs;
     if (el.panelLeague) el.panelLeague.hidden = bests || playoffs;
-    // The bracket follows its own season selector, so the week/range flip has
-    // nothing to act on. Greyed out rather than hidden so the tabbar holds its
-    // shape as the reader moves between tabs.
-    el.spanflip.classList.toggle("is-locked", playoffs);
-    el.spanButtons.forEach(function (btn) { btn.disabled = playoffs; });
-    if (playoffs) {
-      el.spanflip.title = "The Playoffs tab uses its own season selector";
-    } else {
-      el.spanflip.removeAttribute("title");
-    }
+    // The Matchups tab reads one week, so the week/range flip applies here too.
+    el.spanflip.classList.remove("is-locked");
+    el.spanButtons.forEach(function (btn) { btn.disabled = false; });
+    el.spanflip.removeAttribute("title");
     if (bests) loadBests();
     if (playoffs) {
-      syncPlayoffSeason();
+      // Matchups read one week, so entering the tab from a range settles the
+      // shared span on its newest week and reloads from there.
+      if (!isSingle()) {
+        state.span = "single";
+        state.week = clampPos(state.end);
+        ensureSortField();
+        syncFilterPanel();
+        persist();
+        load();
+        return;
+      }
+      loadWeekMatchups();
       loadPlayoffs();
     }
   }
@@ -588,7 +615,7 @@
   }
 
   function bestRow(entry, spec, place) {
-    var name = entry.player || entry.team;
+    var name = entry.player ? displayName(entry.player) : entry.team;
     // A player row names their team underneath; a team row is already named.
     var sub = entry.player ? entry.team : "";
     var tint = entry.color ? ' style="color:' + esc(entry.color) + '"' : "";
@@ -662,25 +689,271 @@
     el.bestsStatus.classList.toggle("status--error", !!isError);
   }
 
+  /* ---------------- week matchups ---------------- */
+
+  /* The tab shows one week: the picked week, since opening Matchups settles
+   * the span on single-week. The range end is only the fallback for the moment
+   * before that switch lands. */
+  function matchupPos() {
+    return isSingle() ? state.week : state.end;
+  }
+
+  function seasonLabelFor(num) {
+    var s = seasonByNumber(num);
+    return (s && s.label) || ("Season " + num);
+  }
+
+  function setWeekMatchupsStatus(text, isError) {
+    if (!el.weekMatchupsStatus) return;
+    if (!text) {
+      el.weekMatchupsStatus.hidden = true;
+      return;
+    }
+    el.weekMatchupsStatus.hidden = false;
+    el.weekMatchupsStatus.textContent = text;
+    el.weekMatchupsStatus.classList.toggle("status--error", !!isError);
+  }
+
+  function loadWeekMatchups() {
+    var at = matchupPos();
+    var season = seasonLabelFor(at.season);
+    var key = season + "|" + at.week;
+    if (matchupsCache[key]) {
+      renderWeekMatchups(matchupsCache[key]);
+      return;
+    }
+    var token = ++matchupsToken;
+    setWeekMatchupsStatus("Loading\u2026");
+    el.weekMatchups.innerHTML = "";
+    fetch(
+      "/api/week-matchups?season=" + encodeURIComponent(season) +
+      "&week=" + encodeURIComponent(at.week),
+      { headers: { Accept: "application/json" } }
+    )
+      .then(function (r) {
+        return r.json().then(function (body) {
+          if (!r.ok) throw new Error(body.error || "Request failed");
+          return body;
+        });
+      })
+      .then(function (body) {
+        if (token !== matchupsToken) return;
+        matchupsCache[key] = body;
+        setWeekMatchupsStatus("");
+        renderWeekMatchups(body);
+      })
+      .catch(function (err) {
+        if (token !== matchupsToken) return;
+        el.weekMatchups.innerHTML = "";
+        setWeekMatchupsStatus(err.message || "Could not load matchups.", true);
+      });
+  }
+
+  /* One team's header line: name in its colour, then pins, average, and games
+   * won, the same three figures the weekly results page showed. */
+  function wmSide(side, color, extraClass) {
+    if (!side) {
+      return (
+        '<div class="wm-side' + (extraClass ? " " + extraClass : "") + ' is-bye">' +
+        '<span class="wm-team">\u2014 Bye \u2014</span></div>'
+      );
+    }
+    var tint = color ? ' style="color:' + esc(color) + '"' : "";
+    var bits = [];
+    if (side.pins != null) bits.push(fmt(side.pins, 0) + " pins");
+    if (side.avg != null) bits.push(fmt(side.avg, 1) + " avg");
+    if (side.wins != null) bits.push(side.wins + "W");
+    return (
+      '<div class="wm-side' + (extraClass ? " " + extraClass : "") +
+      (side.result === "W" ? " is-winner" : "") + '">' +
+      '<span class="wm-team"' + tint + ">" + esc(side.name) + "</span>" +
+      '<span class="wm-stats">' + esc(bits.join(" \u00b7 ")) + "</span>" +
+      "</div>"
+    );
+  }
+
+  function wmBadge(result) {
+    if (!result || result === "\u2014") return '<span class="wm-badge">\u2014</span>';
+    return '<span class="wm-badge wm-badge--' + esc(result.toLowerCase()) + '">' +
+      esc(result) + "</span>";
+  }
+
+  /* Per-game cells: both sides' pins for each game, the winning score tinted. */
+  function wmGamesRow(results) {
+    if (!results || !results.length) return "";
+    var cells = results.map(function (g, i) {
+      var homeResult = g[0];
+      var awayResult = g[1];
+      var homePins = g[2];
+      var awayPins = g[3];
+      function score(pins, result) {
+        var cls = "wm-cell-score" + (result === "W" ? " is-winner" : "");
+        return '<span class="' + cls + '">' + fmt(pins, 0) + "</span>";
+      }
+      function mark(result) {
+        if (!result || result === "\u2014") return '<span class="wm-cell-mark">\u2014</span>';
+        return '<span class="wm-cell-mark wm-cell-mark--' + esc(result.toLowerCase()) +
+          '">' + esc(result) + "</span>";
+      }
+      return (
+        '<div class="wm-cell">' +
+        '<span class="wm-cell-head">G' + (i + 1) + "</span>" +
+        score(homePins, homeResult) + mark(homeResult) +
+        '<span class="wm-cell-sep">\u2014</span>' +
+        mark(awayResult) + score(awayPins, awayResult) +
+        "</div>"
+      );
+    }).join("");
+    return '<div class="wm-games-row">' + cells + "</div>";
+  }
+
+  /* The bowler tables reuse the .bwl-* grid from the team weekly breakdown so
+   * a matchup reads the same in both places. */
+  function wmBowlerTable(side, color, slots) {
+    if (!side) return "";
+    var counting = (side.players || []).filter(function (p) { return p.counts; });
+    var benched = (side.players || []).filter(function (p) { return !p.counts; });
+    function byName(a, b) {
+      return String(a.name || "").localeCompare(String(b.name || ""));
+    }
+    counting.sort(byName);
+    benched.sort(byName);
+
+    function line(p, extraClass) {
+      var cells = "";
+      var away = !!p.absent || !!p.subbed_out;
+      for (var i = 0; i < slots; i++) {
+        var v = (p.games || [])[i];
+        var missed = away || (p.game_absent || [])[i] === true;
+        cells += '<span class="bwl-g' + (missed ? " bwl-g--miss" : "") + '"' +
+          (missed ? ' title="Missed game, book average taken"' : "") + ">" +
+          (v == null ? "\u2014" : fmt(v, 0)) + "</span>";
+      }
+      var label = esc(displayName(p.name || ""));
+      if (p.is_substitute) label += ' <span class="bwl-note">sub</span>';
+      if (away) label += ' <span class="wk-tag wk-tag--miss">abs</span>';
+      return (
+        '<div class="bwl' + (extraClass ? " " + extraClass : "") + '">' +
+        '<span class="bwl-name">' + label + "</span>" + cells +
+        "</div>"
+      );
+    }
+
+    var totals = "";
+    if ((side.game_pins || []).length) {
+      var tcells = "";
+      for (var i = 0; i < slots; i++) {
+        var v = (side.game_pins || [])[i];
+        tcells += '<span class="bwl-g">' + (v == null ? "\u2014" : fmt(v, 0)) + "</span>";
+      }
+      totals = '<div class="bwl bwl--total"><span class="bwl-name">Total</span>' +
+        tcells + "</div>";
+    }
+
+    var tint = color ? ' style="color:' + esc(color) + '"' : "";
+    var head = '<div class="bwl bwl--head"><span class="bwl-name"></span>';
+    for (var g = 0; g < slots; g++) {
+      head += '<span class="bwl-g bwl-g--head">G' + (g + 1) + "</span>";
+    }
+    head += "</div>";
+
+    return (
+      '<div class="wm-bowlers">' +
+      '<div class="bwl-team"' + tint + ">" + esc(side.name) + "</div>" +
+      '<div class="bwl-grid" style="--bwl-games:' + slots + '">' +
+      head +
+      counting.map(function (p) { return line(p, ""); }).join("") +
+      (benched.length ? '<div class="bwl-div"></div>' : "") +
+      benched.map(function (p) { return line(p, "bwl--nocount"); }).join("") +
+      totals +
+      "</div></div>"
+    );
+  }
+
+  function gameSlotCount(m) {
+    var slots = (m.game_results || []).length;
+    [m.home, m.away].forEach(function (side) {
+      if (!side) return;
+      slots = Math.max(slots, (side.game_pins || []).length);
+      (side.players || []).forEach(function (p) {
+        var games = p.games || [];
+        for (var i = games.length - 1; i >= 0; i--) {
+          if (games[i] != null) {
+            slots = Math.max(slots, i + 1);
+            break;
+          }
+        }
+      });
+    });
+    return slots || 4;
+  }
+
+  function weekMatchupCard(m, index) {
+    var key = "wm-" + index;
+    var open = !!matchupsOpen[key];
+    var slots = gameSlotCount(m);
+    var bodyId = "wm-body-" + index;
+    return (
+      '<article class="wm-card' + (open ? " is-open" : "") + '">' +
+      '<div class="wm-top">' +
+      wmSide(m.home, m.home_color, "") +
+      '<div class="wm-vs">' +
+      '<span class="wm-vs-label">vs</span>' +
+      '<span class="wm-badges">' +
+      wmBadge(m.home && m.home.result) + wmBadge(m.away && m.away.result) +
+      "</span></div>" +
+      wmSide(m.away, m.away_color, "wm-side--away") +
+      "</div>" +
+      wmGamesRow(m.game_results) +
+      (m.record_overridden ? '<div class="mu-note">Adjusted record</div>' : "") +
+      (m.away
+        ? '<button type="button" class="wm-toggle" data-wm-toggle="' + esc(key) + '" ' +
+          'aria-expanded="' + (open ? "true" : "false") + '" aria-controls="' + bodyId + '">' +
+          '<span>Player scores</span><span class="chev" aria-hidden="true"></span></button>' +
+          '<div class="wm-detail" id="' + bodyId + '"' + (open ? "" : " hidden") + ">" +
+          wmBowlerTable(m.home, m.home_color, slots) +
+          wmBowlerTable(m.away, m.away_color, slots) +
+          "</div>"
+        : "") +
+      "</article>"
+    );
+  }
+
+  function renderWeekMatchups(data) {
+    var list = (data && data.matchups) || [];
+    if (!list.length) {
+      el.weekMatchups.innerHTML = "";
+      setWeekMatchupsStatus(
+        (data && data.message) || "No matchups for this week yet."
+      );
+      return;
+    }
+    var head =
+      '<div class="wm-head">' +
+      '<h3 class="wm-head-title">' + esc(data.season) + " \u00b7 Week " + data.week +
+      "</h3>" +
+      (data.is_playoff_week ? '<span class="po-flag">Playoff week</span>' : "") +
+      "</div>";
+    el.weekMatchups.innerHTML = head + list.map(weekMatchupCard).join("");
+  }
+
   /* ---------------- playoffs ---------------- */
 
-  function syncPlayoffSeason() {
-    if (!playoffSeason) {
-      playoffSeason = meta.current_season ||
-        (meta.seasons[0] && meta.seasons[0].label) || null;
-    }
-    if (!el.playoffSeason.options.length) {
-      el.playoffSeason.innerHTML = meta.seasons.map(function (s) {
-        return '<option value="' + esc(s.label) + '">' + esc(s.label) + "</option>";
-      }).join("");
-    }
-    if (playoffSeason) el.playoffSeason.value = playoffSeason;
+  // The bracket always follows the season of the week on screen.
+  function playoffSeasonLabel() {
+    return seasonLabelFor(matchupPos().season) ||
+      meta.current_season ||
+      (meta.seasons[0] && meta.seasons[0].label) || "";
   }
 
   function loadPlayoffs() {
-    var season = playoffSeason || "";
-    if (playoffsCache[season]) {
-      renderPlayoffs(playoffsCache[season]);
+    var season = playoffSeasonLabel();
+    // The standings table reads as of the week on screen, so the week belongs
+    // in the cache key even though the bracket itself is season-wide.
+    var week = matchupPos().week;
+    var key = season + "|" + week;
+    if (playoffsCache[key]) {
+      renderPlayoffs(playoffsCache[key]);
       return;
     }
     var token = ++playoffsToken;
@@ -689,9 +962,10 @@
     el.playoffRounds.innerHTML = "";
     el.playoffSeeds.innerHTML = "";
     el.playoffHistory.innerHTML = "";
-    fetch("/api/playoffs?season=" + encodeURIComponent(season), {
-      headers: { Accept: "application/json" }
-    })
+    fetch(
+      "/api/playoffs?season=" + encodeURIComponent(season) + "&week=" + week,
+      { headers: { Accept: "application/json" } }
+    )
       .then(function (r) {
         return r.json().then(function (body) {
           if (!r.ok) throw new Error(body.error || "Request failed");
@@ -700,7 +974,7 @@
       })
       .then(function (body) {
         if (token !== playoffsToken) return;
-        playoffsCache[season] = body;
+        playoffsCache[key] = body;
         setPlayoffsStatus("");
         renderPlayoffs(body);
       })
@@ -832,32 +1106,33 @@
       .map(function (r) { return roundSection(r, "round-" + r.week, ""); })
       .join("");
 
-    /* Seed order and numbers come from the frozen playoff seeding, but the
-     * records shown run through the newest week bowled. */
+    /* The table is ordered and numbered as of the week on screen, which is not
+     * the frozen seeding the bracket below is built from. */
     var standings = (data && (data.standings || data.seeds)) || [];
-    var throughWeek = data && (data.last_week || data.last_regular_week);
+    var throughWeek = data &&
+      (data.standings_week || data.last_week || data.last_regular_week);
     el.playoffSeeds.innerHTML = standings.length
-      ? poSection(
-          "standings",
-          "Standings",
-          throughWeek
-            ? '<span class="po-flag">Through week ' + throughWeek + "</span>"
-            : "",
-          '<ol class="seed-list">' +
-            standings.map(function (row) {
-              var tint = row.color ? ' style="color:' + esc(row.color) + '"' : "";
-              return (
-                '<li class="seed-row">' +
-                '<span class="mu-seed">' + row.seed + "</span>" +
-                '<span class="seed-team"' + tint + ">" + esc(row.team) + "</span>" +
-                '<span class="seed-record">' + esc(row.record || "") + "</span>" +
-                '<span class="seed-pins">' + fmt(row.pins_for, 0) + "</span>" +
-                "</li>"
-              );
-            }).join("") +
-            "</ol>"
-        )
+      ? '<ol class="seed-list">' +
+        standings.map(function (row) {
+          var tint = row.color ? ' style="color:' + esc(row.color) + '"' : "";
+          return (
+            '<li class="seed-row">' +
+            '<span class="mu-seed">' + row.seed + "</span>" +
+            '<span class="seed-team"' + tint + ">" + esc(row.team) + "</span>" +
+            '<span class="seed-record">' + esc(row.record || "") + "</span>" +
+            '<span class="seed-pins">' + fmt(row.pins_for, 0) + "</span>" +
+            "</li>"
+          );
+        }).join("") +
+        "</ol>"
       : "";
+    // The week the table reads as of belongs on the group head, since the
+    // section no longer has a card head of its own.
+    if (el.standingsWeek) {
+      var weekFlag = standings.length && throughWeek;
+      el.standingsWeek.textContent = weekFlag ? "Through week " + throughWeek : "";
+      el.standingsWeek.hidden = !weekFlag;
+    }
 
     var history = ((data && data.history) || []).filter(function (h) {
       return !!h.champion;
@@ -940,7 +1215,9 @@
       '<div class="hl-score">' + esc(o.score) +
       (o.unit ? '<span class="hl-score-unit">' + esc(o.unit) + "</span>" : "") +
       "</div>" +
-      line("hl-name", o.name, o.teamLine === "name") +
+      // The name line is a bowler unless the card says it carries the team.
+      line("hl-name", o.teamLine === "name" ? o.name : displayName(o.name),
+        o.teamLine === "name") +
       line("hl-sub", o.sub, o.teamLine === "sub") +
       line("hl-when", o.when, false) +
       "</article>"
@@ -1231,8 +1508,9 @@
 
     el.board.innerHTML = rows
       .map(function (row) {
+        // The id stays whole: row expansion looks the player up by it.
         var id = isTeams ? row.team : row.player;
-        var name = id;
+        var name = isTeams ? id : displayName(id);
         // One week needs no week count, and "1 weeks" reads badly.
         var sub = isTeams
           ? (isSingle() ? "" : row.weeks + " weeks")
@@ -1807,7 +2085,10 @@
     var cells = "";
     for (var i = 0; i < slots; i++) {
       var score = (p.games || [])[i];
-      var missed = ((p.game_absent || [])[i]) === true;
+      // A week-long absence covers every slot, whether or not each game is
+      // flagged on its own.
+      var missed = !!p.absent || !!p.subbed_out ||
+        ((p.game_absent || [])[i]) === true;
       var cls = "bwl-g";
       if (missed) cls += " bwl-g--miss";
       cells += '<span class="' + cls + '"' +
@@ -1818,7 +2099,7 @@
 
     return (
       '<div class="bwl' + (p.counts ? "" : " bwl--nocount") + '">' +
-      '<span class="bwl-name">' + esc(p.name || "") + tags + "</span>" +
+      '<span class="bwl-name">' + esc(displayName(p.name || "")) + tags + "</span>" +
       cells + "</div>"
     );
   }
@@ -2317,6 +2598,18 @@
 
   /* ---------------- events ---------------- */
 
+  /* A section of the Matchups tab that folds away as a whole. Open state lives
+   * in the markup, so a redraw of the contents leaves it alone. */
+  function bindGroupToggle(group, head, body) {
+    if (!group || !head || !body) return;
+    head.addEventListener("click", function () {
+      var open = !group.classList.contains("is-open");
+      group.classList.toggle("is-open", open);
+      head.setAttribute("aria-expanded", open ? "true" : "false");
+      body.hidden = !open;
+    });
+  }
+
   function bind() {
     el.rangePill.addEventListener("click", function () {
       if (el.filterPanel.hidden) openFilter();
@@ -2431,11 +2724,6 @@
         syncViewPanels();
         persist();
       });
-    });
-
-    el.playoffSeason.addEventListener("change", function () {
-      playoffSeason = el.playoffSeason.value;
-      loadPlayoffs();
     });
 
     el.sortField.addEventListener("change", function () {
@@ -2558,6 +2846,14 @@
       fitTimer = setTimeout(function () { fitCharts(document); }, 120);
     });
 
+    // Names are abbreviated below the phone breakpoint, so crossing it has to
+    // redraw what is on screen.
+    if (narrowQuery.addEventListener) {
+      narrowQuery.addEventListener("change", function () {
+        if (payload) renderAll();
+      });
+    }
+
     // Settings
     el.defaultSortPlayers.addEventListener("change", function () {
       prefs.sortPlayers = el.defaultSortPlayers.value; savePrefs();
@@ -2590,7 +2886,8 @@
       renderBoard();
       syncSettingsPanel();
     });
-    el.playoffs.addEventListener("click", function (e) {
+    // Bound to the whole panel, since standings sit outside the bracket.
+    el.panelPlayoffs.addEventListener("click", function (e) {
       var head = e.target.closest("[data-po-toggle]");
       if (!head) return;
       var card = head.closest(".po-card");
@@ -2600,6 +2897,24 @@
       card.querySelector(".po-body").hidden = !open;
       playoffsOpen[head.getAttribute("data-po-toggle")] = open;
     });
+
+    // Bowler tables inside a week's matchup card.
+    el.weekMatchups.addEventListener("click", function (e) {
+      var head = e.target.closest("[data-wm-toggle]");
+      if (!head) return;
+      var card = head.closest(".wm-card");
+      var open = !card.classList.contains("is-open");
+      card.classList.toggle("is-open", open);
+      head.setAttribute("aria-expanded", open ? "true" : "false");
+      var body = card.querySelector(".wm-detail");
+      if (body) body.hidden = !open;
+      matchupsOpen[head.getAttribute("data-wm-toggle")] = open;
+    });
+
+    // The three sections of the tab each collapse as one group.
+    bindGroupToggle(el.standingsGroup, el.standingsToggle, el.standingsBody);
+    bindGroupToggle(el.matchupsGroup, el.matchupsToggle, el.matchupsBody);
+    bindGroupToggle(el.playoffBracketGroup, el.playoffsToggle, el.playoffsBody);
     el.bests.addEventListener("click", function (e) {
       // Collapsing flips the one card in place, so the other lists hold still.
       var head = e.target.closest("[data-bests-toggle]");
@@ -2711,12 +3026,24 @@
     el.bestsStatus = document.getElementById("bests-status");
     el.panelPlayoffs = document.getElementById("panel-playoffs");
     el.playoffsStatus = document.getElementById("playoffs-status");
-    el.playoffs = document.getElementById("playoffs");
-    el.playoffSeason = document.getElementById("playoff-season");
     el.playoffUpcoming = document.getElementById("playoff-upcoming");
     el.playoffRounds = document.getElementById("playoff-rounds");
     el.playoffSeeds = document.getElementById("playoff-seeds");
     el.playoffHistory = document.getElementById("playoff-history");
+    el.weekMatchups = document.getElementById("week-matchups");
+    el.weekMatchupsStatus = document.getElementById("week-matchups-status");
+    // Distinct from el.playoffGroup, which is the filter panel's weeks-counted
+    // flip; this is the bracket group on the Matchups tab.
+    el.playoffBracketGroup = document.getElementById("playoff-group-wrap");
+    el.playoffsToggle = document.getElementById("playoffs-toggle");
+    el.playoffsBody = document.getElementById("playoffs-body");
+    el.standingsGroup = document.getElementById("standings-group");
+    el.standingsToggle = document.getElementById("standings-toggle");
+    el.standingsBody = document.getElementById("standings-body");
+    el.standingsWeek = document.getElementById("standings-week");
+    el.matchupsGroup = document.getElementById("matchups-group");
+    el.matchupsToggle = document.getElementById("matchups-toggle");
+    el.matchupsBody = document.getElementById("matchups-body");
     el.board = document.getElementById("leaderboard");
     el.scrim = document.getElementById("scrim");
   }

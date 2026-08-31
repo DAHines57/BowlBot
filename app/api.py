@@ -528,6 +528,95 @@ def _attach_playoff_colors(data: dict) -> None:
         row["champion_color"] = color_for(row.get("champion"))
 
 
+def _matchup_side(side: Optional[dict]) -> Optional[dict]:
+    """One team's side of a week matchup, carrying the totals the card shows.
+
+    ``_week_matchup`` keeps only the bowler lines because the team weekly
+    breakdown already has its own totals; this view has no such source, so the
+    pins, average, game wins, and per-game totals come along too.
+    """
+    if not side or not side.get("name"):
+        return None
+    return {
+        "name": side.get("name"),
+        "pins": side.get("pins"),
+        "avg": side.get("avg"),
+        "wins": side.get("wins"),
+        "result": side.get("result"),
+        "game_pins": list(side.get("game_pins") or []),
+        "players": [_matchup_player(p) for p in side.get("players") or []],
+    }
+
+
+@api_bp.route("/week-matchups")
+def week_matchups():
+    """Every team matchup for one week, with per-bowler games for both sides.
+
+    Week-scoped rather than range-scoped: a matchup belongs to a single week.
+    """
+    svc = _svc()
+    if not svc:
+        return jsonify({"error": "Database not ready."}), 503
+
+    getter = getattr(svc.data, "get_week_matchups", None)
+    if not callable(getter):
+        return jsonify({"error": "Week matchups are not available."}), 503
+
+    current = svc.data.get_current_season()
+    season = svc.resolve_season(request.args.get("season")) or current
+    if season == "all":
+        season = current
+    season_num = _season_number(season)
+    if season_num is None:
+        return jsonify({"error": f"Unknown season '{season}'."}), 400
+
+    raw_week = (request.args.get("week") or "").strip()
+    if raw_week:
+        try:
+            week = int(raw_week)
+        except ValueError:
+            return jsonify({"error": f"Invalid week '{raw_week}'."}), 400
+    else:
+        week = svc.data.get_latest_week(season)
+    if not week or week < 1:
+        return jsonify({"error": "No weeks for this season yet."}), 400
+
+    raw = getter(week, season) or {}
+    if raw.get("error"):
+        return jsonify({
+            "season": season,
+            "season_number": season_num,
+            "week": week,
+            "matchups": [],
+            "message": raw["error"],
+        })
+
+    playoff_weeks, _ = svc.playoff_snapshots_for_season(season)
+
+    out = []
+    for m in raw.get("matchups") or []:
+        home = _matchup_side(m.get("home"))
+        if not home:
+            continue
+        away = _matchup_side(m.get("away"))
+        out.append({
+            "home": home,
+            "away": away,
+            "game_results": [list(g) for g in m.get("game_results") or []],
+            "record_overridden": bool(m.get("record_overridden")),
+            "home_color": _team_color(home.get("name")),
+            "away_color": _team_color(away.get("name")) if away else None,
+        })
+
+    return jsonify({
+        "season": season,
+        "season_number": season_num,
+        "week": week,
+        "is_playoff_week": week in set(playoff_weeks or []),
+        "matchups": out,
+    })
+
+
 @api_bp.route("/playoffs")
 def playoff_bracket():
     """Seeding, projected upcoming matchups, played rounds, and champions.
@@ -552,6 +641,20 @@ def playoff_bracket():
     last_regular = playoffs.last_regular_week(facts, season_num)
     all_weeks = compute.list_weeks_for_season(facts, season, season_num=season_num)
     last_week = max(all_weeks) if all_weeks else None
+
+    # The standings table is read as of one week; the bracket below it is not.
+    raw_week = (request.args.get("week") or "").strip()
+    standings_week = last_week
+    if raw_week:
+        try:
+            asked = int(raw_week)
+        except ValueError:
+            return jsonify({"error": f"Invalid week '{raw_week}'."}), 400
+        # A week the season never bowled reads as the newest week before it, so
+        # a shared week selector pointing past the data still shows a table.
+        earlier = [w for w in all_weeks if w <= asked]
+        standings_week = max(earlier) if earlier else last_week
+
     seeds = playoffs.season_seeding(
         facts,
         season_num,
@@ -574,10 +677,14 @@ def playoff_bracket():
         "season_number": season_num,
         "last_regular_week": last_regular,
         "last_week": last_week,
+        "standings_week": standings_week,
         "playoff_weeks": playoff_weeks,
         "seeds": seeds,
-        "standings": playoffs.standings_through_latest(
-            facts, season_num, seeds, matchup_overrides=overrides
+        "standings": playoffs.standings_through_week(
+            facts,
+            season_num,
+            through_week=standings_week,
+            matchup_overrides=overrides,
         ),
         "rounds": playoffs.played_rounds(
             playoff_weeks, snapshots, seeds, records=records

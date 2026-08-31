@@ -143,8 +143,10 @@
                   aria-selected="false" aria-controls="leaderboard" data-view="teams">Teams</button>
           <button type="button" class="tab" id="tab-bests" role="tab"
                   aria-selected="false" aria-controls="bests" data-view="bests">Bests</button>
+          <!-- The view id stays "playoffs" so saved links keep working; the tab
+               now leads with the week's matchups and keeps the bracket below. -->
           <button type="button" class="tab" id="tab-playoffs" role="tab"
-                  aria-selected="false" aria-controls="playoffs" data-view="playoffs">Playoffs</button>
+                  aria-selected="false" aria-controls="playoffs" data-view="playoffs">Matchups</button>
         </div>
         <div class="spanflip" id="spanflip" role="group" aria-label="Week span">
           <button type="button" class="spanflip-btn" data-span="single"
@@ -204,30 +206,63 @@
 
         <section class="panel" id="panel-playoffs" hidden>
           <div class="panel-head">
-            <h2 class="panel-title">Playoffs</h2>
-            <div class="sortbar">
-              <span class="sortbar-label" id="playoff-season-label">Season</span>
-              <div class="sortbar-controls">
-                <label class="sr-only" for="playoff-season">Playoff season</label>
-                <select id="playoff-season" class="mini-select"
-                        aria-describedby="playoff-season-label"></select>
-              </div>
+            <h2 class="panel-title">Matchups</h2>
+          </div>
+
+          <!-- The table reads as of the week on screen, so it leads the tab
+               rather than sitting inside the bracket below. -->
+          <div class="po-group" id="standings-group">
+            <button type="button" class="po-group-head" id="standings-toggle"
+                    aria-expanded="false" aria-controls="standings-body">
+              <span class="po-group-label">
+                <span class="po-group-title">Standings</span>
+                <span class="po-flag" id="standings-week" hidden></span>
+              </span>
+              <span class="chev" aria-hidden="true"></span>
+            </button>
+            <div id="standings-body" hidden>
+              <div id="playoff-seeds"></div>
             </div>
           </div>
 
-          <p class="status" id="playoffs-status" role="status" aria-live="polite" hidden></p>
-          <div class="playoffs" id="playoffs">
-            <div id="playoff-seeds"></div>
-            <div id="playoff-upcoming"></div>
-            <div id="playoff-rounds"></div>
-            <div id="playoff-history"></div>
+          <div class="po-group" id="matchups-group">
+            <button type="button" class="po-group-head" id="matchups-toggle"
+                    aria-expanded="false" aria-controls="matchups-body">
+              <span class="po-group-title">Week matchups</span>
+              <span class="chev" aria-hidden="true"></span>
+            </button>
+            <div id="matchups-body" hidden>
+              <p class="status" id="week-matchups-status" role="status" aria-live="polite" hidden></p>
+              <div class="matchups" id="week-matchups"></div>
+            </div>
+          </div>
+
+          <!-- The bracket is one collapsible group under the week's matchups.
+               Container order still decides card order inside it. -->
+          <div class="po-group is-open" id="playoff-group-wrap">
+            <button type="button" class="po-group-head" id="playoffs-toggle"
+                    aria-expanded="true" aria-controls="playoffs-body">
+              <span class="po-group-title">Playoffs</span>
+              <span class="chev" aria-hidden="true"></span>
+            </button>
+            <div id="playoffs-body">
+              <p class="status" id="playoffs-status" role="status" aria-live="polite" hidden></p>
+              <div class="playoffs" id="playoffs">
+                <div id="playoff-upcoming"></div>
+                <div id="playoff-rounds"></div>
+                <div id="playoff-history"></div>
+              </div>
+            </div>
           </div>
         </section>
       </main>
     </div>
 
+    <!-- Literal paths rather than url_for: this template renders without the
+         admin blueprint registered in tests. -->
     <footer class="app-footer">
       <a href="/">Classic view</a>
+      <a href="/admin">Admin</a>
     </footer>
   </div>
 
