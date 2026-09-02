@@ -117,6 +117,7 @@ def test_leaderboard_defaults_to_current_season(client):
     data = client.get("/api/leaderboard").get_json()
     assert data["scope"]["single_season"] == 14
     assert data["par_available"] is True
+    assert data["absent_projection_available"] is True
     assert {p["player"] for p in data["players"]} == {"Alice", "Bob"}
 
 
@@ -153,6 +154,19 @@ def test_par_present_for_single_season_range(client):
     data = client.get("/api/leaderboard?from=13.1&to=13.9").get_json()
     assert data["par_available"] is True
     assert data["scope"]["single_season"] == 13
+    assert data["absent_projection_available"] is True
+
+
+def test_absent_projection_unavailable_on_single_week(client):
+    data = client.get("/api/leaderboard?from=13.1&to=13.1").get_json()
+    assert data["absent_projection_available"] is False
+    assert all(p["absent_average"] is None for p in data["players"])
+
+
+def test_absent_projection_unavailable_cross_season(client):
+    data = client.get("/api/leaderboard?from=13.1&to=14.1").get_json()
+    assert data["absent_projection_available"] is False
+    assert all(p["absent_average"] is None for p in data["players"])
 
 
 def test_legacy_playoff_flags_still_work(client):

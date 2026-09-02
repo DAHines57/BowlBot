@@ -250,6 +250,12 @@ def leaderboard():
             row["par"] = None
     data["par_available"] = season_num is not None
 
+    absent_projection = scope.season_ytd_complete(facts)
+    data["absent_projection_available"] = absent_projection
+    if not absent_projection:
+        for row in data["players"]:
+            row["absent_average"] = None
+
     return jsonify(data)
 
 

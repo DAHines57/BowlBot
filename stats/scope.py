@@ -8,7 +8,7 @@ lexicographically: ``seasons.number`` is unique and aligned with ``seasons.id``
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Iterable, Optional, Tuple
 
 from utils import safe_int
 
@@ -116,6 +116,32 @@ class Scope:
         if span is None or span[0] != span[1]:
             return None
         return span[0]
+
+    def season_ytd_complete(self, facts: Iterable[dict]) -> bool:
+        """True when this scope covers one season from week 1 through latest played week.
+
+        Used to gate the "if absent" projection, which only makes sense over a
+        full year-to-date window rather than a partial range or single week.
+        """
+        if not self.bounds_apply or self.single_season is None:
+            return False
+        season_num = self.single_season
+        if self.start != (season_num, 1):
+            return False
+        latest_week = 0
+        for f in facts:
+            if safe_int(f.get("season_number"), 0) != season_num:
+                continue
+            wk = safe_int(f.get("week"), 0)
+            if wk > latest_week:
+                latest_week = wk
+        if latest_week < 1:
+            return False
+        if self.end is None:
+            return True
+        if self.end[0] > season_num:
+            return True
+        return self.end[1] >= latest_week
 
     def contains(self, fact: dict) -> bool:
         """Whether a fact row falls inside this scope."""

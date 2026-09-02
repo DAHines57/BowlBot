@@ -65,6 +65,36 @@ def test_single_season_only_when_range_within_one_season():
     assert Scope().single_season is None
 
 
+def test_season_ytd_complete_requires_week_one_through_latest():
+    facts = [_fact("Alice", 9, w, games=(200, 200)) for w in range(1, 6)]
+    scope = Scope(start=(9, 1), end=(9, 5))
+    assert scope.season_ytd_complete(facts) is True
+
+
+def test_season_ytd_complete_false_for_partial_start():
+    facts = [_fact("Alice", 9, w, games=(200, 200)) for w in range(1, 9)]
+    scope = Scope(start=(9, 3), end=(9, 8))
+    assert scope.season_ytd_complete(facts) is False
+
+
+def test_season_ytd_complete_false_when_end_before_latest():
+    facts = [_fact("Alice", 9, w, games=(200, 200)) for w in range(1, 9)]
+    scope = Scope(start=(9, 1), end=(9, 5))
+    assert scope.season_ytd_complete(facts) is False
+
+
+def test_season_ytd_complete_false_for_career():
+    facts = [_fact("Alice", 9, 1)]
+    scope = Scope(start=(9, 1), end=(9, 9), mode=MODE_CAREER)
+    assert scope.season_ytd_complete(facts) is False
+
+
+def test_season_ytd_complete_false_for_cross_season():
+    facts = [_fact("Alice", 9, 1), _fact("Alice", 10, 1)]
+    scope = Scope(start=(9, 1), end=(10, 9))
+    assert scope.season_ytd_complete(facts) is False
+
+
 # --- Range filtering -----------------------------------------------------
 
 
@@ -610,6 +640,50 @@ def test_absences_do_not_touch_a_bowling_players_average():
     assert alice["absent_average"] == 190.0
     assert alice["average_from_absences"] is False
     assert alice["games"] == 2
+
+
+def _gated_absent_average(facts, scope):
+    """Mirror the API gate on absent_average for projection eligibility."""
+    data = get_range_stats(facts, scope)
+    if not scope.season_ytd_complete(facts):
+        for row in data["players"]:
+            row["absent_average"] = None
+    return data
+
+
+def test_absent_average_hidden_on_single_week():
+    facts = [
+        _fact("Alice", 9, 1, games=(200, 200)),
+        _fact("Alice", 9, 2, games=(100, 100), absent=True),
+    ]
+    full = _gated_absent_average(facts, Scope(start=(9, 1), end=(9, 2)))
+    narrow = _gated_absent_average(facts, Scope(start=(9, 1), end=(9, 1)))
+    alice_full = next(p for p in full["players"] if p["player"] == "Alice")
+    alice_narrow = next(p for p in narrow["players"] if p["player"] == "Alice")
+    assert alice_full["absent_average"] == 190.0
+    assert alice_narrow["absent_average"] is None
+
+
+def test_absent_average_hidden_on_partial_range():
+    facts = [
+        _fact("Alice", 9, 1, games=(200, 200)),
+        _fact("Alice", 9, 2, games=(100, 100), absent=True),
+    ] + [_fact("Alice", 9, w, games=(200, 200)) for w in range(3, 9)]
+    data = _gated_absent_average(facts, Scope(start=(9, 3), end=(9, 8)))
+    alice = next(p for p in data["players"] if p["player"] == "Alice")
+    assert alice["absent_average"] is None
+
+
+def test_absent_average_shown_for_ytd_through_latest_week():
+    facts = [_fact("Alice", 9, w, games=(200, 200)) for w in range(1, 6)]
+    data = _gated_absent_average(facts, Scope(start=(9, 1), end=(9, 5)))
+    assert data["players"][0]["absent_average"] == 200.0
+
+
+def test_absent_average_hidden_when_ytd_end_before_latest_week():
+    facts = [_fact("Alice", 9, w, games=(200, 200)) for w in range(1, 9)]
+    data = _gated_absent_average(facts, Scope(start=(9, 1), end=(9, 5)))
+    assert data["players"][0]["absent_average"] is None
 
 
 def test_absence_penalty_ladder():

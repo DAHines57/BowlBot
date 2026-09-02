@@ -2299,7 +2299,8 @@
       ["Weeks", fmt(row.weeks_played)],
       ["Absences", fmt(row.absences)]
     ];
-    if (row.absent_average !== null && row.absent_average !== undefined &&
+    if (payload.absent_projection_available &&
+        row.absent_average !== null && row.absent_average !== undefined &&
         !row.average_from_absences) {
       // A projection, not a record of scores bowled: what their next miss
       // would be credited, once this season's miss penalty is applied.
