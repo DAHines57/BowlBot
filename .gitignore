@@ -114,3 +114,6 @@ build/
 
 # Database backups (keep local only)
 backups/*.dump
+
+# Personal draft prep (local only)
+drafts/
