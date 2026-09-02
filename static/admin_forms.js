@@ -23,6 +23,14 @@
 
   window.adminShowFlash = showFlash;
 
+  /* A hidden input named "action" shadows form.action in the DOM, so read the
+   * attribute (or the page URL when it is missing) instead of the property. */
+  function formPostUrl(form) {
+    var attr = form.getAttribute("action");
+    if (attr) return attr;
+    return form.baseURI || window.location.href;
+  }
+
   document.addEventListener("click", function (e) {
     var btn = e.target.closest("[data-dismiss]");
     if (!btn) return;
@@ -55,7 +63,7 @@
     var buttons = Array.prototype.slice.call(form.querySelectorAll("button"));
     buttons.forEach(function (b) { b.disabled = true; });
 
-    fetch(form.action, {
+    fetch(formPostUrl(form), {
       method: (form.method || "post").toUpperCase(),
       body: new FormData(form),
       headers: { Accept: "application/json" },

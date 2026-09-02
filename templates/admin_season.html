@@ -75,7 +75,7 @@
 
     {% if roster %}
     <p class="hint">Roster as of <strong>week {{ roster.view_week }}</strong>. Edits apply from this week onward; earlier scored weeks are unchanged. Swap players, add slots, set colors, captain (C). Use &ldquo;New player&hellip;&rdquo; for names not in the list yet.</p>
-    <form method="post" id="roster-form" data-ajax>
+    <form method="post" id="roster-form" data-ajax action="{{ url_for('admin.admin_season_post') }}">
       <input type="hidden" name="action" value="save_roster">
       <input type="hidden" name="season" value="{{ roster.label }}">
       <input type="hidden" name="effective_week" value="{{ roster.view_week }}">
