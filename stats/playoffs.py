@@ -1,51 +1,54 @@
 """Playoff seeding, round labelling, and next-round projection.
 
-There is no stored schedule: a matchup only exists once scores are entered. So
-"upcoming" here is always derived, either by seeding the regular-season
-standings into the bracket or by advancing the winners and losers of the last
-playoff week that was entered.
+Default league shape: weeks 1–7 regular, 8–10 playoffs. Seeds freeze after
+week 7. Quarterfinals are fixed ``1v8, 2v7, 3v6, 4v5``; later rounds reseed
+the remaining pool (best vs worst). Placement games live in a separate
+losers bracket.
 
-Pure logic over fact rows and week-matchup snapshots, so it can be tested
-without a database. The bracket shape itself lives in ``placement_bracket``.
+There is no stored schedule: a matchup only exists once scores are entered.
+"Upcoming" is always derived from seeds and prior-round outcomes.
 """
 from __future__ import annotations
 
-from typing import Dict, FrozenSet, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
-from placement_bracket import (
-    BYE_LOSER,
-    SlotWL,
-    expected_week2_cross_sets,
-    expected_week2_groups,
-    expected_week3_groups,
-    expected_week3_groups_cross,
-    matchups_by_cross_ordered_groups,
-    matchups_by_ordered_groups,
-    prefer_crossover_week2,
-    winner_loser_from_matchup,
-)
-from playoff_champion import compute_bracket_rounds
+from placement_bracket import winner_loser_from_matchup
 from stats import compute
 
-# Round names by how many playoff weeks the season has. Anything longer falls
-# back to a generic label rather than inventing round names.
-_ROUND_NAMES = {
-    1: ["Finals"],
-    2: ["Semifinals", "Finals"],
-    3: ["Quarterfinals", "Semifinals", "Finals"],
-    4: ["Round of 16", "Quarterfinals", "Semifinals", "Finals"],
+# Fixed calendar for the current league format.
+LAST_REGULAR_WEEK = 7
+PLAYOFF_WEEKS = (8, 9, 10)
+ROUND_LABEL_BY_WEEK = {
+    8: "Quarterfinals",
+    9: "Semifinals",
+    10: "Finals",
 }
+
+# Display order for the first playoff week.
+_QF_SEED_PAIRS = ((1, 8), (2, 7), (3, 6), (4, 5))
 
 # A pair of teams, second side None when the seed advances on a bye.
 Pair = Tuple[str, Optional[str]]
 
 
-def round_label(index: int, total: int) -> str:
-    """Name for the ``index``-th playoff round of a ``total``-round bracket."""
-    names = _ROUND_NAMES.get(total)
+def round_label_for_week(week: Optional[int], *, index: int = 0, total: int = 3) -> str:
+    """Name for a playoff week; prefers the fixed 8/9/10 labels."""
+    if week in ROUND_LABEL_BY_WEEK:
+        return ROUND_LABEL_BY_WEEK[week]
+    names = {
+        1: ["Finals"],
+        2: ["Semifinals", "Finals"],
+        3: ["Quarterfinals", "Semifinals", "Finals"],
+        4: ["Round of 16", "Quarterfinals", "Semifinals", "Finals"],
+    }.get(total)
     if names and 0 <= index < len(names):
         return names[index]
     return f"Playoff Round {index + 1}"
+
+
+def round_label(index: int, total: int) -> str:
+    """Name for the ``index``-th playoff round of a ``total``-round bracket."""
+    return round_label_for_week(None, index=index, total=total)
 
 
 def _record_str(wins: int, losses: int, ties: int) -> str:
@@ -54,16 +57,40 @@ def _record_str(wins: int, losses: int, ties: int) -> str:
 
 
 def last_regular_week(facts: List[dict], season_num: int) -> Optional[int]:
-    """Final non-playoff week of the season, or ``None`` when it has no weeks."""
+    """Final non-playoff week of the season, or ``None`` when it has no weeks.
+
+    Prefers week 7 when the season has reached the fixed playoff calendar;
+    otherwise the latest regular week at or before 7, falling back to
+    playoff-flag detection for odd historical shapes.
+    """
     label = compute.season_label(season_num)
     weeks = compute.list_weeks_for_season(facts, label, season_num=season_num)
     if not weeks:
         return None
+
+    le7 = [w for w in weeks if w <= LAST_REGULAR_WEEK]
+    if le7 and (
+        LAST_REGULAR_WEEK in weeks
+        or any(w > LAST_REGULAR_WEEK for w in weeks)
+        or max(weeks) <= LAST_REGULAR_WEEK
+    ):
+        if max(weeks) >= LAST_REGULAR_WEEK and LAST_REGULAR_WEEK in weeks:
+            return LAST_REGULAR_WEEK
+        return max(le7)
+
     playoff_weeks = set(
         compute.list_playoff_weeks_for_season(facts, label, season_num=season_num)
     )
     regular = [w for w in weeks if w not in playoff_weeks]
     return max(regular) if regular else None
+
+
+def uses_fixed_playoff_calendar(detected_playoff_weeks: Sequence[int]) -> bool:
+    """True when the season should use the weeks 8–10 skeleton."""
+    detected = list(detected_playoff_weeks or [])
+    if not detected:
+        return True
+    return set(detected) <= set(PLAYOFF_WEEKS)
 
 
 def season_seeding(
@@ -210,70 +237,37 @@ def seed_rank(seeds: Sequence[dict]) -> Dict[str, int]:
     return {row["team"]: row["seed"] for row in seeds}
 
 
-def projected_first_round(seed_names: Sequence[str]) -> List[Pair]:
-    """First-round pairings in seeded bracket order (1v8, 4v5, 2v7, 3v6 at eight)."""
-    names = [n for n in seed_names if n]
-    if len(names) < 2:
-        return []
-    rounds = compute_bracket_rounds(list(names))
-    if not rounds:
-        return []
+def pair_by_reseed(teams: Sequence[str], ranks: Dict[str, int]) -> List[Pair]:
+    """Pair remaining teams best vs worst by original seed."""
+    ordered = sorted(
+        [t for t in teams if t],
+        key=lambda t: (ranks.get(t, 10**6), t),
+    )
     pairs: List[Pair] = []
-    for left, right in rounds[0]:
-        # Round 0 slots are plain names or None (a bye), never nested tuples.
-        home = left if isinstance(left, str) else None
-        away = right if isinstance(right, str) else None
-        if home is None and away is None:
-            continue
-        if home is None:
-            home, away = away, None
-        pairs.append((home, away))
+    i, j = 0, len(ordered) - 1
+    while i < j:
+        pairs.append((ordered[i], ordered[j]))
+        i += 1
+        j -= 1
+    if i == j:
+        pairs.append((ordered[i], None))
     return pairs
 
 
-def _slot_results(matchups: List[dict], pairs: Sequence[Pair]) -> List[Optional[SlotWL]]:
-    """Winner/loser per bracket slot, aligned 1:1 with ``pairs``.
-
-    Bye slots have no game to look up, so they resolve straight to the seed with
-    ``BYE_LOSER`` as the opponent, which the week-2 helpers already understand.
-    """
-    groups: List[Optional[FrozenSet[str]]] = []
-    for home, away in pairs:
-        groups.append(frozenset({home, away}) if away else None)
-
-    defined = [g for g in groups if g is not None]
-    ordered, _rest = matchups_by_ordered_groups(matchups, defined)
-    queue = list(ordered)
-
-    out: List[Optional[SlotWL]] = []
-    for (home, _away), group in zip(pairs, groups):
-        if group is None:
-            out.append((home, BYE_LOSER))
-            continue
-        m = queue.pop(0) if queue else None
-        out.append(winner_loser_from_matchup(m) if m else None)
-    return out
+def projected_quarterfinals(seeds: Sequence[dict]) -> List[Pair]:
+    """First-round pairs in display order ``1v8, 2v7, 3v6, 4v5``."""
+    by_seed = {int(row["seed"]): row["team"] for row in seeds if row.get("team")}
+    if all(a in by_seed and b in by_seed for a, b in _QF_SEED_PAIRS):
+        return [(by_seed[a], by_seed[b]) for a, b in _QF_SEED_PAIRS]
+    names = [row["team"] for row in seeds if row.get("team")]
+    return pair_by_reseed(names, seed_rank(seeds))
 
 
-def _semi_results(
-    matchups: List[dict], qf: List[Optional[SlotWL]]
-) -> Tuple[List[Optional[SlotWL]], List[Optional[SlotWL]], bool]:
-    """Week-2 outcomes as ``(winners_bracket, losers_bracket, crossover)``.
-
-    Under the crossover format the four games are one flat S0..S3 list, so it
-    comes back in the first slot with the second empty.
-    """
-    if prefer_crossover_week2(matchups, qf):
-        cross_sets = expected_week2_cross_sets(qf)
-        ordered, _rest = matchups_by_cross_ordered_groups(matchups, cross_sets)
-        semis = [winner_loser_from_matchup(m) if m else None for m in ordered]
-        return semis, [], True
-
-    wb_groups, lb_groups = expected_week2_groups(qf)
-    ordered, _rest = matchups_by_ordered_groups(matchups, wb_groups + lb_groups)
-    wb = [winner_loser_from_matchup(m) if m else None for m in ordered[: len(wb_groups)]]
-    lb = [winner_loser_from_matchup(m) if m else None for m in ordered[len(wb_groups) :]]
-    return wb, lb, False
+def projected_first_round(seed_names: Sequence[str]) -> List[Pair]:
+    """First-round pairings from an ordered seed-name list (best first)."""
+    names = [n for n in seed_names if n]
+    seeds = [{"seed": i + 1, "team": n} for i, n in enumerate(names)]
+    return projected_quarterfinals(seeds)
 
 
 def _matchup_row(
@@ -337,6 +331,288 @@ def _entered(snapshot: Optional[dict]) -> Optional[List[dict]]:
     return matchups or None
 
 
+def _team_names(m: dict) -> Tuple[Optional[str], Optional[str]]:
+    home = (m.get("home") or {}).get("name")
+    away = ((m.get("away") or {}) or {}).get("name")
+    return home, away
+
+
+def _find_matchup(matchups: Sequence[dict], home: str, away: Optional[str]) -> Optional[dict]:
+    """Locate the played game for a projected pair (order-insensitive)."""
+    want = {home} | ({away} if away else set())
+    for m in matchups:
+        h, a = _team_names(m)
+        have = {x for x in (h, a) if x}
+        if away is None:
+            if have == {home}:
+                return m
+        elif have == want:
+            return m
+    return None
+
+
+def _outcomes_for_pairs(
+    matchups: Sequence[dict], pairs: Sequence[Pair]
+) -> List[Optional[Tuple[str, Optional[str]]]]:
+    """Winner/loser per pair; bye slots resolve to the lone team."""
+    out: List[Optional[Tuple[str, Optional[str]]]] = []
+    for home, away in pairs:
+        if not away:
+            out.append((home, None))
+            continue
+        m = _find_matchup(matchups, home, away)
+        if not m:
+            # Fall back: any matchup containing both names, even if pair order differed.
+            out.append(None)
+            continue
+        wl = winner_loser_from_matchup(m)
+        out.append(wl if wl else None)
+    return out
+
+
+def _winners_losers(
+    outcomes: Sequence[Optional[Tuple[str, Optional[str]]]]
+) -> Tuple[List[str], List[str]]:
+    winners: List[str] = []
+    losers: List[str] = []
+    for wl in outcomes:
+        if not wl:
+            continue
+        w, l = wl
+        if w:
+            winners.append(w)
+        if l:
+            losers.append(l)
+    return winners, losers
+
+
+def _order_matchups_by_pairs(
+    matchups: Sequence[dict],
+    pairs: Sequence[Pair],
+    *,
+    include_rest: bool = False,
+) -> List[dict]:
+    """Matchups in pair order. Optionally append games that matched no pair."""
+    used = set()
+    ordered: List[dict] = []
+    for home, away in pairs:
+        m = _find_matchup(matchups, home, away)
+        if m is not None:
+            ordered.append(m)
+            used.add(id(m))
+    if include_rest:
+        for m in matchups:
+            if id(m) not in used:
+                ordered.append(m)
+    return ordered
+
+
+def _round_payload(
+    week: Optional[int],
+    label: str,
+    matchups: List[dict],
+    *,
+    projected: bool = False,
+) -> dict:
+    payload = {
+        "week": week,
+        "label": label,
+        "matchups": matchups,
+    }
+    if projected:
+        payload["projected"] = True
+    return payload
+
+
+def build_bracket(
+    playoff_weeks: Sequence[int],
+    snapshots: Sequence[Optional[dict]],
+    seeds: Sequence[dict],
+    *,
+    records: Optional[Dict[int, Dict[str, str]]] = None,
+) -> dict:
+    """Nested winners/losers rounds + upcoming, plus championship winner.
+
+    ``playoff_weeks`` / ``snapshots`` are parallel. For the fixed calendar they
+    are weeks 8, 9, 10 (some snapshots may be ``None``).
+    """
+    ranks = seed_rank(seeds)
+    records = records or {}
+    weeks = list(playoff_weeks) or list(PLAYOFF_WEEKS)
+    by_week: Dict[int, Optional[List[dict]]] = {}
+    for i, week in enumerate(weeks):
+        by_week[week] = _entered(snapshots[i] if i < len(snapshots) else None)
+
+    qf_week = weeks[0] if weeks else 8
+    sf_week = weeks[1] if len(weeks) > 1 else 9
+    final_week = weeks[2] if len(weeks) > 2 else 10
+
+    qf_pairs = projected_quarterfinals(seeds)
+    qf_ms = by_week.get(qf_week)
+    sf_ms = by_week.get(sf_week)
+    final_ms = by_week.get(final_week)
+
+    winners_rounds: List[dict] = []
+    losers_rounds: List[dict] = []
+    winners_upcoming: Optional[dict] = None
+    losers_upcoming: Optional[dict] = None
+    champion: Optional[str] = None
+
+    champ_pool: List[str] = []
+    place_pool: List[str] = []
+    sf_champ_winners: List[str] = []
+    sf_champ_losers: List[str] = []
+    sf_place_winners: List[str] = []
+    sf_place_losers: List[str] = []
+
+    # ---- Quarterfinals (championship path only) ----
+    if qf_ms is not None:
+        ordered = _order_matchups_by_pairs(qf_ms, qf_pairs, include_rest=True)
+        winners_rounds.append(
+            _round_payload(
+                qf_week,
+                round_label_for_week(qf_week, index=0, total=len(weeks)),
+                [
+                    _matchup_row(m, ranks, None, records.get(qf_week))
+                    for m in ordered
+                ],
+            )
+        )
+        outcomes = _outcomes_for_pairs(qf_ms, qf_pairs)
+        champ_pool, place_pool = _winners_losers(outcomes)
+    elif qf_pairs:
+        week_records = records.get(qf_week) or {}
+        winners_upcoming = _round_payload(
+            qf_week,
+            round_label_for_week(qf_week, index=0, total=len(weeks)),
+            [_projected_row(h, a, ranks, None, week_records) for h, a in qf_pairs],
+            projected=True,
+        )
+
+    # ---- Semifinals (reseed each pool) ----
+    if champ_pool or place_pool:
+        wb_pairs = pair_by_reseed(champ_pool, ranks)
+        lb_pairs = pair_by_reseed(place_pool, ranks)
+
+        if sf_ms is not None:
+            wb_ordered = _order_matchups_by_pairs(sf_ms, wb_pairs)
+            lb_ordered = _order_matchups_by_pairs(sf_ms, lb_pairs)
+            sf_label = round_label_for_week(sf_week, index=1, total=len(weeks))
+            week_rec = records.get(sf_week)
+
+            winners_rounds.append(
+                _round_payload(
+                    sf_week,
+                    sf_label,
+                    [
+                        _matchup_row(m, ranks, "1st-4th Semifinal", week_rec)
+                        for m in wb_ordered
+                    ],
+                )
+            )
+            # Only attach losers SF games that actually belong to the place pool.
+            lb_rows = [
+                _matchup_row(m, ranks, "5th-8th Semifinal", week_rec)
+                for m in lb_ordered
+            ]
+            if lb_rows:
+                losers_rounds.append(_round_payload(sf_week, sf_label, lb_rows))
+
+            sf_champ_winners, sf_champ_losers = _winners_losers(
+                _outcomes_for_pairs(sf_ms, wb_pairs)
+            )
+            sf_place_winners, sf_place_losers = _winners_losers(
+                _outcomes_for_pairs(sf_ms, lb_pairs)
+            )
+        else:
+            week_rec = records.get(sf_week) or {}
+            sf_label = round_label_for_week(sf_week, index=1, total=len(weeks))
+            if wb_pairs and winners_upcoming is None:
+                winners_upcoming = _round_payload(
+                    sf_week,
+                    sf_label,
+                    [
+                        _projected_row(h, a, ranks, "1st-4th Semifinal", week_rec)
+                        for h, a in wb_pairs
+                    ],
+                    projected=True,
+                )
+            if lb_pairs:
+                losers_upcoming = _round_payload(
+                    sf_week,
+                    sf_label,
+                    [
+                        _projected_row(h, a, ranks, "5th-8th Semifinal", week_rec)
+                        for h, a in lb_pairs
+                    ],
+                    projected=True,
+                )
+
+    # ---- Finals / placement finals ----
+    if sf_champ_winners or sf_place_winners or sf_champ_losers or sf_place_losers:
+        final_pairs = [
+            (pair_by_reseed(sf_champ_winners, ranks), "1st & 2nd place", "winners"),
+            (pair_by_reseed(sf_champ_losers, ranks), "3rd & 4th place", "winners"),
+            (pair_by_reseed(sf_place_winners, ranks), "5th & 6th place", "losers"),
+            (pair_by_reseed(sf_place_losers, ranks), "7th & 8th place", "losers"),
+        ]
+        # Flatten to one pair each (pools of 2).
+        flat: List[Tuple[Pair, str, str]] = []
+        for pairs, label, bracket in final_pairs:
+            for p in pairs:
+                flat.append((p, label, bracket))
+
+        if final_ms is not None:
+            week_rec = records.get(final_week)
+            fin_label = round_label_for_week(final_week, index=2, total=len(weeks))
+            w_rows: List[dict] = []
+            l_rows: List[dict] = []
+            for (home, away), label, bracket in flat:
+                m = _find_matchup(final_ms, home, away) if home else None
+                if not m:
+                    continue
+                row = _matchup_row(m, ranks, label, week_rec)
+                if bracket == "winners":
+                    w_rows.append(row)
+                else:
+                    l_rows.append(row)
+                if label == "1st & 2nd place":
+                    wl = winner_loser_from_matchup(m)
+                    if wl:
+                        champion = wl[0]
+            if w_rows:
+                winners_rounds.append(_round_payload(final_week, fin_label, w_rows))
+            if l_rows:
+                losers_rounds.append(_round_payload(final_week, fin_label, l_rows))
+        elif winners_upcoming is None:
+            week_rec = records.get(final_week) or {}
+            fin_label = round_label_for_week(final_week, index=2, total=len(weeks))
+            w_proj = [
+                _projected_row(h, a, ranks, label, week_rec)
+                for (h, a), label, bracket in flat
+                if bracket == "winners" and h
+            ]
+            l_proj = [
+                _projected_row(h, a, ranks, label, week_rec)
+                for (h, a), label, bracket in flat
+                if bracket == "losers" and h
+            ]
+            if w_proj:
+                winners_upcoming = _round_payload(
+                    final_week, fin_label, w_proj, projected=True
+                )
+            if l_proj:
+                losers_upcoming = _round_payload(
+                    final_week, fin_label, l_proj, projected=True
+                )
+
+    return {
+        "winners": {"rounds": winners_rounds, "upcoming": winners_upcoming},
+        "losers": {"rounds": losers_rounds, "upcoming": losers_upcoming},
+        "champion": champion,
+    }
+
+
 def played_rounds(
     playoff_weeks: Sequence[int],
     snapshots: Sequence[Optional[dict]],
@@ -344,87 +620,21 @@ def played_rounds(
     *,
     records: Optional[Dict[int, Dict[str, str]]] = None,
 ) -> List[dict]:
-    """One entry per playoff week that has games, with per-matchup placement labels.
-
-    ``records`` maps a week to the team records going into it, as built by
-    ``records_before_weeks``.
-    """
-    ranks = seed_rank(seeds)
-    total = len(playoff_weeks)
-    pairs = projected_first_round([row["team"] for row in seeds])
-
-    qf: List[Optional[SlotWL]] = []
-    wb: List[Optional[SlotWL]] = []
-    lb: List[Optional[SlotWL]] = []
-    crossover = False
-
-    rounds: List[dict] = []
-    for index, week in enumerate(playoff_weeks):
-        matchups = _entered(snapshots[index] if index < len(snapshots) else None)
-        if matchups is None:
-            continue
-
-        labels: Dict[int, str] = {}
-        if index == 0 and pairs:
-            qf = _slot_results(matchups, pairs)
-        elif index == 1 and qf:
-            wb, lb, crossover = _semi_results(matchups, qf)
-            if not crossover:
-                wb_groups, lb_groups = expected_week2_groups(qf)
-                for pos in range(len(wb_groups) + len(lb_groups)):
-                    labels[pos] = (
-                        "1st-4th Semifinal"
-                        if pos < len(wb_groups)
-                        else "5th-8th Semifinal"
-                    )
-        elif index == 2:
-            groups = (
-                expected_week3_groups_cross(wb)
-                if crossover
-                else expected_week3_groups(wb, lb)
-            )
-            for pos, (_teams, label) in enumerate(groups):
-                labels[pos] = label
-
-        ordered = _order_for_labels(matchups, index, qf, wb, lb, crossover)
-        rounds.append(
-            {
-                "week": week,
-                "label": round_label(index, total),
-                "matchups": [
-                    _matchup_row(m, ranks, labels.get(pos), (records or {}).get(week))
-                    for pos, m in enumerate(ordered)
-                ],
-            }
-        )
-    return rounds
-
-
-def _order_for_labels(
-    matchups: List[dict],
-    index: int,
-    qf: List[Optional[SlotWL]],
-    wb: List[Optional[SlotWL]],
-    lb: List[Optional[SlotWL]],
-    crossover: bool,
-) -> List[dict]:
-    """Matchups in bracket-slot order so the labels line up; extras kept at the end."""
-    groups: List[FrozenSet[str]] = []
-    if index == 1 and qf and not crossover:
-        wb_groups, lb_groups = expected_week2_groups(qf)
-        groups = wb_groups + lb_groups
-    elif index == 2:
-        labeled = (
-            expected_week3_groups_cross(wb)
-            if crossover
-            else expected_week3_groups(wb, lb)
-        )
-        groups = [teams for teams, _label in labeled]
-    if not groups:
-        return list(matchups)
-
-    ordered, rest = matchups_by_ordered_groups(matchups, groups)
-    return [m for m in ordered if m] + rest
+    """Flat list of played rounds (winners then losers per week) for compat."""
+    bracket = build_bracket(playoff_weeks, snapshots, seeds, records=records)
+    by_week: Dict[int, dict] = {}
+    for side in ("winners", "losers"):
+        for r in bracket[side]["rounds"]:
+            week = r["week"]
+            if week not in by_week:
+                by_week[week] = {
+                    "week": week,
+                    "label": r["label"],
+                    "matchups": list(r["matchups"]),
+                }
+            else:
+                by_week[week]["matchups"].extend(r["matchups"])
+    return [by_week[w] for w in sorted(by_week)]
 
 
 def upcoming_round(
@@ -435,66 +645,22 @@ def upcoming_round(
     next_week: Optional[int] = None,
     records: Optional[Dict[int, Dict[str, str]]] = None,
 ) -> Optional[dict]:
-    """The next round that has not been bowled, projected from what is known.
-
-    ``None`` once every playoff week has games, or when there are too few teams
-    to seed a bracket.
-    """
-    ranks = seed_rank(seeds)
-    pairs = projected_first_round([row["team"] for row in seeds])
-    if not pairs:
-        return None
-
-    total = len(playoff_weeks) or 3
-    index = 0
-    for i, _week in enumerate(playoff_weeks):
-        if _entered(snapshots[i] if i < len(snapshots) else None) is None:
-            break
-        index = i + 1
-    else:
-        if playoff_weeks:
-            return None
-
-    week = playoff_weeks[index] if index < len(playoff_weeks) else next_week
-    week_records = (records or {}).get(week) or {}
-
-    rows: List[dict] = []
-    if index == 0:
-        rows = [_projected_row(h, a, ranks, None, week_records) for h, a in pairs]
-    elif index == 1:
-        qf = _slot_results(_entered(snapshots[0]) or [], pairs)
-        wb_groups, lb_groups = expected_week2_groups(qf)
-        for pos, group in enumerate(wb_groups + lb_groups):
-            label = "1st-4th Semifinal" if pos < len(wb_groups) else "5th-8th Semifinal"
-            home, away = _pair_of(group, ranks)
-            rows.append(_projected_row(home, away, ranks, label, week_records))
-    elif index == 2:
-        qf = _slot_results(_entered(snapshots[0]) or [], pairs)
-        wb, lb, crossover = _semi_results(_entered(snapshots[1]) or [], qf)
-        groups = (
-            expected_week3_groups_cross(wb)
-            if crossover
-            else expected_week3_groups(wb, lb)
-        )
-        for teams, label in groups:
-            home, away = _pair_of(teams, ranks)
-            rows.append(_projected_row(home, away, ranks, label, week_records))
-
-    if not rows:
-        return None
-    return {
-        "week": week,
-        "label": round_label(index, total),
-        "projected": True,
-        "matchups": rows,
-    }
+    """Next projected championship-side round (compat helper)."""
+    weeks = list(playoff_weeks) if playoff_weeks else (
+        [next_week] if next_week else list(PLAYOFF_WEEKS)
+    )
+    # Pad snapshots to the calendar length when callers pass an empty schedule.
+    snaps = list(snapshots)
+    while len(snaps) < len(weeks):
+        snaps.append(None)
+    bracket = build_bracket(weeks, snaps, seeds, records=records)
+    return bracket["winners"]["upcoming"]
 
 
-def _pair_of(group: FrozenSet[str], ranks: Dict[str, int]) -> Pair:
-    """A team pair as (home, away), better seed first."""
-    members = sorted(group, key=lambda t: (ranks.get(t, 10**6), t))
-    if not members:
-        return "", None
-    if len(members) == 1:
-        return members[0], None
-    return members[0], members[1]
+def champion_from_bracket(
+    playoff_weeks: Sequence[int],
+    snapshots: Sequence[Optional[dict]],
+    seeds: Sequence[dict],
+) -> Optional[str]:
+    """Championship final winner only (week-10 / last playoff week title game)."""
+    return build_bracket(playoff_weeks, snapshots, seeds).get("champion")

@@ -130,6 +130,31 @@ def test_a_week_with_no_rows_reports_rather_than_failing(client):
     assert data["message"]
 
 
+def test_tied_game_wins_display_as_tt_even_when_pins_differ():
+    """Equal game wins show T/T on the Matchups tab (display only)."""
+    facts = []
+    for name, team, opp, games in (
+        ("Alice", "Team A", "Team B", (210, 100, 210, 100)),
+        ("Bob", "Team A", "Team B", (210, 100, 210, 100)),
+        ("Cara", "Team B", "Team A", (100, 200, 100, 200)),
+        ("Dan", "Team B", "Team A", (100, 200, 100, 200)),
+    ):
+        row = _fact(name, 14, 1, games=games, team=team)
+        row["opponent"] = opp
+        facts.append(row)
+
+    app = Flask(__name__)
+    app.config["LEAGUE_SERVICE"] = LeagueService(_Data(facts))
+    app.register_blueprint(api.api_bp)
+    client = app.test_client()
+
+    _, m = _only_matchup(client)
+    assert m["home"]["wins"] == m["away"]["wins"] == 2
+    assert m["home"]["pins"] != m["away"]["pins"]
+    assert m["home"]["result"] == "T"
+    assert m["away"]["result"] == "T"
+
+
 def test_needs_a_service():
     app = Flask(__name__)
     app.config["LEAGUE_SERVICE"] = None

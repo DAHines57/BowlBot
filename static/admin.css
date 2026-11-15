@@ -741,10 +741,21 @@ label.captain-label input { margin: 0; cursor: pointer; }
 .scan-grid {
   display: grid;
   grid-template-columns:
-    minmax(6rem, 1fr) minmax(7rem, 1fr) repeat(var(--egrid-games, 5), 3.4rem);
+    minmax(6rem, 1fr) minmax(7rem, 1fr) 2.6rem minmax(6rem, 1fr)
+    repeat(var(--egrid-games, 5), 3.4rem);
   min-width: max-content;
   font-size: 0.8rem;
 }
+
+.scan-grid .scan-sub-name {
+  width: 100%;
+  max-width: 11rem;
+  border-radius: 4px;
+  padding: 0.25rem;
+  font-size: 0.8rem;
+}
+
+.scan-grid .scan-sub-name[hidden] { display: none; }
 
 .scan-grid { --egrid-games: 5; }
 .scan-grid.hide-game5 { --egrid-games: 4; }

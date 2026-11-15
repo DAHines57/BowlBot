@@ -29,6 +29,16 @@
   {% endif %}
 
   <div class="card">
+    <h2>Site content</h2>
+    <p class="hint" style="margin-top:0">Edit the rules and changelog shown on the public site.</p>
+    <p>
+      <a href="{{ url_for('admin.admin_rules') }}">Edit rules</a>
+      &middot;
+      <a href="{{ url_for('admin.admin_changelog') }}">Edit changelog</a>
+    </p>
+  </div>
+
+  <div class="card">
     <h2>Seasons in database</h2>
     {% if db_seasons %}
     <table>

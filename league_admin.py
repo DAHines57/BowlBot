@@ -656,6 +656,16 @@ def get_week_entry(
         for team_name, team_rows in teams_grouped
     }
 
+    team_series_overrides: dict[str, str] = {}
+    session = get_session()
+    try:
+        from db.matchup_override_writes import overrides_for_week
+
+        for row in overrides_for_week(session, season_num, week):
+            team_series_overrides[str(row["team"])] = str(row["code"])
+    finally:
+        session.close()
+
     return (
         {
             "season": season_label,
@@ -665,6 +675,7 @@ def get_week_entry(
             "teams": all_teams,
             "teams_grouped": teams_grouped,
             "team_opponents": team_opponents,
+            "team_series_overrides": team_series_overrides,
             "week_playoffs": any(r.get("playoffs") for r in full_entry_rows),
             "selected_team": team or "",
             "templated": templated,
@@ -888,6 +899,24 @@ def parse_week_rows_payload_detailed(
     return parsed, []
 
 
+def parse_matchup_overrides_payload(body: dict) -> dict[str, Optional[str]]:
+    """Map team name → series code (or None/'' to clear)."""
+    raw = body.get("matchup_overrides")
+    out: dict[str, Optional[str]] = {}
+    if not isinstance(raw, dict):
+        return out
+    for key, val in raw.items():
+        team = str(key or "").strip()
+        if not team:
+            continue
+        if val is None:
+            out[team] = None
+        else:
+            code = str(val).strip()
+            out[team] = code or None
+    return out
+
+
 def save_week_entry(
     data: LeagueDataSource,
     season_label: str,
@@ -895,6 +924,7 @@ def save_week_entry(
     rows: List[dict],
     *,
     refresh: Callable[[], Tuple[bool, str]],
+    matchup_overrides: Optional[dict[str, Optional[str]]] = None,
 ) -> Tuple[bool, str]:
     season_num = compute.parse_season_number(season_label)
     if season_num is None:
@@ -917,12 +947,14 @@ def save_week_entry(
     sheet_key = (
         season_label if season_label.startswith("Season") else f"Season {season_num}"
     )
+    from db.matchup_override_writes import sync_week_matchup_overrides
     from db.player_week_writes import (
         delete_substitute_rows_not_in_save,
         save_week_rows,
         sync_week_team_opponents,
     )
 
+    week_playoffs = any(bool(r.get("playoffs")) for r in rows)
     session = get_session()
     try:
         count = save_week_rows(
@@ -942,6 +974,16 @@ def save_week_entry(
         sync_week_team_opponents(
             session, season_num, week, team_opponents, sheet_key=sheet_key
         )
+        if matchup_overrides is not None:
+            sync_week_matchup_overrides(
+                session,
+                season_num,
+                week,
+                matchup_overrides,
+                team_opponents=team_opponents,
+                playoffs=week_playoffs,
+                sheet_key=sheet_key,
+            )
         session.commit()
     except Exception as exc:
         session.rollback()

@@ -255,6 +255,7 @@ def leaderboard():
     if not absent_projection:
         for row in data["players"]:
             row["absent_average"] = None
+            row["absent_penalty_percent"] = None
 
     return jsonify(data)
 
@@ -497,11 +498,37 @@ def team_detail(name: str):
 _CHAMPION_CACHE: dict = {}
 
 
+def _playoff_calendar_snapshots(svc, season: str, detected_weeks: list):
+    """Weeks + snapshots for the bracket; fixed 8–10 when that calendar applies."""
+    if playoffs.uses_fixed_playoff_calendar(detected_weeks):
+        weeks = list(playoffs.PLAYOFF_WEEKS)
+        snapshots = []
+        for week in weeks:
+            md = svc.data.get_week_matchups(week, season)
+            if isinstance(md, dict) and "error" not in md and md.get("matchups"):
+                snapshots.append(md)
+            else:
+                snapshots.append(None)
+        return weeks, snapshots
+    return svc.playoff_snapshots_for_season(season)
+
+
 def _champion_for_season(svc, season: str, *, cacheable: bool) -> Optional[str]:
     if cacheable and season in _CHAMPION_CACHE:
         return _CHAMPION_CACHE[season]
-    _, snapshots = svc.playoff_snapshots_for_season(season)
-    champion = champion_from_playoff_snapshots(snapshots)
+    detected, _ = svc.playoff_snapshots_for_season(season)
+    weeks, snapshots = _playoff_calendar_snapshots(svc, season, detected)
+    facts = _facts()
+    season_num = compute.parse_season_number(season)
+    seeds: list = []
+    if facts is not None and season_num is not None:
+        seeds = playoffs.season_seeding(facts, season_num)
+    # Prefer the reseed bracket's championship final. Only fall back to the
+    # legacy detector for non-8/9/10 calendars (it treats a lone playoff week
+    # as finals, which is wrong for the fixed format).
+    champion = playoffs.champion_from_bracket(weeks, snapshots, seeds)
+    if champion is None and not playoffs.uses_fixed_playoff_calendar(detected):
+        champion = champion_from_playoff_snapshots(snapshots)
     if cacheable:
         _CHAMPION_CACHE[season] = champion
     return champion
@@ -522,7 +549,14 @@ def _attach_playoff_colors(data: dict) -> None:
     for row in (data.get("seeds") or []) + (data.get("standings") or []):
         row["color"] = color_for(row.get("team"))
 
-    groups = list(data.get("rounds") or [])
+    groups = []
+    for side in ("winners", "losers"):
+        bracket = data.get(side) or {}
+        groups.extend(bracket.get("rounds") or [])
+        if bracket.get("upcoming"):
+            groups.append(bracket["upcoming"])
+    # Flat compat fields, if present.
+    groups.extend(data.get("rounds") or [])
     if data.get("upcoming"):
         groups.append(data["upcoming"])
     for group in groups:
@@ -605,6 +639,16 @@ def week_matchups():
         if not home:
             continue
         away = _matchup_side(m.get("away"))
+        # Display-only: equal game wins show as T/T on the Matchups tab even
+        # when total pins would break the series for standings/playoffs.
+        if (
+            away
+            and not m.get("record_overridden")
+            and home.get("wins") is not None
+            and home.get("wins") == away.get("wins")
+        ):
+            home["result"] = "T"
+            away["result"] = "T"
         out.append({
             "home": home,
             "away": away,
@@ -668,14 +712,16 @@ def playoff_bracket():
         through_week=last_regular,
     )
 
-    playoff_weeks, snapshots = svc.playoff_snapshots_for_season(season)
+    detected, _ = svc.playoff_snapshots_for_season(season)
+    playoff_weeks, snapshots = _playoff_calendar_snapshots(svc, season, detected)
 
-    next_week = (last_regular + 1) if last_regular else None
     record_weeks = list(playoff_weeks)
-    if next_week and next_week not in record_weeks:
-        record_weeks.append(next_week)
     records = playoffs.records_before_weeks(
         facts, season_num, record_weeks, matchup_overrides=overrides
+    )
+
+    bracket = playoffs.build_bracket(
+        playoff_weeks, snapshots, seeds, records=records
     )
 
     data = {
@@ -692,17 +738,14 @@ def playoff_bracket():
             through_week=standings_week,
             matchup_overrides=overrides,
         ),
+        "winners": bracket["winners"],
+        "losers": bracket["losers"],
+        # Flat fields kept for older clients / tests that still read them.
         "rounds": playoffs.played_rounds(
             playoff_weeks, snapshots, seeds, records=records
         ),
-        "upcoming": playoffs.upcoming_round(
-            playoff_weeks,
-            snapshots,
-            seeds,
-            next_week=next_week,
-            records=records,
-        ),
-        "champion": champion_from_playoff_snapshots(snapshots),
+        "upcoming": bracket["winners"]["upcoming"],
+        "champion": bracket.get("champion"),
         "history": [
             {
                 "season": label,
@@ -717,3 +760,35 @@ def playoff_bracket():
     _attach_playoff_colors(data)
 
     return jsonify(data)
+
+
+def _site_page_response(slug: str, default_title: str):
+    from db.session import get_session
+    from db.site_pages import get_or_create_page, page_to_dict
+
+    session = get_session()
+    try:
+        page = get_or_create_page(session, slug, title=default_title)
+        session.commit()
+        return jsonify(page_to_dict(page))
+    except Exception as exc:
+        session.rollback()
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        session.close()
+
+
+@api_bp.route("/rules")
+def rules_page():
+    """Public league rules content edited from admin."""
+    from db.site_pages import RULES_SLUG
+
+    return _site_page_response(RULES_SLUG, "League Rules")
+
+
+@api_bp.route("/changelog")
+def changelog_page():
+    """Public changelog content edited from admin."""
+    from db.site_pages import CHANGELOG_SLUG
+
+    return _site_page_response(CHANGELOG_SLUG, "Changelog")

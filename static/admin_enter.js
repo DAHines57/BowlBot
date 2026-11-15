@@ -941,6 +941,43 @@
     };
   }
 
+  function teamSeriesOverrideMap() {
+    var out = {};
+    document.querySelectorAll(".team-block").forEach(function (block) {
+      var team = block.getAttribute("data-team");
+      var sel = block.querySelector(".series-override");
+      if (!team || !sel) return;
+      out[team] = sel.value.trim();
+    });
+    return out;
+  }
+
+  function inverseSeriesCode(code) {
+    var parts = String(code || "").split("-");
+    if (parts.length === 2) return parts[1] + "-" + parts[0];
+    if (parts.length === 3) return parts[1] + "-" + parts[0] + "-" + parts[2];
+    return "";
+  }
+
+  function initSeriesOverrides() {
+    document.querySelectorAll(".team-block").forEach(function (block) {
+      var sel = block.querySelector(".series-override");
+      if (!sel) return;
+      sel.addEventListener("change", function () {
+        var team = block.getAttribute("data-team");
+        var code = sel.value.trim();
+        var oppSel = block.querySelector(".team-opponent");
+        var opp = oppSel ? oppSel.value.trim() : "";
+        if (code && opp) {
+          var oppBlock = findTeamBlock(opp);
+          var oppSeries = oppBlock && oppBlock.querySelector(".series-override");
+          if (oppSeries) oppSeries.value = inverseSeriesCode(code);
+        }
+        markDirty();
+      });
+    });
+  }
+
   function buildPayload() {
     var teamOpponents = teamOpponentMap();
     return {
@@ -948,6 +985,7 @@
       week: week,
       playoffs: playoffsChecked(),
       team_opponents: teamOpponents,
+      matchup_overrides: teamSeriesOverrideMap(),
       team: teamFilter || null,
       rows: rows().map(function (tr) { return rowPayload(tr, teamOpponents); })
     };
@@ -1540,7 +1578,7 @@
       grid.className = "scan-grid";
       var head = document.createElement("div");
       head.className = "egrid-row";
-      ["Board", "Assign to", "G1", "G2", "G3", "G4"].forEach(function (label) {
+      ["Board", "Assign to", "Sub", "Sub name", "G1", "G2", "G3", "G4"].forEach(function (label) {
         var cell = document.createElement("div");
         cell.className = "egrid-cell egrid-cell--head";
         cell.textContent = label;
@@ -1573,6 +1611,34 @@
         assignCell.className = "egrid-cell scan-assign-cell";
         assignCell.appendChild(buildAssignSelect(roster, row.suggested_player || ""));
         tr.appendChild(assignCell);
+
+        var subCell = document.createElement("div");
+        subCell.className = "egrid-cell";
+        var subCb = document.createElement("input");
+        subCb.type = "checkbox";
+        subCb.className = "scan-as-sub";
+        subCb.setAttribute("aria-label", "Apply as substitute");
+        subCb.title = "Apply scores to a substitute for this roster player";
+        subCell.appendChild(subCb);
+        tr.appendChild(subCell);
+
+        var subNameCell = document.createElement("div");
+        subNameCell.className = "egrid-cell";
+        var subNameInp = document.createElement("input");
+        subNameInp.type = "text";
+        subNameInp.className = "scan-sub-name";
+        subNameInp.placeholder = "Sub name";
+        subNameInp.autocomplete = "off";
+        subNameInp.hidden = true;
+        // Prefill from the OCR board name so a mismatched name can become the sub.
+        if (row.ocr_name) subNameInp.value = row.ocr_name;
+        subNameCell.appendChild(subNameInp);
+        tr.appendChild(subNameCell);
+
+        subCb.addEventListener("change", function () {
+          subNameInp.hidden = !subCb.checked;
+          if (subCb.checked) subNameInp.focus();
+        });
 
         ["game1", "game2", "game3", "game4", "game5"].forEach(function (k) {
           tr.appendChild(scanGameCell(row, k));
@@ -1671,9 +1737,11 @@
       }
       var applied = 0;
       var missingTeam = 0;
+      var missingSubName = false;
       var opponentPairs = [];
       if (!teamsReview) return;
       teamsReview.querySelectorAll(".scan-team-block").forEach(function (block) {
+        if (missingSubName) return;
         var teamSel = block.querySelector("select.scan-team-assign");
         var teamName = teamSel && teamSel.value.trim();
         if (!teamName) {
@@ -1686,29 +1754,104 @@
           opponentPairs.push({ team: teamName, opponent: oppName });
         }
         block.querySelectorAll("[data-scan-idx]").forEach(function (tr) {
+          if (missingSubName) return;
           var sel = tr.querySelector("select.scan-assign");
           var player = sel && sel.value.trim();
           if (!player) return;
-          var gridRow = document.querySelector(
-            '[data-row][data-team="' + CSS.escape(teamName) + '"][data-player="' + CSS.escape(player) + '"]'
-          );
-          if (!gridRow) return;
           var teamBlock = findTeamBlock(teamName);
-          var showG5 = teamBlock && !teamBlock.classList.contains("hide-game5");
-          var inputs = gridRow.querySelectorAll("input.game");
+          if (!teamBlock) return;
+          var showG5 = !teamBlock.classList.contains("hide-game5");
+          var scores = {};
           tr.querySelectorAll("input.scan-game").forEach(function (inp, gi) {
             if (gi === 4 && !showG5) return;
+            var key = ["game1", "game2", "game3", "game4", "game5"][gi];
             var v = inp.value.trim();
-            if (inputs[gi]) {
-              inputs[gi].value = v;
-              validateGameInput(inputs[gi]);
+            scores[key] = v === "" ? null : v;
+          });
+
+          var asSub = tr.querySelector("input.scan-as-sub");
+          if (asSub && asSub.checked) {
+            var subNameInp = tr.querySelector("input.scan-sub-name");
+            var subName = subNameInp && subNameInp.value.trim();
+            if (!subName) {
+              missingSubName = true;
+              return;
             }
+            var rosterRow = teamBlock.querySelector(
+              '[data-row][data-substitute="false"][data-player="' + CSS.escape(player) + '"]'
+            );
+            if (!rosterRow) return;
+            ensureWeekOut(rosterRow);
+            setSubbedForPlayer(teamBlock, player, true);
+            var subTr = findSubRowForPlayer(teamBlock, player);
+            if (!subTr) {
+              subTr = addSubRow(teamBlock, {
+                player: subName,
+                subFor: player,
+                count: true,
+                game1: scores.game1,
+                game2: scores.game2,
+                game3: scores.game3,
+                game4: scores.game4,
+                game5: scores.game5
+              });
+            } else {
+              subTr.setAttribute("data-player", subName);
+              var pick = subTr.querySelector(".sub-pick-select");
+              var newInp = subTr.querySelector(".sub-pick-new");
+              if (pick) {
+                if (ALL_PLAYERS.indexOf(subName) >= 0) {
+                  pick.value = subName;
+                  if (newInp) {
+                    newInp.style.display = "none";
+                    newInp.value = "";
+                  }
+                } else {
+                  pick.value = NEW_PLAYER_VALUE;
+                  if (newInp) {
+                    newInp.style.display = "block";
+                    newInp.value = subName;
+                  }
+                }
+              }
+              var countCb = subTr.querySelector(".sub-count");
+              if (countCb) countCb.checked = true;
+              var inputs = subTr.querySelectorAll("input.game");
+              ["game1", "game2", "game3", "game4", "game5"].forEach(function (key, gi) {
+                if (gi === 4 && !showG5) return;
+                if (!inputs[gi]) return;
+                inputs[gi].value = scores[key] == null ? "" : String(scores[key]);
+                validateGameInput(inputs[gi]);
+              });
+            }
+            if (subTr) {
+              subTr.classList.remove("row-incomplete");
+              subTr.removeAttribute("title");
+            }
+            applied += 1;
+            return;
+          }
+
+          var gridRow = teamBlock.querySelector(
+            '[data-row][data-substitute="false"][data-player="' + CSS.escape(player) + '"]'
+          );
+          if (!gridRow) return;
+          var inputs = gridRow.querySelectorAll("input.game");
+          ["game1", "game2", "game3", "game4", "game5"].forEach(function (key, gi) {
+            if (gi === 4 && !showG5) return;
+            if (!inputs[gi]) return;
+            inputs[gi].value = scores[key] == null ? "" : String(scores[key]);
+            validateGameInput(inputs[gi]);
           });
           gridRow.classList.remove("row-incomplete");
           gridRow.removeAttribute("title");
           applied += 1;
         });
       });
+      if (missingSubName) {
+        setStatus("Enter a sub name for each row marked Sub.", true);
+        return;
+      }
       opponentPairs.forEach(function (pair) {
         setOpponentSelect(pair.team, pair.opponent, null);
         setOpponentSelect(pair.opponent, pair.team, null);
@@ -1745,6 +1888,7 @@
   rosterRows().forEach(applyWeekOutUi);
   initTeamGame5Toggles();
   initOpponents();
+  initSeriesOverrides();
   initKeyboardFlow();
   initScoreboardScan();
   offerDraft();

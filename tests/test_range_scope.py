@@ -638,6 +638,7 @@ def test_absences_do_not_touch_a_bowling_players_average():
     assert alice["average"] == 200.0
     # One miss taken, so the next one is her second and costs 5 percent.
     assert alice["absent_average"] == 190.0
+    assert alice["absent_penalty_percent"] == 95
     assert alice["average_from_absences"] is False
     assert alice["games"] == 2
 
@@ -648,6 +649,7 @@ def _gated_absent_average(facts, scope):
     if not scope.season_ytd_complete(facts):
         for row in data["players"]:
             row["absent_average"] = None
+            row["absent_penalty_percent"] = None
     return data
 
 
@@ -678,6 +680,8 @@ def test_absent_average_shown_for_ytd_through_latest_week():
     facts = [_fact("Alice", 9, w, games=(200, 200)) for w in range(1, 6)]
     data = _gated_absent_average(facts, Scope(start=(9, 1), end=(9, 5)))
     assert data["players"][0]["absent_average"] == 200.0
+    # No misses yet this season, so the next absence is still full average.
+    assert data["players"][0]["absent_penalty_percent"] == 100
 
 
 def test_absent_average_hidden_when_ytd_end_before_latest_week():

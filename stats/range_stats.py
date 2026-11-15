@@ -154,6 +154,26 @@ class _PlayerAccumulator:
             return _mean(season_avgs)
         return _mean(self.all_games)
 
+    def _next_absence_taken(self) -> int:
+        """Whole-week misses already taken in the latest season in range."""
+        # A player can be absent through a season they never bowled in, and that
+        # season still has to be able to be the latest one.
+        seasons = set(self.games_by_season) | set(self.absences_by_season)
+        if not seasons:
+            return 0
+        return self.absences_by_season.get(max(seasons), 0)
+
+    def next_absence_penalty_percent(self, mode: str) -> Optional[int]:
+        """Book-average rate for the next miss: 100, 95, or 90.
+
+        ``None`` when there is no bowled average to discount (same gate as
+        :meth:`next_absence_credit`).
+        """
+        if self.average(mode) is None:
+            return None
+        rate = 1.0 - absence_penalty(self._next_absence_taken() + 1)
+        return int(round(rate * 100))
+
     def next_absence_credit(self, mode: str) -> Optional[float]:
         """What this player's next absence would be credited.
 
@@ -165,11 +185,7 @@ class _PlayerAccumulator:
         base = self.average(mode)
         if base is None:
             return None
-        # A player can be absent through a season they never bowled in, and that
-        # season still has to be able to be the latest one.
-        seasons = set(self.games_by_season) | set(self.absences_by_season)
-        taken = self.absences_by_season.get(max(seasons), 0) if seasons else 0
-        return base * (1.0 - absence_penalty(taken + 1))
+        return base * (1.0 - absence_penalty(self._next_absence_taken() + 1))
 
 
 def build_player_accumulators(rows: List[dict]) -> Dict[str, _PlayerAccumulator]:
@@ -289,6 +305,7 @@ def _player_rows(rows: List[dict], mode: str) -> List[dict]:
         average = entry.average(mode)
         sheet_credit = _mean(entry.absent_credits)
         projected = entry.next_absence_credit(mode)
+        penalty_percent = entry.next_absence_penalty_percent(mode)
         # With nothing bowled there is no real average, so the credited figure
         # stands in purely so the row sorts into position instead of sinking.
         from_absences = average is None and sheet_credit is not None
@@ -299,6 +316,9 @@ def _player_rows(rows: List[dict], mode: str) -> List[dict]:
         absent_average = projected
         if absent_average is None and from_absences:
             absent_average = sheet_credit
+            # Absence-only rows have no bowled average to price a next miss;
+            # leave the percent unset so the UI does not invent a ladder rung.
+            penalty_percent = None
         out.append(
             {
                 "player": player,
@@ -307,6 +327,7 @@ def _player_rows(rows: List[dict], mode: str) -> List[dict]:
                 "absent_average": (
                     round(absent_average, 2) if absent_average is not None else None
                 ),
+                "absent_penalty_percent": penalty_percent,
                 "average_from_absences": from_absences,
                 "std_dev": round(_std_dev(games), 2) if games else None,
                 "highest_game": int(max(games)) if games else None,

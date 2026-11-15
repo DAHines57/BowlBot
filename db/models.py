@@ -174,6 +174,23 @@ class PlayerWeek(Base):
     player: Mapped[Optional["Player"]] = relationship(back_populates="player_weeks")
 
 
+class SitePage(Base):
+    """Editable site content (rules, etc.) keyed by slug."""
+
+    __tablename__ = "site_pages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    slug: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(128), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
 class MatchupOverride(Base):
     __tablename__ = "matchup_overrides"
     __table_args__ = (
