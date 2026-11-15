@@ -429,7 +429,9 @@ def admin_week_post():
         matchup_overrides=parse_matchup_overrides_payload(body),
     )
     if _wants_json():
-        return jsonify({"ok": ok, "message": msg}), 200 if ok else 500
+        if ok:
+            return jsonify({"ok": True, "message": msg}), 200
+        return jsonify({"ok": False, "error": msg, "message": msg}), 500
 
     if ok:
         q = f"?season={quote(season)}&week={week}&saved=1&msg={quote(msg)}"
