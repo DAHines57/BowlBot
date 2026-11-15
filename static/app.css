@@ -402,6 +402,17 @@ a { color: var(--accent); }
   border-radius: var(--radius-pill);
 }
 
+/* Six view tabs overflow the card on phones; scroll the strip instead of
+   clipping Rules/Changelog. */
+.tabs {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
+
 /* Author display:flex beats the UA [hidden] rule; keep flips actually hidden. */
 .spanflip[hidden] { display: none; }
 
@@ -450,15 +461,18 @@ a { color: var(--accent); }
 /* Inside the filter panel there is room to span the full width. */
 .playoff-btn { flex: 1; }
 
-/* Three view tabs plus the week/range flip no longer fit one line here, so
-   each group takes a row of its own and stretches to fill it. Left to wrap on
-   its own the flip lands adrift under the tabs, reading as a mistake. */
+/* View tabs plus the week/range flip no longer fit one line here, so each
+   group takes a row of its own. Tabs keep their natural width and scroll;
+   only the flip buttons stretch to fill their row. */
 @media (max-width: 430px) {
   .tabs,
   .spanflip { flex: 1 1 100%; }
 
-  .tab,
   .spanflip-btn { flex: 1; }
+}
+
+@media (max-width: 479px) {
+  .tab { padding: 0.28rem 0.55rem; }
 }
 
 .settings-btn {

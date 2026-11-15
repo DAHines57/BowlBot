@@ -1073,6 +1073,20 @@
       }
     });
 
+    document.querySelectorAll(".team-block").forEach(function (block) {
+      var series = block.querySelector(".series-override");
+      var oppSel = block.querySelector(".team-opponent");
+      var code = series ? series.value.trim() : "";
+      var opp = oppSel ? oppSel.value.trim() : "";
+      if (code && !opp) {
+        var team = block.getAttribute("data-team") || "Team";
+        problems.push({
+          message: team + ": series override needs an opponent.",
+          element: oppSel || block
+        });
+      }
+    });
+
     return problems;
   }
 
@@ -1129,7 +1143,10 @@
       })
       .then(function (result) {
         if (!result.ok || result.body.error) {
-          showErrors(result.body.error || "Could not save.", problemsFromServer(result.body));
+          showErrors(
+            result.body.error || result.body.message || "Could not save.",
+            problemsFromServer(result.body)
+          );
           return;
         }
         dirty = false;

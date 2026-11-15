@@ -88,10 +88,11 @@ def sync_week_matchup_overrides(
     )
     opponents = team_opponents or {}
     touched = 0
+    handled: set[str] = set()
 
     for team, code in overrides.items():
         team = str(team or "").strip()
-        if not team:
+        if not team or team in handled:
             continue
         code = (code or "").strip() or None
         opp = str(opponents.get(team) or "").strip() or None
@@ -112,6 +113,8 @@ def sync_week_matchup_overrides(
                         MatchupOverride.team == opp,
                     )
                 )
+                handled.add(opp)
+            handled.add(team)
             continue
 
         wins, losses, ties = parse_series_code(code)
@@ -143,6 +146,8 @@ def sync_week_matchup_overrides(
             playoffs=playoffs,
         )
         touched += 1
+        handled.add(team)
+        handled.add(opp)
 
     return touched
 
@@ -179,6 +184,7 @@ def _upsert_override(
                 playoffs=playoffs,
             )
         )
+        session.flush()
         return
     existing.opponent = opponent
     existing.wins = wins
