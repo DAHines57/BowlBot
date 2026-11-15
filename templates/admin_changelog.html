@@ -1,0 +1,34 @@
+{% extends "admin_base.html" %}
+{% block title %}Changelog{% endblock %}
+{% block shell_class %}shell--narrow{% endblock %}
+
+{% block content %}
+  <h1>Changelog</h1>
+  <p class="hint">Edit the release notes shown on the public Changelog tab. Plain text is fine; blank lines start new paragraphs. Lines starting with <code># </code> become headings and <code>- </code> become list items.</p>
+
+  <div class="flash ok" id="flash-ok" {% if not success %}hidden{% endif %} role="status">
+    <button type="button" class="flash-dismiss" data-dismiss aria-label="Dismiss">&times;</button>
+    <span data-flash-text>{{ success or '' }}</span>
+  </div>
+  <div class="flash err" id="flash-err" {% if not error %}hidden{% endif %} role="alert">
+    <button type="button" class="flash-dismiss" data-dismiss aria-label="Dismiss">&times;</button>
+    <span data-flash-text>{{ error or '' }}</span>
+  </div>
+
+  <form method="post" class="card">
+    <label>Title
+      <input type="text" name="title" value="{{ page.title }}" maxlength="128" required>
+    </label>
+    <label style="display:block;margin-top:0.85rem">Body
+      <textarea name="body" rows="22" style="width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:0.85rem">{{ page.body }}</textarea>
+    </label>
+    <p class="hint" style="margin-top:0.5rem">
+      {% if page.updated_at %}Last saved {{ page.updated_at }}{% else %}Not saved yet{% endif %}
+    </p>
+    <button type="submit" class="primary" style="margin-top:0.75rem">Save changelog</button>
+  </form>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='admin_forms.js') }}"></script>
+{% endblock %}

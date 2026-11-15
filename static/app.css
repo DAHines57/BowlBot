@@ -100,6 +100,36 @@ a { color: var(--accent); }
   color: transparent;
 }
 
+.app-version {
+  flex: none;
+  align-self: flex-end;
+  margin-bottom: 0.2em;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--muted, #6b7280);
+  -webkit-text-fill-color: var(--muted, #6b7280);
+}
+
+.rules-body {
+  max-width: 42rem;
+  line-height: 1.55;
+  color: var(--text, inherit);
+}
+
+.rules-body h3 {
+  margin: 1.25rem 0 0.45rem;
+  font-size: 1.05rem;
+}
+
+.rules-body p { margin: 0 0 0.85rem; }
+.rules-body ul {
+  margin: 0 0 0.85rem;
+  padding-left: 1.25rem;
+}
+.rules-body li { margin: 0.2rem 0; }
+.rules-empty { color: var(--muted, #6b7280); }
+
 /* Anchors the settings dropdown to the gear in the header. */
 .settings-field {
   position: relative;
@@ -372,6 +402,9 @@ a { color: var(--accent); }
   border-radius: var(--radius-pill);
 }
 
+/* Author display:flex beats the UA [hidden] rule; keep flips actually hidden. */
+.spanflip[hidden] { display: none; }
+
 .tab,
 .spanflip-btn,
 .playoff-btn {
@@ -495,6 +528,14 @@ a { color: var(--accent); }
   margin-bottom: 0.6rem;
 }
 .panel-head .panel-title { margin-bottom: 0; }
+
+.panel-head-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
 
 /* On narrow screens the sort controls change width as options change, which
  * would otherwise flip the title between the same row and a wrapped row. */
@@ -1070,51 +1111,28 @@ a { color: var(--accent); }
 
 /* ---------- Playoffs ---------- */
 
-.playoffs { display: grid; gap: 0.8rem; }
+.playoffs { display: grid; gap: 1rem; }
 
-/* The bracket sits under the week's matchups as one collapsible group. */
-.po-group { display: grid; gap: 0.5rem; }
+.po-bracket { display: grid; gap: 0.8rem; }
 
-.po-group-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  width: 100%;
-  padding: 0.5rem 0;
-  background: none;
-  border: 0;
-  border-top: 1px solid var(--border-soft);
-  cursor: pointer;
+.po-bracket-title {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
-/* The head is a space-between row, so the title and its flag travel together
-   as one child rather than drifting apart. */
-.po-group-label {
+/* Matchups top sections reuse the player-detail .prof bubble. */
+#panel-playoffs .prof { margin-bottom: 0.65rem; }
+
+.prof-toggle-label {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   min-width: 0;
 }
-
-.po-group-title {
-  font-size: 0.76rem;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.po-group.is-open .po-group-title { color: var(--accent); }
-.po-group.is-open > .po-group-head > .chev {
-  transform: rotate(180deg);
-  border-top-color: var(--accent);
-}
-#playoffs-body[hidden],
-#matchups-body[hidden],
-#standings-body[hidden] { display: none; }
-
-/* The last seed row would otherwise sit on the next group's border. */
-#standings-body { padding-bottom: 0.5rem; }
 
 .po-card {
   background: var(--card);

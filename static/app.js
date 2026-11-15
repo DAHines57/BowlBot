@@ -19,11 +19,14 @@
 
   /* Which half of the schedule counts. Was a boolean before, so stored
    * sessions and old links still carry true/false and 1/0. */
-  var VIEWS = ["players", "teams", "bests", "playoffs"];
+  var VIEWS = ["players", "teams", "bests", "playoffs", "rules", "changelog"];
 
   var PLAYOFF_MODES = ["regular", "both", "only"];
   var PLAYOFFS_DEFAULT = "both";
   var PLAYOFF_LABELS = { regular: "Regular", both: "All", only: "Playoffs" };
+
+  var PLAYER_LISTS = ["roster", "subs"];
+  var PLAYER_LIST_DEFAULT = "roster";
 
   function normalizePlayoffs(raw) {
     if (raw === true || raw === "1" || raw === "true") return "both";
@@ -244,13 +247,38 @@
 
   function posParam(p) { return p.season + "." + p.week; }
 
+  var LATEST_TOKEN = "latest";
+
+  function isLatestToken(raw) {
+    return String(raw || "").trim().toLowerCase() === LATEST_TOKEN;
+  }
+
+  function latestPos() {
+    var current = meta.current_season_number || (meta.seasons[0] && meta.seasons[0].number) || 1;
+    var weeks = weeksFor(current);
+    return pos(current, weeks[weeks.length - 1]);
+  }
+
+  function currentSeasonStartPos() {
+    var current = meta.current_season_number || (meta.seasons[0] && meta.seasons[0].number) || 1;
+    var weeks = weeksFor(current);
+    return pos(current, weeks[0]);
+  }
+
   function parsePosParam(raw) {
     if (!raw) return null;
+    if (isLatestToken(raw)) return LATEST_TOKEN;
     var bits = String(raw).split(".");
     var s = parseInt(bits[0], 10);
     var w = bits.length > 1 ? parseInt(bits[1], 10) : 1;
     if (!s || s < 1 || !w || w < 1) return null;
     return pos(s, w);
+  }
+
+  function resolvePosParam(raw) {
+    var parsed = parsePosParam(raw);
+    if (parsed === LATEST_TOKEN) return latestPos();
+    return parsed;
   }
 
   function comparePos(a, b) {
@@ -324,9 +352,14 @@
    * fields at all and every sort helper has to tolerate an empty list. */
   function isBests() { return !!state && state.view === "bests"; }
   function isPlayoffs() { return !!state && state.view === "playoffs"; }
+  function isRules() { return !!state && state.view === "rules"; }
+  function isChangelog() { return !!state && state.view === "changelog"; }
+  function isSitePage() { return isRules() || isChangelog(); }
 
   function fieldsFor(view) {
-    if (view === "bests" || view === "playoffs") return [];
+    if (view === "bests" || view === "playoffs" || view === "rules" || view === "changelog") {
+      return [];
+    }
     var list = SORT_FIELDS[view] || SORT_FIELDS.players;
     if (view !== "teams" || !isSingle()) return list;
     return list.filter(function (f) { return !SINGLE_WEEK_HIDDEN[f.key]; });
@@ -341,16 +374,20 @@
   /* ---------------- state ---------------- */
 
   function defaultState() {
-    var current = meta.current_season_number || (meta.seasons[0] && meta.seasons[0].number) || 1;
-    var weeks = weeksFor(current);
-    var latest = weeks[weeks.length - 1];
+    var start = currentSeasonStartPos();
+    var end = latestPos();
     return {
       span: "multi",
-      start: pos(current, weeks[0]),
-      end: pos(current, latest),
-      week: pos(current, latest),
+      start: start,
+      end: end,
+      week: end,
+      // When true, the URL keeps the "latest" sentinel so a refresh always
+      // tracks the live edge of the current season instead of a frozen week.
+      followLatestRange: true,
+      followLatestWeek: true,
       playoffs: PLAYOFFS_DEFAULT,
       view: "players",
+      playerList: PLAYER_LIST_DEFAULT,
       sort: prefs.sortPlayers,
       dir: prefs.sortPlayersDir
     };
@@ -366,31 +403,60 @@
   function initState() {
     state = defaultState();
 
+    var q = new URLSearchParams(window.location.search);
+    var hasRangeParams = q.has("from") || q.has("to") || q.has("week");
+
     var stored = readSession();
     if (stored) {
-      if (stored.span === "single" || stored.span === "multi") state.span = stored.span;
-      if (stored.start) state.start = stored.start;
-      if (stored.end) state.end = stored.end;
-      if (stored.week) state.week = stored.week;
+      // View/sort/playoffs can come from the tab session. Range positions do
+      // not: a bare page or from/to=latest should always track the live edge.
+      if (!hasRangeParams) {
+        if (stored.span === "single" || stored.span === "multi") state.span = stored.span;
+      }
       var storedPo = normalizePlayoffs(stored.playoffs);
       if (storedPo) state.playoffs = storedPo;
       if (VIEWS.indexOf(stored.view) >= 0) state.view = stored.view;
+      if (PLAYER_LISTS.indexOf(stored.playerList) >= 0) {
+        state.playerList = stored.playerList;
+      }
       if (stored.sort) state.sort = stored.sort;
       if (stored.dir) state.dir = stored.dir;
     }
 
     // An explicit URL wins over stored state so links are shareable.
-    var q = new URLSearchParams(window.location.search);
-    var from = parsePosParam(q.get("from"));
-    var to = parsePosParam(q.get("to"));
-    var week = parsePosParam(q.get("week"));
-    if (from) state.start = from;
-    if (to) state.end = to;
-    if (week) state.week = week;
+    var fromRaw = q.get("from");
+    var toRaw = q.get("to");
+    var weekRaw = q.get("week");
+    var fromLatest = isLatestToken(fromRaw);
+    var toLatest = isLatestToken(toRaw);
+    var weekLatest = isLatestToken(weekRaw);
+
+    if (fromRaw || toRaw) {
+      if (fromLatest && toLatest) {
+        state.start = currentSeasonStartPos();
+        state.end = latestPos();
+        state.followLatestRange = true;
+      } else {
+        state.followLatestRange = false;
+        if (fromRaw) {
+          state.start = fromLatest ? latestPos() : resolvePosParam(fromRaw);
+        }
+        if (toRaw) {
+          state.end = toLatest ? latestPos() : resolvePosParam(toRaw);
+        }
+      }
+    }
+
+    if (weekRaw) {
+      state.week = weekLatest ? latestPos() : resolvePosParam(weekRaw);
+      state.followLatestWeek = weekLatest;
+    }
+
     if (q.get("span") === "single" || q.get("span") === "multi") state.span = q.get("span");
     var urlPo = normalizePlayoffs(q.get("playoffs"));
     if (urlPo) state.playoffs = urlPo;
     if (VIEWS.indexOf(q.get("view")) >= 0) state.view = q.get("view");
+    if (PLAYER_LISTS.indexOf(q.get("plist")) >= 0) state.playerList = q.get("plist");
     if (q.get("sort")) state.sort = q.get("sort");
     if (q.get("dir") === "asc" || q.get("dir") === "desc") state.dir = q.get("dir");
 
@@ -408,7 +474,7 @@
   /* A sort field can vanish under the current span (the week figures in
    * single-week view), so fall back to the preferred field, then the default. */
   function ensureSortField() {
-    if (isBests() || isPlayoffs()) return;
+    if (isBests() || isPlayoffs() || isSitePage()) return;
     if (findField(state.view, state.sort)) return;
     var isTeams = state.view === "teams";
     state.sort = isTeams ? prefs.sortTeams : prefs.sortPlayers;
@@ -422,12 +488,20 @@
     var q = new URLSearchParams();
     if (isSingle()) {
       q.set("span", "single");
-      q.set("week", posParam(state.week));
+      q.set("week", state.followLatestWeek ? LATEST_TOKEN : posParam(state.week));
     }
-    q.set("from", posParam(state.start));
-    q.set("to", posParam(state.end));
+    if (state.followLatestRange) {
+      q.set("from", LATEST_TOKEN);
+      q.set("to", LATEST_TOKEN);
+    } else {
+      q.set("from", posParam(state.start));
+      q.set("to", posParam(state.end));
+    }
     if (state.playoffs !== PLAYOFFS_DEFAULT) q.set("playoffs", state.playoffs);
     if (state.view !== "players") q.set("view", state.view);
+    if (state.view === "players" && state.playerList !== PLAYER_LIST_DEFAULT) {
+      q.set("plist", state.playerList);
+    }
     q.set("sort", state.sort);
     q.set("dir", state.dir);
     var next = window.location.pathname + "?" + q.toString();
@@ -553,20 +627,36 @@
     syncViewPanels();
   }
 
-  /* Bests and Playoffs replace the leaderboard rather than sitting beside it,
-   * and both make the sort bar and the highlight strip redundant. */
+  /* Bests, Playoffs, Rules, and Changelog replace the leaderboard rather than
+   * sitting beside it, and they make the sort bar and highlight strip redundant. */
   function syncViewPanels() {
     var bests = isBests();
     var playoffs = isPlayoffs();
-    el.panelLeaderboard.hidden = bests || playoffs;
+    var rules = isRules();
+    var changelog = isChangelog();
+    var hideBoard = bests || playoffs || rules || changelog;
+    el.panelLeaderboard.hidden = hideBoard;
     el.panelBests.hidden = !bests;
     el.panelPlayoffs.hidden = !playoffs;
-    el.panelHighlights.hidden = bests || playoffs;
-    if (el.panelLeague) el.panelLeague.hidden = bests || playoffs;
+    if (el.panelRules) el.panelRules.hidden = !rules;
+    if (el.panelChangelog) el.panelChangelog.hidden = !changelog;
+    el.panelHighlights.hidden = hideBoard;
+    if (el.panelLeague) el.panelLeague.hidden = hideBoard;
     // The Matchups tab reads one week, so the week/range flip applies here too.
     el.spanflip.classList.remove("is-locked");
     el.spanButtons.forEach(function (btn) { btn.disabled = false; });
     el.spanflip.removeAttribute("title");
+    if (rules || changelog) {
+      el.spanflip.classList.add("is-locked");
+      el.spanButtons.forEach(function (btn) { btn.disabled = true; });
+      el.spanflip.setAttribute(
+        "title",
+        (rules ? "Rules are" : "Changelog is") + " not filtered by week."
+      );
+      if (rules) loadSitePage("rules");
+      if (changelog) loadSitePage("changelog");
+      return;
+    }
     if (bests) loadBests();
     if (playoffs) {
       // Matchups read one week, so entering the tab from a range settles the
@@ -574,6 +664,7 @@
       if (!isSingle()) {
         state.span = "single";
         state.week = clampPos(state.end);
+        state.followLatestWeek = !!state.followLatestRange;
         ensureSortField();
         syncFilterPanel();
         persist();
@@ -582,6 +673,104 @@
       }
       loadWeekMatchups();
       loadPlayoffs();
+    }
+  }
+
+  function formatPageBody(text, emptyMessage) {
+    var raw = String(text || "").replace(/\r\n/g, "\n").trim();
+    if (!raw) {
+      return '<p class="rules-empty">' + esc(emptyMessage) + "</p>";
+    }
+    var blocks = raw.split(/\n{2,}/);
+    return blocks.map(function (block) {
+      var lines = block.split("\n").map(function (line) { return line.trimEnd(); });
+      if (lines.length === 1 && /^#\s+/.test(lines[0])) {
+        return "<h3>" + esc(lines[0].replace(/^#\s+/, "")) + "</h3>";
+      }
+      if (lines.every(function (line) { return /^[-*]\s+/.test(line); })) {
+        return (
+          "<ul>" +
+          lines.map(function (line) {
+            return "<li>" + esc(line.replace(/^[-*]\s+/, "")) + "</li>";
+          }).join("") +
+          "</ul>"
+        );
+      }
+      return "<p>" + esc(lines.join("\n")).replace(/\n/g, "<br>") + "</p>";
+    }).join("");
+  }
+
+  var sitePageCache = { rules: null, changelog: null };
+  var sitePageToken = { rules: 0, changelog: 0 };
+
+  function sitePageEls(kind) {
+    if (kind === "changelog") {
+      return {
+        title: el.changelogTitle,
+        status: el.changelogStatus,
+        body: el.changelogBody,
+        empty: "Changelog has not been posted yet.",
+        error: "Could not load changelog."
+      };
+    }
+    return {
+      title: el.rulesTitle,
+      status: el.rulesStatus,
+      body: el.rulesBody,
+      empty: "Rules have not been posted yet.",
+      error: "Could not load rules."
+    };
+  }
+
+  function setSitePageStatus(kind, message, isError) {
+    var nodes = sitePageEls(kind);
+    if (!nodes.status) return;
+    if (!message) {
+      nodes.status.hidden = true;
+      nodes.status.textContent = "";
+      nodes.status.classList.remove("is-error");
+      return;
+    }
+    nodes.status.hidden = false;
+    nodes.status.textContent = message;
+    nodes.status.classList.toggle("is-error", !!isError);
+  }
+
+  function loadSitePage(kind) {
+    var nodes = sitePageEls(kind);
+    if (sitePageCache[kind]) {
+      renderSitePage(kind, sitePageCache[kind]);
+      return;
+    }
+    var token = ++sitePageToken[kind];
+    setSitePageStatus(kind, "Loading\u2026");
+    if (nodes.body) nodes.body.innerHTML = "";
+    fetch("/api/" + kind, { headers: { Accept: "application/json" } })
+      .then(function (r) {
+        return r.json().then(function (body) {
+          if (!r.ok) throw new Error(body.error || nodes.error);
+          return body;
+        });
+      })
+      .then(function (body) {
+        if (token !== sitePageToken[kind]) return;
+        sitePageCache[kind] = body;
+        setSitePageStatus(kind, "");
+        renderSitePage(kind, body);
+      })
+      .catch(function (err) {
+        if (token !== sitePageToken[kind]) return;
+        setSitePageStatus(kind, err.message || nodes.error, true);
+      });
+  }
+
+  function renderSitePage(kind, data) {
+    var nodes = sitePageEls(kind);
+    if (nodes.title && data && data.title) {
+      nodes.title.textContent = data.title;
+    }
+    if (nodes.body) {
+      nodes.body.innerHTML = formatPageBody(data && data.body, nodes.empty);
     }
   }
 
@@ -958,8 +1147,10 @@
     }
     var token = ++playoffsToken;
     setPlayoffsStatus("Loading\u2026");
-    el.playoffUpcoming.innerHTML = "";
-    el.playoffRounds.innerHTML = "";
+    if (el.playoffWinnersUpcoming) el.playoffWinnersUpcoming.innerHTML = "";
+    if (el.playoffWinnersRounds) el.playoffWinnersRounds.innerHTML = "";
+    if (el.playoffLosersUpcoming) el.playoffLosersUpcoming.innerHTML = "";
+    if (el.playoffLosersRounds) el.playoffLosersRounds.innerHTML = "";
     el.playoffSeeds.innerHTML = "";
     el.playoffHistory.innerHTML = "";
     fetch(
@@ -1092,19 +1283,43 @@
     );
   }
 
-  function renderPlayoffs(data) {
-    var upcoming = data && data.upcoming;
-    el.playoffUpcoming.innerHTML = upcoming
-      ? roundSection(upcoming, "next", "")
-      : "";
+  function renderBracketSide(side, prefix, upcomingEl, roundsEl) {
+    var upcoming = side && side.upcoming;
+    if (upcomingEl) {
+      upcomingEl.innerHTML = upcoming
+        ? roundSection(upcoming, prefix + "-next", "")
+        : "";
+    }
+    var rounds = (side && side.rounds) || [];
+    // Chronological: QF → SF → Finals.
+    if (roundsEl) {
+      roundsEl.innerHTML = rounds
+        .map(function (r) {
+          return roundSection(r, prefix + "-round-" + r.week, "");
+        })
+        .join("");
+    }
+    return { upcoming: upcoming, rounds: rounds };
+  }
 
-    var rounds = (data && data.rounds) || [];
-    // Newest round first so the reader lands on the most recent results.
-    el.playoffRounds.innerHTML = rounds
-      .slice()
-      .reverse()
-      .map(function (r) { return roundSection(r, "round-" + r.week, ""); })
-      .join("");
+  function renderPlayoffs(data) {
+    var winners = (data && data.winners) || {
+      rounds: (data && data.rounds) || [],
+      upcoming: data && data.upcoming
+    };
+    var losers = (data && data.losers) || { rounds: [], upcoming: null };
+
+    var w = renderBracketSide(
+      winners, "w", el.playoffWinnersUpcoming, el.playoffWinnersRounds
+    );
+    var l = renderBracketSide(
+      losers, "l", el.playoffLosersUpcoming, el.playoffLosersRounds
+    );
+
+    if (el.poLosers) {
+      var showLosers = !!(l.upcoming || (l.rounds && l.rounds.length));
+      el.poLosers.hidden = !showLosers;
+    }
 
     /* The table is ordered and numbered as of the week on screen, which is not
      * the frozen seeding the bracket below is built from. */
@@ -1137,28 +1352,27 @@
     var history = ((data && data.history) || []).filter(function (h) {
       return !!h.champion;
     });
-    el.playoffHistory.innerHTML = history.length
-      ? poSection(
-          "history",
-          "Season Winners",
-          "",
-          '<ol class="champ-list">' +
-            history.map(function (h) {
-              var tint = h.champion_color
-                ? ' style="color:' + esc(h.champion_color) + '"'
-                : "";
-              return (
-                '<li class="champ-row">' +
-                '<span class="champ-season">' + esc(h.season) + "</span>" +
-                '<span class="champ-team"' + tint + ">\uD83C\uDFC6 " +
-                esc(h.champion) + "</span></li>"
-              );
-            }).join("") +
-            "</ol>"
-        )
-      : "";
+    if (el.playoffHistory) {
+      el.playoffHistory.innerHTML = history.length
+        ? '<ol class="champ-list">' +
+          history.map(function (h) {
+            var tint = h.champion_color
+              ? ' style="color:' + esc(h.champion_color) + '"'
+              : "";
+            return (
+              '<li class="champ-row">' +
+              '<span class="champ-season">' + esc(h.season) + "</span>" +
+              '<span class="champ-team"' + tint + ">\uD83C\uDFC6 " +
+              esc(h.champion) + "</span></li>"
+            );
+          }).join("") +
+          "</ol>"
+        : '<p class="rules-empty">No season winners yet.</p>';
+    }
 
-    if (!upcoming && !rounds.length && !standings.length) {
+    var hasBracket = !!(w.upcoming || w.rounds.length || l.upcoming ||
+      (l.rounds && l.rounds.length));
+    if (!hasBracket && !standings.length) {
       setPlayoffsStatus("No playoff data for this season yet.");
     }
   }
@@ -1354,14 +1568,38 @@
     return !!row.sub_games && row.sub_games === row.games;
   }
 
+  function isSubsList() {
+    return !!state && state.view === "players" && state.playerList === "subs";
+  }
+
   /* Sub games count toward the average, so a sub-only player ranks normally;
-   * the tag explains that every one of those games came filling in. */
+   * the tag explains that every one of those games came filling in. On the
+   * Subs list every row is already a fill-in, so the badge is redundant. */
   function playerRowTag(row) {
+    if (isSubsList()) return "";
     if (isSubOnly(row)) return '<span class="row-tag row-tag--sub">SUB</span>';
     if (!row.games && row.absences) {
       return '<span class="row-tag row-tag--abs">ABS</span>';
     }
     return "";
+  }
+
+  function filterPlayerRows(rows) {
+    if (state.playerList === "subs") {
+      return rows.filter(isSubOnly);
+    }
+    return rows.filter(function (row) { return !isSubOnly(row); });
+  }
+
+  function syncPlistUi() {
+    if (!el.plistFlip) return;
+    var onPlayers = state.view === "players";
+    el.plistFlip.hidden = !onPlayers;
+    if (!el.plistButtons) return;
+    el.plistButtons.forEach(function (btn) {
+      var on = btn.getAttribute("data-plist") === state.playerList;
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+    });
   }
 
   /* The team on a sub-only row is just whoever they last filled in for, which
@@ -1490,14 +1728,26 @@
 
   function renderBoard() {
     if (!payload) return;
+    syncPlistUi();
     var isTeams = state.view === "teams";
-    var rows = sortRows((isTeams ? payload.teams : payload.players) || []);
+    var source = (isTeams ? payload.teams : payload.players) || [];
+    if (!isTeams) source = filterPlayerRows(source);
+    var rows = sortRows(source);
+    // Players/Subs lists number within the filtered list; teams keep API ranks.
+    if (!isTeams) {
+      rows.forEach(function (row, i) { row.listRank = i + 1; });
+    }
 
     if (!rows.length) {
       el.board.innerHTML = "";
       el.boardMore.hidden = true;
       el.boardMore.innerHTML = "";
-      setStatus("No " + (isTeams ? "teams" : "players") + " in this range.");
+      var empty = isTeams
+        ? "No teams in this range."
+        : (isSubsList()
+          ? "No substitutes in this range."
+          : "No players in this range.");
+      setStatus(empty);
       return;
     }
     setStatus("");
@@ -1517,6 +1767,7 @@
           : playerRowSubtitle(row);
         var tag = isTeams ? "" : playerRowTag(row);
         var figs = isTeams ? teamFigures(row) : playerFigures(row);
+        var rank = isTeams ? row.rank : row.listRank;
 
         // The team's own colour goes on whichever line carries the team name.
         var tint = row.color ? ' style="color:' + esc(row.color) + '"' : "";
@@ -1528,7 +1779,7 @@
         return (
           '<li class="row" data-id="' + esc(id) + '">' +
           '<button type="button" class="row-main" aria-expanded="false">' +
-          '<span class="rank">#' + row.rank + "</span>" +
+          '<span class="rank">#' + rank + "</span>" +
           '<span class="row-id">' +
           '<span class="row-name"' + (isTeams ? tint : "") + ">" + esc(name) + "</span>" +
           subLine +
@@ -2304,7 +2555,11 @@
         !row.average_from_absences) {
       // A projection, not a record of scores bowled: what their next miss
       // would be credited, once this season's miss penalty is applied.
-      pairs.push(["If absent", fmt(row.absent_average, 2)]);
+      var absentLabel = "If absent";
+      if (row.absent_penalty_percent != null && row.absent_penalty_percent !== undefined) {
+        absentLabel += " (" + row.absent_penalty_percent + "%)";
+      }
+      pairs.push([absentLabel, fmt(row.absent_average, 2)]);
     }
     if (row.sub_games) pairs.push(["Sub games", fmt(row.sub_games)]);
     if (row.sub_for && row.sub_for.length) {
@@ -2313,13 +2568,35 @@
     if (payload.par_available) pairs.push(["PAR", fmt(row.par)]);
 
     var seasonTeams = (detail && detail.teams_by_season) || [];
-    var gamePoints = ((detail && detail.games) || []).map(function (g) {
-      return {
-        value: g.score,
-        label: g.label + " G" + g.game,
-        tone: g.game_absent ? "miss" : (g.is_substitute ? "sub" : "")
-      };
-    });
+    var rawGames = (detail && detail.games) || [];
+    var CHART_FIT = 30;
+    var gamePoints;
+    var chartLabel;
+    if (rawGames.length > CHART_FIT) {
+      gamePoints = groupByWeek(rawGames, null).map(function (w) {
+        var scored = w.games.filter(function (g) {
+          return !g.game_absent && typeof g.score === "number";
+        });
+        if (!scored.length) return null;
+        var sum = 0;
+        scored.forEach(function (g) { sum += g.score; });
+        return {
+          value: Math.round((sum / scored.length) * 10) / 10,
+          label: w.label,
+          tone: ""
+        };
+      }).filter(Boolean);
+      chartLabel = "Weekly averages over the range for " + row.player;
+    } else {
+      gamePoints = rawGames.map(function (g) {
+        return {
+          value: g.score,
+          label: g.label + " G" + g.game,
+          tone: g.game_absent ? "miss" : (g.is_substitute ? "sub" : "")
+        };
+      });
+      chartLabel = "Game scores over the range for " + row.player;
+    }
     box.innerHTML =
       statBlock(pairs) +
       profileSection(
@@ -2328,12 +2605,12 @@
         trendChart(gamePoints, {
           average: row.average,
           leagueAverage: payload.league ? payload.league.league_avg : null,
-          label: "Game scores over the range for " + row.player
+          label: chartLabel
         })
       ) +
       // Inside one season this would only repeat the team on the row itself.
       (seasonTeams.length > 1
-        ? membersSection(detailKey(row) + ":members", "Teams", seasonTeams)
+        ? membersSection(detailKey(row) + ":members", "Seasons", seasonTeams)
         : "") +
       profileSection(
         detailKey(row) + ":weeks",
@@ -2495,6 +2772,7 @@
     var end = pos(parseInt(el.endSeason.value, 10), parseInt(el.endWeek.value, 10));
     if (isSingle()) {
       state.week = end;
+      state.followLatestWeek = false;
       return;
     }
     var start = pos(parseInt(el.startSeason.value, 10), parseInt(el.startWeek.value, 10));
@@ -2503,6 +2781,7 @@
     }
     state.start = start;
     state.end = end;
+    state.followLatestRange = false;
   }
 
   /* ---------------- settings panel ---------------- */
@@ -2687,6 +2966,7 @@
       state.span = "multi";
       state.start = target.start;
       state.end = target.end;
+      state.followLatestRange = false;
       syncFilterPanel();
       persist();
       load();
@@ -2698,6 +2978,8 @@
       state.start = fresh.start;
       state.end = fresh.end;
       state.week = fresh.week;
+      state.followLatestRange = fresh.followLatestRange;
+      state.followLatestWeek = fresh.followLatestWeek;
       state.playoffs = fresh.playoffs;
       syncFilterPanel();
       persist();
@@ -2709,9 +2991,14 @@
         var view = tab.getAttribute("data-view");
         if (view === state.view) return;
         state.view = view;
-        // Bests and Playoffs have no sort, so the stored sort preference is
-        // left untouched and restored as-is on return to a board view.
-        if (view !== "bests" && view !== "playoffs") {
+        // Bests, Playoffs, Rules, and Changelog have no sort, so the stored
+        // sort preference is left untouched and restored on return to a board.
+        if (
+          view !== "bests" &&
+          view !== "playoffs" &&
+          view !== "rules" &&
+          view !== "changelog"
+        ) {
           state.sort = view === "teams" ? prefs.sortTeams : prefs.sortPlayers;
           state.dir = view === "teams" ? prefs.sortTeamsDir : prefs.sortPlayersDir;
         }
@@ -2728,6 +3015,21 @@
         persist();
       });
     });
+
+    if (el.plistFlip) {
+      el.plistFlip.addEventListener("click", function (e) {
+        var btn = e.target.closest("[data-plist]");
+        if (!btn) return;
+        var list = btn.getAttribute("data-plist");
+        if (PLAYER_LISTS.indexOf(list) < 0 || list === state.playerList) return;
+        state.playerList = list;
+        openRow = null;
+        showAllRows = false;
+        syncPlistUi();
+        renderBoard();
+        persist();
+      });
+    }
 
     el.sortField.addEventListener("change", function () {
       state.sort = el.sortField.value;
@@ -2914,10 +3216,11 @@
       matchupsOpen[head.getAttribute("data-wm-toggle")] = open;
     });
 
-    // The three sections of the tab each collapse as one group.
+    // Each Matchups bubble collapses as one group.
     bindGroupToggle(el.standingsGroup, el.standingsToggle, el.standingsBody);
     bindGroupToggle(el.matchupsGroup, el.matchupsToggle, el.matchupsBody);
     bindGroupToggle(el.playoffBracketGroup, el.playoffsToggle, el.playoffsBody);
+    bindGroupToggle(el.winnersGroup, el.winnersToggle, el.winnersBody);
     el.bests.addEventListener("click", function (e) {
       // Collapsing flips the one card in place, so the other lists hold still.
       var head = e.target.closest("[data-bests-toggle]");
@@ -3020,6 +3323,10 @@
     el.sortDir = document.getElementById("sort-dir");
     el.sortDirArrow = document.getElementById("sort-dir-arrow");
     el.sortDirText = document.getElementById("sort-dir-text");
+    el.plistFlip = document.getElementById("plist-flip");
+    el.plistButtons = el.plistFlip
+      ? Array.prototype.slice.call(el.plistFlip.querySelectorAll("[data-plist]"))
+      : [];
     el.status = document.getElementById("status");
     el.panelLeaderboard = document.getElementById("panel-leaderboard");
     el.panelBests = document.getElementById("panel-bests");
@@ -3027,10 +3334,21 @@
     el.panelLeague = document.getElementById("panel-league");
     el.bests = document.getElementById("bests");
     el.bestsStatus = document.getElementById("bests-status");
+    el.panelRules = document.getElementById("panel-rules");
+    el.rulesTitle = document.getElementById("rules-title");
+    el.rulesStatus = document.getElementById("rules-status");
+    el.rulesBody = document.getElementById("rules-body");
+    el.panelChangelog = document.getElementById("panel-changelog");
+    el.changelogTitle = document.getElementById("changelog-title");
+    el.changelogStatus = document.getElementById("changelog-status");
+    el.changelogBody = document.getElementById("changelog-body");
     el.panelPlayoffs = document.getElementById("panel-playoffs");
     el.playoffsStatus = document.getElementById("playoffs-status");
-    el.playoffUpcoming = document.getElementById("playoff-upcoming");
-    el.playoffRounds = document.getElementById("playoff-rounds");
+    el.playoffWinnersUpcoming = document.getElementById("playoff-winners-upcoming");
+    el.playoffWinnersRounds = document.getElementById("playoff-winners-rounds");
+    el.playoffLosersUpcoming = document.getElementById("playoff-losers-upcoming");
+    el.playoffLosersRounds = document.getElementById("playoff-losers-rounds");
+    el.poLosers = document.getElementById("po-losers");
     el.playoffSeeds = document.getElementById("playoff-seeds");
     el.playoffHistory = document.getElementById("playoff-history");
     el.weekMatchups = document.getElementById("week-matchups");
@@ -3047,6 +3365,9 @@
     el.matchupsGroup = document.getElementById("matchups-group");
     el.matchupsToggle = document.getElementById("matchups-toggle");
     el.matchupsBody = document.getElementById("matchups-body");
+    el.winnersGroup = document.getElementById("winners-group");
+    el.winnersToggle = document.getElementById("winners-toggle");
+    el.winnersBody = document.getElementById("winners-body");
     el.board = document.getElementById("leaderboard");
     el.scrim = document.getElementById("scrim");
   }

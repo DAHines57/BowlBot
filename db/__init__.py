@@ -4,6 +4,7 @@ from db.models import (
     Player,
     PlayerWeek,
     Season,
+    SitePage,
     Team,
     TeamRosterMember,
 )
@@ -16,4 +17,5 @@ __all__ = [
     "PlayerWeek",
     "TeamRosterMember",
     "MatchupOverride",
+    "SitePage",
 ]

@@ -104,6 +104,7 @@
     {% for team_name, team_rows in entry.teams_grouped %}
     {% set team_opp = entry.team_opponents.get(team_name, '') %}
     {% set show_g5 = entry.team_game5_visible.get(team_name, false) %}
+    {% set series_code = entry.team_series_overrides.get(team_name, '') %}
     {% set roster_rows = team_rows | rejectattr('substitute') | list %}
     {% set sub_rows = team_rows | selectattr('substitute') | list %}
     {% set roster_names = roster_rows | map(attribute='player_display_name') | list %}
@@ -121,6 +122,29 @@
         <label class="inline-row team-game5-label">
           <input type="checkbox" class="team-game5-toggle" {% if show_g5 %}checked{% endif %}>
           Game 5
+        </label>
+        <label>Series override
+          <select class="series-override" aria-label="Series result override for {{ team_name }}">
+            <option value="" {% if not series_code %}selected{% endif %}>Derive from scores</option>
+            {% set series_codes = ['3-2', '2-3', '2-2-1', '2-2', '3-1', '1-3', '4-0', '0-4', '3-0', '0-3'] %}
+            {% if series_code and series_code not in series_codes %}
+            <option value="{{ series_code }}" selected>{{ series_code }}</option>
+            {% endif %}
+            {% for code, label in [
+              ('3-2', '3–2 win'),
+              ('2-3', '2–3 loss'),
+              ('2-2-1', '2–2–1 tie'),
+              ('2-2', '2–2 tie'),
+              ('3-1', '3–1 win'),
+              ('1-3', '1–3 loss'),
+              ('4-0', '4–0 win'),
+              ('0-4', '0–4 loss'),
+              ('3-0', '3–0 win'),
+              ('0-3', '0–3 loss'),
+            ] %}
+            <option value="{{ code }}" {% if series_code == code %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
         </label>
       </div>
 
@@ -233,6 +257,7 @@
     "absent_fill": entry.absent_fill_averages,
     "absent_fill_meta": entry.absent_fill_details,
     "team_game5": entry.team_game5_visible or {},
+    "team_series_overrides": entry.team_series_overrides or {},
     "scan_url": url_for('admin.admin_week_scan'),
     "save_url": url_for('admin.admin_week_post')
   } | tojson }}</script>

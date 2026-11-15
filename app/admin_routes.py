@@ -34,6 +34,7 @@ from league_admin import (
     default_entry_target,
     default_entry_week,
     get_week_entry,
+    parse_matchup_overrides_payload,
     list_season_teams_from_db,
     list_season_week_completion,
     parse_week_rows_payload_detailed,
@@ -425,6 +426,7 @@ def admin_week_post():
         week,
         rows,
         refresh=svc.refresh_data,
+        matchup_overrides=parse_matchup_overrides_payload(body),
     )
     if _wants_json():
         return jsonify({"ok": ok, "message": msg}), 200 if ok else 500
@@ -820,3 +822,67 @@ def _parse_teams_form() -> list[dict]:
             entry["captain"] = captain
         teams.append(entry)
     return teams
+
+
+def _admin_site_page(slug: str, *, default_title: str, saved_label: str, template: str, active_nav: str):
+    denied = _require_admin()
+    if denied:
+        return denied
+
+    from db.site_pages import get_or_create_page, page_to_dict, save_page
+
+    success = None
+    error = None
+    session = get_session()
+    try:
+        if request.method == "POST":
+            title = (request.form.get("title") or "").strip() or default_title
+            body = request.form.get("body") or ""
+            try:
+                page = save_page(session, slug, title=title, body=body)
+                session.commit()
+                success = f"{saved_label} saved."
+            except Exception as exc:
+                session.rollback()
+                error = str(exc)
+                page = get_or_create_page(session, slug, title=default_title)
+        else:
+            page = get_or_create_page(session, slug, title=default_title)
+            session.commit()
+        payload = page_to_dict(page)
+    finally:
+        session.close()
+
+    return render_template(
+        template,
+        page=payload,
+        success=success or request.args.get("msg"),
+        error=error,
+        active_nav=active_nav,
+    )
+
+
+@admin_bp.route("/admin/rules", methods=["GET", "POST"])
+def admin_rules():
+    from db.site_pages import RULES_SLUG
+
+    return _admin_site_page(
+        RULES_SLUG,
+        default_title="League Rules",
+        saved_label="Rules",
+        template="admin_rules.html",
+        active_nav="rules",
+    )
+
+
+@admin_bp.route("/admin/changelog", methods=["GET", "POST"])
+def admin_changelog():
+    from db.site_pages import CHANGELOG_SLUG
+
+    return _admin_site_page(
+        CHANGELOG_SLUG,
+        default_title="Changelog",
+        saved_label="Changelog",
+        template="admin_changelog.html",
+        active_nav="changelog",
+    )

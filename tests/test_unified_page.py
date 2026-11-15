@@ -59,12 +59,23 @@ def test_app_page_renders_shell():
         'id="panel-bests"',
         'data-view="playoffs"',
         'id="panel-playoffs"',
+        'data-view="rules"',
+        'id="panel-rules"',
+        'id="rules-body"',
+        'data-view="changelog"',
+        'id="panel-changelog"',
+        'id="changelog-body"',
+        'id="plist-flip"',
+        'data-plist="roster"',
+        'data-plist="subs"',
+        'class="app-version"',
+        ">v2.1.0<",
         'id="playoff-upcoming"',
         'id="playoff-rounds"',
         'id="playoff-seeds"',
         'id="playoff-history"',
-        # Standings lead the tab, then the week's matchups, then the bracket,
-        # each folding away as its own group.
+        # Standings, week matchups, playoffs, then season winners — each a
+        # bubble that folds away on its own.
         'id="week-matchups"',
         'id="standings-toggle"',
         'id="standings-body"',
@@ -72,6 +83,9 @@ def test_app_page_renders_shell():
         'id="matchups-body"',
         'id="playoffs-toggle"',
         'id="playoffs-body"',
+        'id="winners-group"',
+        'id="winners-toggle"',
+        'id="winners-body"',
         ">Matchups<",
     ]:
         assert anchor in html, anchor
@@ -82,6 +96,15 @@ def test_app_page_renders_shell():
     # Standings read as of the week on screen, so they lead the tab rather than
     # sitting inside the bracket.
     assert html.index('id="playoff-seeds"') < html.index('id="week-matchups"')
+
+    # Season winners sit outside the playoffs bubble as their own section.
+    playoffs_body = html.index('id="playoffs-body"')
+    playoffs_body_close = html.index("</div>", html.index('id="playoff-rounds"'))
+    winners_group = html.index('id="winners-group"')
+    history = html.index('id="playoff-history"')
+    assert winners_group > playoffs_body
+    assert history > winners_group
+    assert history > playoffs_body_close
 
     # Admin is reachable from this page, by literal path: the shell renders
     # without the admin blueprint here, so url_for into it would not build.

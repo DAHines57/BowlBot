@@ -14,6 +14,7 @@
       <h1 class="app-title">
         <span class="app-title-ico" aria-hidden="true">&#127923;</span>
         <span class="app-title-text">Monday Night Friends</span>
+        <span class="app-version">v2.1.0</span>
       </h1>
       <div class="settings-field">
         <button type="button" class="settings-btn" id="settings-btn" aria-label="Settings"
@@ -147,6 +148,10 @@
                now leads with the week's matchups and keeps the bracket below. -->
           <button type="button" class="tab" id="tab-playoffs" role="tab"
                   aria-selected="false" aria-controls="playoffs" data-view="playoffs">Matchups</button>
+          <button type="button" class="tab" id="tab-rules" role="tab"
+                  aria-selected="false" aria-controls="rules" data-view="rules">Rules</button>
+          <button type="button" class="tab" id="tab-changelog" role="tab"
+                  aria-selected="false" aria-controls="changelog" data-view="changelog">Changelog</button>
         </div>
         <div class="spanflip" id="spanflip" role="group" aria-label="Week span">
           <button type="button" class="spanflip-btn" data-span="single"
@@ -179,16 +184,25 @@
         <section class="panel" id="panel-leaderboard">
           <div class="panel-head">
             <h2 class="panel-title">Leaderboard</h2>
-            <div class="sortbar">
-              <span class="sortbar-label" id="sort-label">Sort</span>
-              <div class="sortbar-controls">
-                <label class="sr-only" for="sort-field">Sort field</label>
-                <select id="sort-field" class="mini-select" aria-describedby="sort-label"></select>
-                <button type="button" class="dir-toggle" id="sort-dir"
-                        aria-label="Toggle sort direction">
-                  <span class="dir-arrow" id="sort-dir-arrow" aria-hidden="true">&darr;</span>
-                  <span class="dir-text" id="sort-dir-text">High &rarr; low</span>
-                </button>
+            <div class="panel-head-tools">
+              <div class="spanflip" id="plist-flip" role="group" aria-label="Player list"
+                   hidden>
+                <button type="button" class="spanflip-btn" data-plist="roster"
+                        aria-pressed="true">Players</button>
+                <button type="button" class="spanflip-btn" data-plist="subs"
+                        aria-pressed="false">Subs</button>
+              </div>
+              <div class="sortbar">
+                <span class="sortbar-label" id="sort-label">Sort</span>
+                <div class="sortbar-controls">
+                  <label class="sr-only" for="sort-field">Sort field</label>
+                  <select id="sort-field" class="mini-select" aria-describedby="sort-label"></select>
+                  <button type="button" class="dir-toggle" id="sort-dir"
+                          aria-label="Toggle sort direction">
+                    <span class="dir-arrow" id="sort-dir-arrow" aria-hidden="true">&darr;</span>
+                    <span class="dir-text" id="sort-dir-text">High &rarr; low</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -204,54 +218,85 @@
           <div class="bests" id="bests"></div>
         </section>
 
+        <section class="panel" id="panel-rules" hidden>
+          <div class="panel-head">
+            <h2 class="panel-title" id="rules-title">League Rules</h2>
+          </div>
+          <p class="status" id="rules-status" role="status" aria-live="polite" hidden></p>
+          <div class="rules-body" id="rules-body"></div>
+        </section>
+
+        <section class="panel" id="panel-changelog" hidden>
+          <div class="panel-head">
+            <h2 class="panel-title" id="changelog-title">Changelog</h2>
+          </div>
+          <p class="status" id="changelog-status" role="status" aria-live="polite" hidden></p>
+          <div class="rules-body" id="changelog-body"></div>
+        </section>
+
         <section class="panel" id="panel-playoffs" hidden>
           <div class="panel-head">
             <h2 class="panel-title">Matchups</h2>
           </div>
 
-          <!-- The table reads as of the week on screen, so it leads the tab
-               rather than sitting inside the bracket below. -->
-          <div class="po-group" id="standings-group">
-            <button type="button" class="po-group-head" id="standings-toggle"
+          <!-- Same bubble collapsibles as player-detail sections (.prof). -->
+          <div class="prof" id="standings-group">
+            <button type="button" class="prof-toggle" id="standings-toggle"
                     aria-expanded="false" aria-controls="standings-body">
-              <span class="po-group-label">
-                <span class="po-group-title">Standings</span>
+              <span class="prof-toggle-label">
+                <span>Standings</span>
                 <span class="po-flag" id="standings-week" hidden></span>
               </span>
               <span class="chev" aria-hidden="true"></span>
             </button>
-            <div id="standings-body" hidden>
+            <div class="prof-body" id="standings-body" hidden>
               <div id="playoff-seeds"></div>
             </div>
           </div>
 
-          <div class="po-group" id="matchups-group">
-            <button type="button" class="po-group-head" id="matchups-toggle"
+          <div class="prof" id="matchups-group">
+            <button type="button" class="prof-toggle" id="matchups-toggle"
                     aria-expanded="false" aria-controls="matchups-body">
-              <span class="po-group-title">Week matchups</span>
+              <span>Week matchups</span>
               <span class="chev" aria-hidden="true"></span>
             </button>
-            <div id="matchups-body" hidden>
+            <div class="prof-body" id="matchups-body" hidden>
               <p class="status" id="week-matchups-status" role="status" aria-live="polite" hidden></p>
               <div class="matchups" id="week-matchups"></div>
             </div>
           </div>
 
-          <!-- The bracket is one collapsible group under the week's matchups.
-               Container order still decides card order inside it. -->
-          <div class="po-group is-open" id="playoff-group-wrap">
-            <button type="button" class="po-group-head" id="playoffs-toggle"
+          <div class="prof is-open" id="playoff-group-wrap">
+            <button type="button" class="prof-toggle" id="playoffs-toggle"
                     aria-expanded="true" aria-controls="playoffs-body">
-              <span class="po-group-title">Playoffs</span>
+              <span>Playoffs</span>
               <span class="chev" aria-hidden="true"></span>
             </button>
-            <div id="playoffs-body">
+            <div class="prof-body" id="playoffs-body">
               <p class="status" id="playoffs-status" role="status" aria-live="polite" hidden></p>
               <div class="playoffs" id="playoffs">
-                <div id="playoff-upcoming"></div>
-                <div id="playoff-rounds"></div>
-                <div id="playoff-history"></div>
+                <div class="po-bracket" id="po-winners">
+                  <h3 class="po-bracket-title">Winners bracket</h3>
+                  <div id="playoff-winners-upcoming"></div>
+                  <div id="playoff-winners-rounds"></div>
+                </div>
+                <div class="po-bracket" id="po-losers">
+                  <h3 class="po-bracket-title">Losers bracket</h3>
+                  <div id="playoff-losers-upcoming"></div>
+                  <div id="playoff-losers-rounds"></div>
+                </div>
               </div>
+            </div>
+          </div>
+
+          <div class="prof" id="winners-group">
+            <button type="button" class="prof-toggle" id="winners-toggle"
+                    aria-expanded="false" aria-controls="winners-body">
+              <span>Season Winners</span>
+              <span class="chev" aria-hidden="true"></span>
+            </button>
+            <div class="prof-body" id="winners-body" hidden>
+              <div id="playoff-history"></div>
             </div>
           </div>
         </section>

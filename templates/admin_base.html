@@ -20,6 +20,10 @@
          {% if active_nav == 'season' %}aria-current="page"{% endif %}>Season setup</a>
       <a href="{{ url_for('admin.admin_players') }}"
          {% if active_nav == 'players' %}aria-current="page"{% endif %}>Manage players</a>
+      <a href="{{ url_for('admin.admin_rules') }}"
+         {% if active_nav == 'rules' %}aria-current="page"{% endif %}>Rules</a>
+      <a href="{{ url_for('admin.admin_changelog') }}"
+         {% if active_nav == 'changelog' %}aria-current="page"{% endif %}>Changelog</a>
       <a href="/">Home</a>
     </nav>
     {% endblock %}
